@@ -1,0 +1,16 @@
+{
+  "name": "gea-mel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GEA — Plataforma de control de enajenación de chatarra y venta de componentes obsoletos (prototipo MEL)",
+  "scripts": {
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -n api,web -c yellow,cyan \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build",
+    "start": "node server/src/index.js",
+    "seed:reset": "node server/src/db.js --reset"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
