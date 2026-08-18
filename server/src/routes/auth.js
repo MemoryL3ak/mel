@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { login, auth } from '../auth.js';
+import { ah } from '../supa.js';
 
 const r = Router();
 
@@ -15,12 +16,12 @@ const PERFILES = [
 
 r.get('/perfiles', (_req, res) => res.json(PERFILES));
 
-r.post('/login', (req, res) => {
+r.post('/login', ah(async (req, res) => {
   const { username, password } = req.body || {};
-  const out = login(username, password);
+  const out = await login(username, password);
   if (!out) return res.status(401).json({ error: 'Credenciales inválidas' });
   res.json(out);
-});
+}));
 
 r.get('/me', auth(), (req, res) => res.json(req.user));
 
