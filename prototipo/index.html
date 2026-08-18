@@ -1,0 +1,1056 @@
+<title>Plataforma GEA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* ============ GEA · Plataforma de Enajenación de Activos — prototipo ============ */
+  :root{
+    --bg:#F3F1EE; --surface:#FFFFFF; --surface-2:#FAF8F5;
+    --ink:#221D18; --ink-2:#6B6259; --muted:#948B80; --line:#E5E0D8; --line-2:#EFEBE4;
+    --copper:#A4562E; --copper-deep:#83421F; --copper-tint:#F5E8DF; --copper-line:#E2C9B8;
+    --slate:#232930; --slate-2:#2C333B; --slate-ink:#AEB6BE; --slate-line:#39414A;
+    --ok-bg:#E6F2E8; --ok-tx:#1E6B3A; --warn-bg:#FAF1DA; --warn-tx:#8A6116;
+    --bad-bg:#F9E7E4; --bad-tx:#A3352B; --info-bg:#E8F0F9; --info-tx:#2A5F8F;
+    --neutral-bg:#EEEAE4; --neutral-tx:#6B6259;
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --grid:#e6e3dc; --axis:#948B80;
+    --radius:10px; --shadow:0 1px 2px rgba(34,29,24,.05),0 8px 24px rgba(34,29,24,.06);
+    --sans:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:var(--sans);cursor:pointer}
+  h1,h2,h3,h4{margin:0;text-wrap:balance}
+  table{border-collapse:collapse;width:100%}
+  ::selection{background:var(--copper-tint)}
+  :focus-visible{outline:2px solid var(--copper);outline-offset:2px;border-radius:4px}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+  /* ---------- login ---------- */
+  #login{position:fixed;inset:0;z-index:60;display:grid;grid-template-columns:minmax(380px,44%) 1fr;background:var(--bg)}
+  .login-brand{background:linear-gradient(160deg,#2A3038 0%,#232930 55%,#1C2127 100%);color:#EDEAE6;display:flex;flex-direction:column;justify-content:space-between;padding:48px;position:relative;overflow:hidden}
+  .login-brand::after{content:"";position:absolute;right:-140px;top:-140px;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle at 30% 30%,rgba(196,110,61,.35),rgba(196,110,61,0) 65%)}
+  .brand-mark{display:flex;align-items:center;gap:12px}
+  .brand-hex{width:44px;height:44px;flex:none}
+  .brand-name{font-size:22px;font-weight:800;letter-spacing:.06em}
+  .brand-sub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9AA3AC;margin-top:2px}
+  .login-hero h1{font-size:clamp(26px,3.2vw,38px);font-weight:800;line-height:1.15;max-width:15em}
+  .login-hero p{color:#B9C0C7;max-width:34em;margin:14px 0 0}
+  .phase-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .phase-pills span{border:1px solid var(--slate-line);color:#C8CED4;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:500}
+  .phase-pills b{color:#D98E5F;font-weight:700;margin-right:4px}
+  .login-foot{font-size:12px;color:#8A939C}
+  .login-side{display:flex;align-items:center;justify-content:center;padding:40px 24px;overflow:auto}
+  .login-card{width:min(460px,100%)}
+  .login-card h2{font-size:20px;font-weight:700}
+  .login-card>p{color:var(--ink-2);margin:6px 0 20px}
+  .role-list{display:flex;flex-direction:column;gap:8px}
+  .role-btn{display:flex;align-items:center;gap:14px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;transition:border-color .15s,box-shadow .15s}
+  .role-btn:hover{border-color:var(--copper);box-shadow:var(--shadow)}
+  .role-ini{width:36px;height:36px;flex:none;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff}
+  .role-btn b{display:block;font-size:14px}
+  .role-btn small{color:var(--ink-2);font-size:12px}
+  .demo-note{margin-top:18px;font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:12px}
+  @media (max-width:860px){#login{grid-template-columns:1fr;overflow:auto}.login-brand{padding:32px;min-height:auto}.login-hero{margin:24px 0}}
+
+  /* ---------- app shell ---------- */
+  #app{display:none}
+  body.in-app #app{display:block}
+  body.in-app #login{display:none}
+  .shell{display:grid;grid-template-columns:246px 1fr;min-height:100vh}
+  .sidebar{background:var(--slate);color:var(--slate-ink);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+  .side-brand{display:flex;align-items:center;gap:10px;padding:18px 18px 14px;color:#EDEAE6}
+  .side-brand .brand-hex{width:34px;height:34px}
+  .side-brand b{font-size:16px;font-weight:800;letter-spacing:.06em}
+  .side-brand small{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8A939C}
+  nav.side-nav{flex:1;padding:6px 10px 20px}
+  .nav-group{margin-top:14px}
+  .nav-group>span{display:block;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7B848D;padding:0 10px 6px}
+  .nav-item{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:var(--slate-ink);font-size:13.5px;font-weight:500;padding:8px 10px;border-radius:8px;margin-bottom:2px}
+  .nav-item svg{flex:none;opacity:.75}
+  .nav-item:hover{background:var(--slate-2);color:#E6E3DE}
+  .nav-item.active{background:var(--copper);color:#fff}
+  .nav-item.active svg{opacity:1}
+  .side-user{border-top:1px solid var(--slate-line);padding:14px 18px;font-size:12px;color:#9AA3AC}
+  .side-user b{display:block;color:#D8DCE0;font-size:13px}
+  .side-user button{margin-top:8px;background:none;border:1px solid var(--slate-line);color:#AEB6BE;border-radius:6px;padding:4px 10px;font-size:12px}
+  .side-user button:hover{border-color:#D98E5F;color:#D98E5F}
+
+  .main{min-width:0;display:flex;flex-direction:column}
+  .topbar{position:sticky;top:0;z-index:20;background:rgba(243,241,238,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:10px 26px}
+  .hamb{display:none;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+  .crumb{font-size:13px;color:var(--ink-2)}
+  .crumb b{color:var(--ink);font-weight:600}
+  .top-search{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 12px;color:var(--muted);font-size:13px;min-width:200px}
+  .role-switch{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)}
+  .role-switch select{font-family:var(--sans);font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--surface);color:var(--ink)}
+  .content{padding:24px 26px 60px;max-width:1240px;width:100%;margin:0 auto}
+  .role-banner{display:none;align-items:center;gap:10px;background:var(--copper-tint);border:1px solid var(--copper-line);color:var(--copper-deep);border-radius:var(--radius);padding:9px 14px;font-size:13px;margin-bottom:18px}
+  body.role-limited .role-banner{display:flex}
+
+  /* ---------- screens & cards ---------- */
+  .screen{display:none}
+  .screen.active{display:block;animation:fadein .18s ease}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  .page-head h1{font-size:22px;font-weight:700}
+  .page-head p{margin:4px 0 0;color:var(--ink-2);font-size:13.5px;max-width:60em}
+  .head-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600}
+  .btn:hover{border-color:var(--copper);color:var(--copper-deep)}
+  .btn.primary{background:var(--copper);border-color:var(--copper);color:#fff}
+  .btn.primary:hover{background:var(--copper-deep);color:#fff}
+  .btn.danger{color:var(--bad-tx)}
+  .btn.danger:hover{border-color:var(--bad-tx)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line-2)}
+  .card-h h3{font-size:14px;font-weight:700}
+  .card-h small{color:var(--muted);font-size:12px}
+  .card-b{padding:16px 18px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g23{grid-template-columns:3fr 2fr}
+  @media (max-width:1020px){.g4{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr}}
+  @media (max-width:760px){.g2,.g3,.g4,.g23{grid-template-columns:1fr}}
+
+  .kpi{padding:16px 18px}
+  .kpi .lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .kpi .val{font-size:30px;font-weight:800;margin-top:4px;letter-spacing:-.01em}
+  .kpi .val small{font-size:15px;font-weight:600;color:var(--ink-2)}
+  .kpi .delta{font-size:12px;margin-top:2px;color:var(--ink-2)}
+  .kpi .delta b.up{color:#1E6B3A}.kpi .delta b.down{color:#A3352B}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:600;white-space:nowrap}
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+  .chip.ok{background:var(--ok-bg);color:var(--ok-tx)}
+  .chip.warn{background:var(--warn-bg);color:var(--warn-tx)}
+  .chip.bad{background:var(--bad-bg);color:var(--bad-tx)}
+  .chip.info{background:var(--info-bg);color:var(--info-tx)}
+  .chip.neutral{background:var(--neutral-bg);color:var(--neutral-tx)}
+  .chip.copper{background:var(--copper-tint);color:var(--copper-deep)}
+
+  .tbl-wrap{overflow-x:auto}
+  th{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:var(--surface-2)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .mono{font-family:var(--mono);font-size:12px;letter-spacing:0}
+  .thumbs{display:flex;gap:4px}
+  .thumbs i{width:26px;height:20px;border-radius:4px;background:linear-gradient(140deg,#C9CFD6,#8A939C);display:block}
+  .thumbs i:nth-child(2){background:linear-gradient(140deg,#D8C4B4,#A4785A)}
+  .thumbs i:nth-child(3){background:linear-gradient(140deg,#B8C6BB,#7E948B)}
+
+  .bar-track{background:var(--line-2);border-radius:999px;height:7px;overflow:hidden;min-width:90px}
+  .bar-fill{height:100%;border-radius:999px;background:var(--copper)}
+  .bar-fill.warn{background:#C98500}.bar-fill.bad{background:#C0453A}.bar-fill.ok{background:#3E8E5A}
+
+  /* tabs */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
+  .tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:13.5px;font-weight:600;color:var(--ink-2)}
+  .tab:hover{color:var(--ink)}
+  .tab.active{color:var(--copper-deep);border-bottom-color:var(--copper)}
+  .tabpane{display:none}.tabpane.active{display:block}
+
+  /* charts */
+  .chart-box{position:relative}
+  .chart-box svg{display:block;width:100%;height:auto}
+  .tip{position:absolute;pointer-events:none;background:var(--ink);color:#F4F1ED;font-size:12px;padding:6px 10px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-115%);opacity:0;transition:opacity .1s;z-index:5}
+  .tip b{font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin-top:10px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+  /* timeline (flujo de aprobación) */
+  .flow{list-style:none;margin:0;padding:0}
+  .flow li{display:flex;gap:12px;padding:0 0 18px;position:relative}
+  .flow li::before{content:"";position:absolute;left:11px;top:26px;bottom:0;width:2px;background:var(--line)}
+  .flow li:last-child::before{display:none}
+  .dot{width:24px;height:24px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--neutral-bg);color:var(--neutral-tx);border:2px solid var(--surface)}
+  .flow li.done .dot{background:#3E8E5A;color:#fff}
+  .flow li.now .dot{background:var(--copper);color:#fff}
+  .flow li.rej .dot{background:#C0453A;color:#fff}
+  .flow b{font-size:13px}
+  .flow small{display:block;color:var(--ink-2);font-size:12px}
+
+  /* documental cards */
+  .doc-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .doc-filters button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--ink-2)}
+  .doc-filters button.active{background:var(--slate);border-color:var(--slate);color:#fff}
+
+  /* portal público */
+  .browser{border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);background:var(--surface)}
+  .browser-bar{display:flex;align-items:center;gap:10px;background:var(--neutral-bg);border-bottom:1px solid var(--line);padding:9px 14px}
+  .browser-bar i{width:10px;height:10px;border-radius:50%;background:#C9C2B8;display:inline-block}
+  .browser-url{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);padding:4px 12px}
+  .portal-hd{background:linear-gradient(150deg,#2A3038,#1C2127);color:#EDEAE6;padding:26px 28px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+  .portal-hd h2{font-size:20px;font-weight:800}
+  .portal-hd p{margin:4px 0 0;color:#9AA3AC;font-size:13px}
+  .portal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:22px 28px 28px}
+  .pcard{border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;background:var(--surface)}
+  .pimg{height:120px;display:grid;place-items:center;color:rgba(255,255,255,.85)}
+  .pimg svg{width:44px;height:44px}
+  .pbody{padding:12px 14px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .pbody b{font-size:13.5px}
+  .pbody .specs{color:var(--ink-2);font-size:12px}
+  .pprice{font-weight:800;font-size:15px;font-variant-numeric:tabular-nums}
+  .pfoot{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:8px}
+
+  /* matriz */
+  .score-in{width:52px;font-family:var(--sans);font-size:13px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:5px 4px;font-variant-numeric:tabular-nums}
+  .win{background:var(--copper-tint)!important}
+  td .winner-tag{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--copper-deep);text-transform:uppercase}
+
+  /* roles matrix */
+  .perm{display:inline-block;width:9px;height:9px;border-radius:50%}
+  .perm.full{background:var(--copper)}
+  .perm.part{background:transparent;border:2px solid var(--copper)}
+  .perm.none{background:var(--line)}
+
+  /* modal & toast */
+  .overlay{position:fixed;inset:0;background:rgba(34,29,24,.45);z-index:80;display:none;align-items:center;justify-content:center;padding:20px}
+  .overlay.open{display:flex}
+  .modal{background:var(--surface);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.25);width:min(560px,100%);max-height:88vh;overflow:auto}
+  .modal-h{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line-2)}
+  .modal-h h3{font-size:15px}
+  .modal-x{background:none;border:0;font-size:18px;color:var(--muted);padding:2px 8px}
+  .modal-b{padding:18px 20px}
+  .modal-f{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--line-2)}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--slate);color:#EDEAE6;border-radius:10px;padding:11px 18px;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:.25s;z-index:100;display:flex;gap:10px;align-items:center}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast .tick{color:#7CC08F;font-weight:800}
+
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:5px}
+  .field input,.field textarea,.field select{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-family:var(--sans);font-size:13.5px;background:var(--surface);color:var(--ink)}
+  .cert{border:1.5px solid var(--copper-line);border-radius:10px;padding:22px;text-align:center;background:var(--surface-2)}
+  .cert .brand-hex{width:36px;height:36px;margin:0 auto 8px}
+  .cert h4{font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--copper-deep)}
+  .cert p{font-size:13px;color:var(--ink-2)}
+  .cert .mono{font-size:12px}
+
+  .audit-note{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin-top:12px}
+
+  @media (max-width:960px){
+    .shell{grid-template-columns:1fr}
+    .sidebar{position:fixed;left:0;top:0;bottom:0;width:260px;z-index:50;transform:translateX(-100%);transition:transform .2s;height:100dvh}
+    body.nav-open .sidebar{transform:none}
+    .hamb{display:block}
+    .content{padding:18px 16px 50px}
+    .topbar{padding:10px 16px}
+    .top-search{display:none}
+  }
+</style>
+
+<!-- ============================== LOGIN ============================== -->
+<div id="login">
+  <div class="login-brand">
+    <div class="brand-mark">
+      <svg class="brand-hex" viewBox="0 0 44 44" aria-hidden="true"><path d="M22 2 39 12v20L22 42 5 32V12Z" fill="none" stroke="#C46E3D" stroke-width="2.5"/><path d="M22 12 31 17v10l-9 5-9-5V17Z" fill="#C46E3D"/></svg>
+      <div><div class="brand-name">GEA</div><div class="brand-sub">Gestión de Enajenación de Activos</div></div>
+    </div>
+    <div class="login-hero">
+      <h1>Chatarra y componentes obsoletos, en un solo flujo trazable.</h1>
+      <p>Plataforma de control de enajenación de chatarra industrial y venta de componentes obsoletos para <strong style="color:#D8DCE0">Minera Escondida Limitada</strong>: desde el retiro en patios hasta el pago conciliado, con repositorio documental y portal público de venta.</p>
+      <div class="phase-pills">
+        <span><b>F1</b> Proceso de chatarra</span>
+        <span><b>F2</b> Control documental</span>
+        <span><b>F3</b> Obsoletos y portal</span>
+        <span><b>F4</b> Indicadores</span>
+      </div>
+    </div>
+    <div class="login-foot">Prototipo navegable · Propuesta de Ariel Beroíza · Cotización v2.0 — julio 2026</div>
+  </div>
+  <div class="login-side">
+    <div class="login-card">
+      <h2>Ingresar a la plataforma</h2>
+      <p>Seleccione un perfil para recorrer la plataforma con sus permisos reales (RBAC con seguridad a nivel de fila).</p>
+      <div class="role-list" id="roleList"></div>
+      <div class="demo-note">Prototipo de demostración: los datos son ficticios y las acciones no persisten. La versión productiva autentica contra credenciales corporativas y registra cada acción en la bitácora de auditoría.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== APP ============================== -->
+<div id="app">
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="side-brand">
+      <svg class="brand-hex" viewBox="0 0 44 44" aria-hidden="true"><path d="M22 2 39 12v20L22 42 5 32V12Z" fill="none" stroke="#C46E3D" stroke-width="2.5"/><path d="M22 12 31 17v10l-9 5-9-5V17Z" fill="#C46E3D"/></svg>
+      <div><b>GEA</b><small>Minera Escondida</small></div>
+    </div>
+    <nav class="side-nav" id="sideNav"></nav>
+    <div class="side-user">
+      <b id="userName">—</b><span id="userRole">—</span>
+      <button onclick="logout()">Cambiar de perfil</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="hamb" onclick="document.body.classList.toggle('nav-open')" aria-label="Menú">☰</button>
+      <div class="crumb">GEA / <b id="crumb">Panel de control</b></div>
+      <div class="top-search">⌕&nbsp; Buscar guía, componente, documento…</div>
+      <div class="role-switch">
+        <span>Perfil:</span>
+        <select id="roleSel" onchange="setRole(this.value)"></select>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="role-banner">◈ Vista según perfil <b id="bannerRole">—</b> — los módulos y acciones visibles corresponden a sus permisos.</div>
+
+      <!-- ================= PANEL ================= -->
+      <section class="screen" id="scr-panel">
+        <div class="page-head">
+          <div><h1>Panel de control</h1><p>Resumen operativo de ambos procesos · agosto 2026</p></div>
+          <div class="head-actions"><button class="btn" onclick="toast('Reporte del período exportado a Excel')">Exportar</button></div>
+        </div>
+        <div class="grid g4" style="margin-bottom:16px">
+          <div class="card kpi"><div class="lbl">Tonelaje despachado · mes</div><div class="val">441<small> t</small></div><div class="delta"><b class="up">▲ 8,2%</b> vs. julio</div></div>
+          <div class="card kpi"><div class="lbl">Estado de pago pendiente</div><div class="val">$ 82,7<small> M</small></div><div class="delta">EP-2026-07 · en aprobación</div></div>
+          <div class="card kpi"><div class="lbl">Publicaciones activas</div><div class="val">4</div><div class="delta"><b class="down">1 por vencer</b> (día 14 de 15)</div></div>
+          <div class="card kpi"><div class="lbl">Ofertas recibidas · mes</div><div class="val">14</div><div class="delta"><b class="up">▲ 5</b> vs. julio</div></div>
+        </div>
+        <div class="grid g2" style="margin-bottom:16px">
+          <div class="card">
+            <div class="card-h"><h3>Tonelaje despachado por mes</h3><small>2026 · toneladas</small></div>
+            <div class="card-b chart-box" id="chTon"></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Ingresos por venta</h3><small>millones CLP</small></div>
+            <div class="card-b chart-box" id="chIng"></div>
+          </div>
+        </div>
+        <div class="grid g23">
+          <div class="card">
+            <div class="card-h"><h3>Bandeja de pendientes</h3><small>según su perfil</small></div>
+            <div class="tbl-wrap"><table>
+              <tbody>
+                <tr><td><span class="chip warn">Aprobación</span></td><td>Estado de pago <span class="mono">EP-2026-07</span> espera su aprobación</td><td class="num"><button class="btn sm" onclick="go('estados')">Revisar</button></td></tr>
+                <tr><td><span class="chip bad">Vence hoy</span></td><td>Publicación <b>Tolva CAEX 930E</b> cumple 15 días mañana</td><td class="num"><button class="btn sm" onclick="go('publicaciones')">Ver</button></td></tr>
+                <tr><td><span class="chip info">Entrega</span></td><td>Retiro adjudicado <b>Repuestos chancador de pebbles</b> sin coordinación</td><td class="num"><button class="btn sm" onclick="go('inventario')">Coordinar</button></td></tr>
+                <tr><td><span class="chip warn">Documento</span></td><td>Certificado de disposición final <span class="mono">CDF-118</span> vence en 12 días</td><td class="num"><button class="btn sm" onclick="go('documental')">Renovar</button></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Actividad reciente</h3><small>bitácora</small></div>
+            <div class="card-b" style="padding-top:10px">
+              <ul class="flow">
+                <li class="done"><span class="dot">✓</span><div><b>Recepción validada · GD-4531</b><small>C. Fuentes (ITO) · hoy 11:42</small></div></li>
+                <li class="done"><span class="dot">✓</span><div><b>Oferta recibida · Motor 4.000 HP</b><small>Ingemet SpA · hoy 09:15</small></div></li>
+                <li class="done"><span class="dot">✓</span><div><b>EP-2026-07 enviado a aprobación</b><small>C. Fuentes (ITO) · ayer 17:03</small></div></li>
+                <li class="done"><span class="dot">✓</span><div><b>Conversión automática a chatarra</b><small>Impulsor celda flotación · 16 días publicado</small></div></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= PROGRAMA ================= -->
+      <section class="screen" id="scr-programa">
+        <div class="page-head">
+          <div><h1>Programa de limpieza de patios</h1><p>Planificación semanal asignada a Serlim Ltda. y seguimiento de cumplimiento.</p></div>
+          <div class="head-actions"><button class="btn">‹ Semana 33</button><button class="btn primary" onclick="toast('Programa de la semana 35 creado (borrador)')">+ Programar semana</button></div>
+        </div>
+        <div class="grid g3" style="margin-bottom:16px">
+          <div class="card kpi"><div class="lbl">Cumplimiento semana 34</div><div class="val">83<small> %</small></div><div class="delta">5 de 6 retiros ejecutados</div></div>
+          <div class="card kpi"><div class="lbl">Retiros programados</div><div class="val">6</div><div class="delta">4 patios · 2 turnos</div></div>
+          <div class="card kpi"><div class="lbl">Tonelaje retirado · semana</div><div class="val">96,4<small> t</small></div><div class="delta"><b class="up">▲</b> sobre lo planificado (88 t)</div></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Semana 34 · 17 al 21 de agosto de 2026</h3><small>empresa asignada: Serlim Ltda.</small></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Día</th><th>Patio</th><th>Material previsto</th><th class="num">Est. (t)</th><th class="num">Real (t)</th><th>Evidencia</th><th>Estado</th></tr></thead>
+            <tbody>
+              <tr><td>Lun 17</td><td>Patio Los Colorados</td><td>Fierro pesado</td><td class="num">22,0</td><td class="num">24,6</td><td><div class="thumbs"><i></i><i></i><i></i></div></td><td><span class="chip ok">Ejecutado</span></td></tr>
+              <tr><td>Lun 17</td><td>Patio 3500</td><td>Fierro liviano / mixto</td><td class="num">14,0</td><td class="num">13,1</td><td><div class="thumbs"><i></i><i></i></div></td><td><span class="chip ok">Ejecutado</span></td></tr>
+              <tr><td>Mar 18</td><td>Patio Laguna Seca</td><td>Cables forrados</td><td class="num">6,0</td><td class="num">6,8</td><td><div class="thumbs"><i></i><i></i><i></i></div></td><td><span class="chip ok">Ejecutado</span></td></tr>
+              <tr><td>Mié 19</td><td>Patio Puerto Coloso</td><td>Acero inoxidable</td><td class="num">4,0</td><td class="num">3,9</td><td><div class="thumbs"><i></i></div></td><td><span class="chip ok">Ejecutado</span></td></tr>
+              <tr><td>Jue 20</td><td>Patio Los Colorados</td><td>Fierro pesado</td><td class="num">26,0</td><td class="num">28,0</td><td><div class="thumbs"><i></i><i></i></div></td><td><span class="chip ok">Ejecutado</span></td></tr>
+              <tr><td>Vie 21</td><td>Patio 3500</td><td>Fierro liviano / mixto</td><td class="num">16,0</td><td class="num">—</td><td>—</td><td><span class="chip warn">Reprogramado</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ================= DESPACHOS ================= -->
+      <section class="screen" id="scr-despachos">
+        <div class="page-head">
+          <div><h1>Despachos y recepciones</h1><p>Registro con evidencia: pesaje, fotografías y guía vinculada. La valorización se calcula automáticamente al validar la recepción.</p></div>
+          <div class="head-actions"><button class="btn primary" onclick="toast('Formulario de nuevo despacho (demo)')">+ Registrar despacho</button></div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-tabgroup="desp" data-tab="d1" onclick="tab(this)">Despachos</button>
+          <button class="tab" data-tabgroup="desp" data-tab="d2" onclick="tab(this)">Recepciones vendor</button>
+        </div>
+        <div class="tabpane active" data-tabgroup="desp" id="pane-d1">
+          <div class="card"><div class="tbl-wrap"><table>
+            <thead><tr><th>Guía</th><th>Fecha</th><th>Patio origen</th><th>Categoría</th><th class="num">Peso (kg)</th><th class="num">Valorización</th><th>Evidencia</th><th>Estado</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono">GD-4531</td><td>17-08-2026</td><td>Los Colorados</td><td>Fierro pesado</td><td class="num">24.600</td><td class="num">$ 4.551.000</td><td><div class="thumbs"><i></i><i></i><i></i></div></td><td><span class="chip ok">Recepcionado</span></td><td><button class="btn sm" onclick="openModal('mDespacho')">Detalle</button></td></tr>
+              <tr><td class="mono">GD-4530</td><td>17-08-2026</td><td>Patio 3500</td><td>Fierro liviano</td><td class="num">13.080</td><td class="num">$ 1.569.600</td><td><div class="thumbs"><i></i><i></i></div></td><td><span class="chip ok">Recepcionado</span></td><td><button class="btn sm" onclick="openModal('mDespacho')">Detalle</button></td></tr>
+              <tr><td class="mono">GD-4529</td><td>18-08-2026</td><td>Laguna Seca</td><td>Cables forrados</td><td class="num">6.790</td><td class="num">$ 16.296.000</td><td><div class="thumbs"><i></i><i></i><i></i></div></td><td><span class="chip info">En tránsito</span></td><td><button class="btn sm" onclick="openModal('mDespacho')">Detalle</button></td></tr>
+              <tr><td class="mono">GD-4528</td><td>14-08-2026</td><td>Puerto Coloso</td><td>Acero inoxidable</td><td class="num">3.910</td><td class="num">$ 2.541.500</td><td><div class="thumbs"><i></i></div></td><td><span class="chip ok">Recepcionado</span></td><td><button class="btn sm" onclick="openModal('mDespacho')">Detalle</button></td></tr>
+              <tr><td class="mono">GD-4527</td><td>13-08-2026</td><td>Los Colorados</td><td>Fierro pesado</td><td class="num">28.040</td><td class="num">$ 5.187.400</td><td><div class="thumbs"><i></i><i></i></div></td><td><span class="chip warn">Difer. de peso</span></td><td><button class="btn sm" onclick="openModal('mDespacho')">Detalle</button></td></tr>
+              <tr><td class="mono">GD-4526</td><td>12-08-2026</td><td>Patio 3500</td><td>Bronce</td><td class="num">1.240</td><td class="num">$ 5.208.000</td><td><div class="thumbs"><i></i><i></i></div></td><td><span class="chip ok">Recepcionado</span></td><td><button class="btn sm" onclick="openModal('mDespacho')">Detalle</button></td></tr>
+            </tbody>
+          </table></div></div>
+        </div>
+        <div class="tabpane" data-tabgroup="desp" id="pane-d2">
+          <div class="card"><div class="tbl-wrap"><table>
+            <thead><tr><th>Guía</th><th>Recepción vendor</th><th class="num">Peso origen (kg)</th><th class="num">Peso destino (kg)</th><th class="num">Diferencia</th><th>Validación ITO</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">GD-4531</td><td>Metarec SpA · Báscula 2</td><td class="num">24.600</td><td class="num">24.580</td><td class="num">-0,08 %</td><td><span class="chip ok">Validada</span></td></tr>
+              <tr><td class="mono">GD-4530</td><td>Metarec SpA · Báscula 2</td><td class="num">13.080</td><td class="num">13.075</td><td class="num">-0,04 %</td><td><span class="chip ok">Validada</span></td></tr>
+              <tr><td class="mono">GD-4527</td><td>Metarec SpA · Báscula 1</td><td class="num">28.040</td><td class="num">27.410</td><td class="num" style="color:var(--bad-tx);font-weight:700">-2,25 %</td><td><span class="chip warn">Observada</span></td></tr>
+              <tr><td class="mono">GD-4526</td><td>Metarec SpA · Báscula 1</td><td class="num">1.240</td><td class="num">1.240</td><td class="num">0,00 %</td><td><span class="chip ok">Validada</span></td></tr>
+            </tbody>
+          </table></div></div>
+        </div>
+      </section>
+
+      <!-- ================= VALORIZACION ================= -->
+      <section class="screen" id="scr-valorizacion">
+        <div class="page-head">
+          <div><h1>Valorización y tabla de precios</h1><p>Precios por categoría según contrato <span class="mono">CTR-MEL-2025-114</span> con Metarec SpA · vigencia hasta 31-12-2026.</p></div>
+          <div class="head-actions"><button class="btn" onclick="toast('Historial de precios del contrato (demo)')">Historial de precios</button></div>
+        </div>
+        <div class="grid g23">
+          <div class="card">
+            <div class="card-h"><h3>Resumen del período · agosto 2026</h3><small>despachos valorizados</small></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Categoría</th><th class="num">Precio (CLP/kg)</th><th class="num">Kg del mes</th><th class="num">Valorizado</th></tr></thead>
+              <tbody>
+                <tr><td>Fierro pesado</td><td class="num">$ 185</td><td class="num">312.400</td><td class="num">$ 57.794.000</td></tr>
+                <tr><td>Fierro liviano / mixto</td><td class="num">$ 120</td><td class="num">118.200</td><td class="num">$ 14.184.000</td></tr>
+                <tr><td>Acero inoxidable</td><td class="num">$ 650</td><td class="num">6.850</td><td class="num">$ 4.452.500</td></tr>
+                <tr><td>Cables forrados</td><td class="num">$ 2.400</td><td class="num">3.120</td><td class="num">$ 7.488.000</td></tr>
+                <tr><td>Bronce</td><td class="num">$ 4.200</td><td class="num">1.240</td><td class="num">$ 5.208.000</td></tr>
+                <tr><td>Aluminio</td><td class="num">$ 1.150</td><td class="num">0</td><td class="num">—</td></tr>
+                <tr style="font-weight:700"><td>Total</td><td></td><td class="num">441.810</td><td class="num">$ 89.126.500</td></tr>
+              </tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Participación por categoría</h3><small>% del valor del mes</small></div>
+            <div class="card-b chart-box" id="chCat"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= ESTADOS DE PAGO ================= -->
+      <section class="screen" id="scr-estados">
+        <div class="page-head">
+          <div><h1>Estados de pago</h1><p>Generados automáticamente desde los despachos valorizados del período. Flujo de aprobación multinivel con trazabilidad completa.</p></div>
+          <div class="head-actions"><button class="btn primary" onclick="toast('EP-2026-08 se generará automáticamente al cierre del período')">Generar EP del período</button></div>
+        </div>
+        <div class="card" style="margin-bottom:16px"><div class="tbl-wrap"><table>
+          <thead><tr><th>Folio</th><th>Período</th><th class="num">Despachos</th><th class="num">Bruto</th><th class="num">Descuentos</th><th class="num">Total</th><th>Estado</th><th>Conciliación</th></tr></thead>
+          <tbody>
+            <tr style="background:var(--surface-2)"><td class="mono">EP-2026-07</td><td>Julio 2026</td><td class="num">23</td><td class="num">$ 83.918.500</td><td class="num">-$ 1.250.000</td><td class="num" style="font-weight:700">$ 82.668.500</td><td id="ep7chip"><span class="chip warn">En aprobación</span></td><td><span class="chip neutral">—</span></td></tr>
+            <tr><td class="mono">EP-2026-06</td><td>Junio 2026</td><td class="num">21</td><td class="num">$ 74.210.300</td><td class="num">-$ 890.000</td><td class="num">$ 73.320.300</td><td><span class="chip ok">Aprobado</span></td><td><span class="chip warn">Parcial · 60%</span></td></tr>
+            <tr><td class="mono">EP-2026-05</td><td>Mayo 2026</td><td class="num">19</td><td class="num">$ 64.108.900</td><td class="num">$ 0</td><td class="num">$ 64.108.900</td><td><span class="chip ok">Aprobado</span></td><td><span class="chip ok">Conciliado</span></td></tr>
+          </tbody>
+        </table></div></div>
+
+        <div class="grid g23">
+          <div class="card">
+            <div class="card-h"><h3>Detalle · <span class="mono">EP-2026-07</span></h3><small>julio 2026 · Metarec SpA</small></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Concepto</th><th class="num">Kg</th><th class="num">Monto</th></tr></thead>
+              <tbody>
+                <tr><td>Fierro pesado (12 despachos)</td><td class="num">298.100</td><td class="num">$ 55.148.500</td></tr>
+                <tr><td>Fierro liviano / mixto (7)</td><td class="num">121.400</td><td class="num">$ 14.568.000</td></tr>
+                <tr><td>Acero inoxidable (2)</td><td class="num">7.180</td><td class="num">$ 4.667.000</td></tr>
+                <tr><td>Cables forrados (2)</td><td class="num">3.973</td><td class="num">$ 9.535.000</td></tr>
+                <tr><td style="color:var(--bad-tx)">Descuento: flete asumido por MEL (GD-4498)</td><td class="num"></td><td class="num" style="color:var(--bad-tx)">-$ 1.250.000</td></tr>
+                <tr style="font-weight:800"><td>Total a pagar por vendor</td><td class="num">430.653</td><td class="num">$ 82.668.500</td></tr>
+              </tbody>
+            </table></div>
+            <div class="card-b" id="ep7actions" style="display:flex;gap:8px;border-top:1px solid var(--line-2)">
+              <button class="btn primary" onclick="approveEP()">Aprobar estado de pago</button>
+              <button class="btn danger" onclick="showReject()">Rechazar con observación</button>
+            </div>
+            <div class="card-b" id="ep7reject" style="display:none;border-top:1px solid var(--line-2)">
+              <div class="field"><label>Observación del rechazo (obligatoria — vuelve al ITO)</label><textarea id="rejText" rows="2" placeholder="Ej.: la diferencia de peso de GD-4527 no está justificada…"></textarea></div>
+              <div style="display:flex;gap:8px"><button class="btn danger" onclick="rejectEP()">Confirmar rechazo</button><button class="btn" onclick="hideReject()">Cancelar</button></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Flujo de aprobación</h3><small>trazabilidad</small></div>
+            <div class="card-b">
+              <ul class="flow" id="ep7flow">
+                <li class="done"><span class="dot">✓</span><div><b>Generación automática</b><small>Sistema · 01-08-2026 00:05 · 23 despachos del período</small></div></li>
+                <li class="done"><span class="dot">✓</span><div><b>Preparado y validado por ITO</b><small>C. Fuentes · 16-08-2026 17:03 · descuento aplicado</small></div></li>
+                <li class="now" id="stepCoord"><span class="dot">3</span><div><b>Aprobación Coordinador Logístico</b><small id="stepCoordTxt">Pendiente — asignado a R. Miranda</small></div></li>
+                <li id="stepPago"><span class="dot">4</span><div><b>Notificación al vendor y facturación</b><small>Se emite automáticamente al aprobar</small></div></li>
+                <li id="stepConc"><span class="dot">5</span><div><b>Conciliación de pagos recibidos</b><small>Comprobantes cargados por el vendor</small></div></li>
+              </ul>
+              <div class="audit-note">🔒 Cada transición queda en la bitácora de auditoría inmutable.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= DOCUMENTAL ================= -->
+      <section class="screen" id="scr-documental">
+        <div class="page-head">
+          <div><h1>Repositorio documental</h1><p>Nueve tipos documentales del proceso de chatarra, con versionado, control de vencimientos y vinculación al hito correspondiente.</p></div>
+          <div class="head-actions"><button class="btn primary" onclick="toast('Documento cargado · versión 2 creada y vinculada al hito')">↑ Cargar documento</button></div>
+        </div>
+        <div class="doc-filters" id="docFilters">
+          <button class="active" onclick="filterDocs(this,'all')">Todos</button>
+          <button onclick="filterDocs(this,'contrato')">Contratos</button>
+          <button onclick="filterDocs(this,'guia')">Guías</button>
+          <button onclick="filterDocs(this,'ep')">Estados de pago</button>
+          <button onclick="filterDocs(this,'factura')">Facturas</button>
+          <button onclick="filterDocs(this,'pago')">Pagos</button>
+          <button onclick="filterDocs(this,'cdf')">Disposición final</button>
+          <button onclick="filterDocs(this,'baja')">Bajas (scrap)</button>
+        </div>
+        <div class="card"><div class="tbl-wrap"><table id="docTable">
+          <thead><tr><th>Documento</th><th>Tipo</th><th>Hito vinculado</th><th class="num">Versión</th><th>Vencimiento</th><th>Estado</th></tr></thead>
+          <tbody>
+            <tr data-t="contrato"><td class="mono">CTR-MEL-2025-114.pdf</td><td>Contrato con vendor</td><td>Contrato Metarec SpA</td><td class="num">v3</td><td>31-12-2026</td><td><span class="chip ok">Vigente</span></td></tr>
+            <tr data-t="contrato"><td class="mono">CTR-MEL-2025-089.pdf</td><td>Contrato limpieza patios</td><td>Contrato Serlim Ltda.</td><td class="num">v2</td><td>30-06-2027</td><td><span class="chip ok">Vigente</span></td></tr>
+            <tr data-t="guia"><td class="mono">GD-4531.pdf</td><td>Guía de despacho</td><td>Despacho GD-4531</td><td class="num">v1</td><td>—</td><td><span class="chip ok">Vigente</span></td></tr>
+            <tr data-t="guia"><td class="mono">GV-2214.pdf</td><td>Guía de venta</td><td>Despacho GD-4529</td><td class="num">v1</td><td>—</td><td><span class="chip ok">Vigente</span></td></tr>
+            <tr data-t="ep"><td class="mono">EP-2026-07.pdf</td><td>Estado de pago</td><td>EP julio 2026</td><td class="num">v2</td><td>—</td><td><span class="chip warn">En aprobación</span></td></tr>
+            <tr data-t="ep"><td class="mono">DESC-2026-07.xlsx</td><td>Registro de descuentos</td><td>EP julio 2026</td><td class="num">v1</td><td>—</td><td><span class="chip ok">Vigente</span></td></tr>
+            <tr data-t="factura"><td class="mono">FV-7781.pdf</td><td>Factura de venta</td><td>EP junio 2026</td><td class="num">v1</td><td>—</td><td><span class="chip ok">Emitida</span></td></tr>
+            <tr data-t="pago"><td class="mono">TRF-Metarec-0612.pdf</td><td>Registro de pago vendor</td><td>EP junio 2026</td><td class="num">v1</td><td>—</td><td><span class="chip warn">Parcial</span></td></tr>
+            <tr data-t="cdf"><td class="mono">CDF-118.pdf</td><td>Certif. disposición final</td><td>Despachos julio</td><td class="num">v1</td><td>30-08-2026</td><td><span class="chip bad">Por vencer</span></td></tr>
+            <tr data-t="baja"><td class="mono">SCRAP-2026-031.pdf</td><td>Baja del activo (scrap)</td><td>Impulsor celda flotación</td><td class="num">v1</td><td>—</td><td><span class="chip ok">Aprobada</span></td></tr>
+          </tbody>
+        </table></div></div>
+      </section>
+
+      <!-- ================= OBSOLETOS: INVENTARIO ================= -->
+      <section class="screen" id="scr-inventario">
+        <div class="page-head">
+          <div><h1>Inventario y logística de obsoletos</h1><p>Planificación de venta, ubicación en terreno y bandeja de pendientes de entrega con alertas.</p></div>
+          <div class="head-actions"><button class="btn primary" onclick="toast('Componente ingresado al inventario (demo)')">+ Ingresar componente</button></div>
+        </div>
+        <div class="card" style="margin-bottom:16px"><div class="tbl-wrap"><table>
+          <thead><tr><th>Componente</th><th>Código</th><th>Ubicación en terreno</th><th class="num">Valor referencial</th><th>Estado</th></tr></thead>
+          <tbody>
+            <tr><td><b>Motor eléctrico 4.000 HP</b></td><td class="mono">OBS-201</td><td>Los Colorados · Sector B-3 · Fila 2</td><td class="num">$ 28.500.000</td><td><span class="chip info">Publicado · día 6</span></td></tr>
+            <tr><td><b>Tolva CAEX 930E</b></td><td class="mono">OBS-198</td><td>Patio 3500 · Sector A-1</td><td class="num">$ 45.000.000</td><td><span class="chip warn">Publicado · día 14</span></td></tr>
+            <tr><td><b>Reductor Falk 385</b></td><td class="mono">OBS-195</td><td>Laguna Seca · Sector C-2</td><td class="num">$ 9.800.000</td><td><span class="chip ok">Adjudicado</span></td></tr>
+            <tr><td><b>Neumáticos 63" usados (lote ×4)</b></td><td class="mono">OBS-204</td><td>Patio 3500 · Sector D-4</td><td class="num">$ 12.000.000</td><td><span class="chip info">Publicado · día 2</span></td></tr>
+            <tr><td><b>Polines de correa (lote 120 u)</b></td><td class="mono">OBS-203</td><td>Los Colorados · Sector B-1</td><td class="num">$ 6.400.000</td><td><span class="chip info">Publicado · día 9</span></td></tr>
+            <tr><td><b>Transformador 23 kV</b></td><td class="mono">OBS-207</td><td>Laguna Seca · Bodega 7</td><td class="num">$ 18.900.000</td><td><span class="chip neutral">Planificado</span></td></tr>
+            <tr><td><b>Impulsor celda de flotación</b></td><td class="mono">OBS-190</td><td>Los Colorados · Sector B-3</td><td class="num">$ 4.100.000</td><td><span class="chip bad">Convertido a chatarra</span></td></tr>
+            <tr><td><b>Repuestos chancador de pebbles</b></td><td class="mono">OBS-188</td><td>Patio 3500 · Sector A-3</td><td class="num">$ 7.250.000</td><td><span class="chip ok">Adjudicado</span></td></tr>
+          </tbody>
+        </table></div></div>
+        <div class="card">
+          <div class="card-h"><h3>Pendientes de entrega</h3><small>adjudicados sin retiro coordinado</small></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Componente</th><th>Comprador</th><th>Adjudicado el</th><th class="num">Días de espera</th><th>Alerta</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>Repuestos chancador de pebbles</td><td>Maestranza Andina Ltda.</td><td>04-08-2026</td><td class="num">14</td><td><span class="chip bad">Sin coordinación</span></td><td class="num"><button class="btn sm" onclick="toast('Notificación enviada al comprador')">Notificar</button></td></tr>
+              <tr><td>Reductor Falk 385</td><td>Ingemet SpA</td><td>12-08-2026</td><td class="num">6</td><td><span class="chip warn">Retiro agendado 21-08</span></td><td class="num"><button class="btn sm" onclick="toast('Guía de despacho generada')">Emitir guía</button></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ================= PUBLICACIONES ================= -->
+      <section class="screen" id="scr-publicaciones">
+        <div class="page-head">
+          <div><h1>Publicaciones</h1><p>Control automático de tiempos: a los <b>15 días sin adjudicar</b>, el componente se convierte en chatarra y pasa al flujo de enajenación.</p></div>
+          <div class="head-actions"><button class="btn primary" onclick="toast('Publicación creada en el portal público')">+ Publicar componente</button></div>
+        </div>
+        <div class="card"><div class="tbl-wrap"><table>
+          <thead><tr><th>Componente</th><th>Publicado el</th><th style="min-width:180px">Plazo (15 días)</th><th class="num">Ofertas</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>Tolva CAEX 930E</b><br><small style="color:var(--muted)">OBS-198</small></td><td>04-08-2026</td><td><div class="bar-track"><div class="bar-fill bad" style="width:93%"></div></div><small style="color:var(--bad-tx);font-weight:700">Día 14 de 15 — vence mañana</small></td><td class="num">1</td><td><span class="chip warn">Por vencer</span></td><td><button class="btn sm" onclick="go('ofertas')">Ofertas</button></td></tr>
+            <tr><td><b>Polines de correa (lote 120 u)</b><br><small style="color:var(--muted)">OBS-203</small></td><td>09-08-2026</td><td><div class="bar-track"><div class="bar-fill warn" style="width:60%"></div></div><small style="color:var(--ink-2)">Día 9 de 15</small></td><td class="num">3</td><td><span class="chip info">Activa</span></td><td><button class="btn sm" onclick="go('ofertas')">Ofertas</button></td></tr>
+            <tr><td><b>Motor eléctrico 4.000 HP</b><br><small style="color:var(--muted)">OBS-201</small></td><td>12-08-2026</td><td><div class="bar-track"><div class="bar-fill" style="width:40%"></div></div><small style="color:var(--ink-2)">Día 6 de 15</small></td><td class="num">3</td><td><span class="chip info">Activa</span></td><td><button class="btn sm" onclick="go('ofertas')">Ofertas</button></td></tr>
+            <tr><td><b>Neumáticos 63" usados (×4)</b><br><small style="color:var(--muted)">OBS-204</small></td><td>16-08-2026</td><td><div class="bar-track"><div class="bar-fill" style="width:13%"></div></div><small style="color:var(--ink-2)">Día 2 de 15</small></td><td class="num">0</td><td><span class="chip info">Activa</span></td><td><button class="btn sm" onclick="go('ofertas')">Ofertas</button></td></tr>
+            <tr style="opacity:.75"><td><b>Impulsor celda de flotación</b><br><small style="color:var(--muted)">OBS-190</small></td><td>28-07-2026</td><td><div class="bar-track"><div class="bar-fill bad" style="width:100%"></div></div><small style="color:var(--bad-tx);font-weight:700">16 días — plazo cumplido</small></td><td class="num">0</td><td><span class="chip bad">Convertido a chatarra</span></td><td><button class="btn sm" onclick="go('despachos')">Ver flujo</button></td></tr>
+          </tbody>
+        </table></div></div>
+        <div class="audit-note" style="margin-top:12px">⚙ La conversión a chatarra es automática: genera la baja del activo, notifica al Coordinador Logístico y crea el registro en el flujo de enajenación (Fase 1).</div>
+      </section>
+
+      <!-- ================= OFERTAS ================= -->
+      <section class="screen" id="scr-ofertas">
+        <div class="page-head">
+          <div><h1>Ofertas y adjudicación</h1><p>Cuadro comparativo y matriz de evaluación configurable. Modifique los puntajes para recalcular la adjudicación en vivo.</p></div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h"><h3>Cuadro comparativo · Motor eléctrico 4.000 HP</h3><small>3 ofertas · cierre 27-08-2026</small></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Oferente</th><th>Due diligence</th><th class="num">Monto ofertado</th><th>Plazo de retiro</th><th>Forma de pago</th></tr></thead>
+            <tbody>
+              <tr><td><b>Ingemet SpA</b></td><td><span class="chip ok">Aprobada</span></td><td class="num">$ 33.500.000</td><td>10 días</td><td>Transferencia 100%</td></tr>
+              <tr><td><b>Maestranza Andina Ltda.</b></td><td><span class="chip ok">Aprobada</span></td><td class="num">$ 31.200.000</td><td>5 días</td><td>Transferencia 100%</td></tr>
+              <tr><td><b>Comercial Recimet</b></td><td><span class="chip warn">En revisión</span></td><td class="num">$ 29.000.000</td><td>15 días</td><td>50% + 50 % a 30 días</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="grid g23">
+          <div class="card">
+            <div class="card-h"><h3>Matriz de evaluación</h3><small>criterios y ponderaciones configurables</small></div>
+            <div class="tbl-wrap"><table id="matriz">
+              <thead><tr><th>Criterio</th><th class="num">Peso</th><th class="num">Ingemet</th><th class="num">M. Andina</th><th class="num">Recimet</th></tr></thead>
+              <tbody>
+                <tr data-w="50"><td>Precio ofertado</td><td class="num">50%</td><td class="num"><input class="score-in" type="number" min="1" max="10" value="10" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="9" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="8" oninput="calcMatriz()"></td></tr>
+                <tr data-w="20"><td>Plazo de retiro</td><td class="num">20%</td><td class="num"><input class="score-in" type="number" min="1" max="10" value="7" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="10" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="5" oninput="calcMatriz()"></td></tr>
+                <tr data-w="20"><td>Experiencia y due diligence</td><td class="num">20%</td><td class="num"><input class="score-in" type="number" min="1" max="10" value="9" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="8" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="6" oninput="calcMatriz()"></td></tr>
+                <tr data-w="10"><td>Forma de pago</td><td class="num">10%</td><td class="num"><input class="score-in" type="number" min="1" max="10" value="10" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="10" oninput="calcMatriz()"></td><td class="num"><input class="score-in" type="number" min="1" max="10" value="6" oninput="calcMatriz()"></td></tr>
+              </tbody>
+              <tfoot>
+                <tr style="font-weight:800;border-top:2px solid var(--line)">
+                  <td>Puntaje ponderado</td><td></td>
+                  <td class="num" id="sc0">—</td><td class="num" id="sc1">—</td><td class="num" id="sc2">—</td>
+                </tr>
+              </tfoot>
+            </table></div>
+            <div class="card-b" style="border-top:1px solid var(--line-2);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <button class="btn primary" onclick="adjudicar()">Emitir certificado de adjudicación</button>
+              <small id="winnerLbl" style="color:var(--ink-2)"></small>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Después de adjudicar</h3><small>flujo automático</small></div>
+            <div class="card-b">
+              <ul class="flow">
+                <li class="done"><span class="dot">1</span><div><b>Certificado de adjudicación</b><small>Se emite y notifica a todos los oferentes</small></div></li>
+                <li class="done"><span class="dot">2</span><div><b>Pago por transferencia</b><small>Registro y verificación del abono</small></div></li>
+                <li class="done"><span class="dot">3</span><div><b>Comisión de venta al vendor</b><small>Cálculo automático según contrato</small></div></li>
+                <li class="done"><span class="dot">4</span><div><b>Guía de despacho + certificado de entrega</b><small>Retiro coordinado en terreno</small></div></li>
+                <li class="done"><span class="dot">5</span><div><b>Baja del activo fijo</b><small>Comprobante al repositorio documental</small></div></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= PORTAL ================= -->
+      <section class="screen" id="scr-portal">
+        <div class="page-head">
+          <div><h1>Portal público de venta</h1><p>Lo que ve un comprador externo — acceso sin credenciales para consultar; registro y due diligence para ofertar.</p></div>
+        </div>
+        <div class="browser">
+          <div class="browser-bar"><i></i><i></i><i></i><span class="browser-url">https://venta.gea-escondida.cl</span></div>
+          <div class="portal-hd">
+            <div><h2>Venta de componentes industriales</h2><p>Publicaciones vigentes · Minera Escondida Limitada · Antofagasta, Chile</p></div>
+            <button class="btn" style="background:#fff" onclick="openModal('mRegistro')">Registrarse como comprador</button>
+          </div>
+          <div class="portal-grid">
+            <div class="pcard">
+              <div class="pimg" style="background:linear-gradient(140deg,#5A6B7C,#38434E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></div>
+              <div class="pbody"><b>Motor eléctrico 4.000 HP</b><span class="specs">WEG · 3.300 V · 50 Hz · usado, operativo al retiro de servicio</span><span class="pprice">Oferta mínima $ 28.500.000</span>
+              <div class="pfoot"><span class="chip info">9 días restantes</span><button class="btn sm primary" onclick="openModal('mOferta')">Presentar oferta</button></div></div>
+            </div>
+            <div class="pcard">
+              <div class="pimg" style="background:linear-gradient(140deg,#8C6A4E,#5C4232)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 16 5 8h14l2 8Z"/><path d="M5 16v3h14v-3"/><circle cx="8" cy="20" r="1.4"/><circle cx="16" cy="20" r="1.4"/></svg></div>
+              <div class="pbody"><b>Tolva CAEX Komatsu 930E</b><span class="specs">Capacidad 290 t · estructura completa · retiro en faena</span><span class="pprice">Oferta mínima $ 45.000.000</span>
+              <div class="pfoot"><span class="chip bad">Vence mañana</span><button class="btn sm primary" onclick="openModal('mOferta')">Presentar oferta</button></div></div>
+            </div>
+            <div class="pcard">
+              <div class="pimg" style="background:linear-gradient(140deg,#4E6B5A,#324538)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="12" r="4.4"/><circle cx="17" cy="12" r="4.4"/></svg></div>
+              <div class="pbody"><b>Neumáticos 63" usados (lote ×4)</b><span class="specs">Bridgestone 59/80R63 · 40–55% de vida remanente</span><span class="pprice">Oferta mínima $ 12.000.000</span>
+              <div class="pfoot"><span class="chip info">13 días restantes</span><button class="btn sm primary" onclick="openModal('mOferta')">Presentar oferta</button></div></div>
+            </div>
+            <div class="pcard">
+              <div class="pimg" style="background:linear-gradient(140deg,#6B5E7C,#453B52)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 8h16M4 12h16M4 16h16"/><circle cx="7" cy="8" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="17" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg></div>
+              <div class="pbody"><b>Polines de correa (lote 120 u)</b><span class="specs">Ø 152 mm · correa transportadora overland · estado mixto</span><span class="pprice">Oferta mínima $ 6.400.000</span>
+              <div class="pfoot"><span class="chip info">6 días restantes</span><button class="btn sm primary" onclick="openModal('mOferta')">Presentar oferta</button></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= INDICADORES ================= -->
+      <section class="screen" id="scr-indicadores">
+        <div class="page-head">
+          <div><h1>Indicadores de gestión</h1><p>Paneles de ambos procesos, con exportación a Excel y PDF.</p></div>
+          <div class="head-actions"><button class="btn" onclick="toast('Reporte exportado a Excel (.xlsx)')">⇩ Excel</button><button class="btn" onclick="toast('Reporte exportado a PDF')">⇩ PDF</button></div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-tabgroup="ind" data-tab="i1" onclick="tab(this)">Chatarra</button>
+          <button class="tab" data-tabgroup="ind" data-tab="i2" onclick="tab(this)">Componentes obsoletos</button>
+        </div>
+        <div class="tabpane active" data-tabgroup="ind" id="pane-i1">
+          <div class="grid g4" style="margin-bottom:16px">
+            <div class="card kpi"><div class="lbl">Tonelaje YTD</div><div class="val">3.201<small> t</small></div><div class="delta"><b class="up">▲ 12%</b> vs. 2025</div></div>
+            <div class="card kpi"><div class="lbl">Ingresos chatarra YTD</div><div class="val">$ 545<small> M</small></div><div class="delta">8 estados de pago</div></div>
+            <div class="card kpi"><div class="lbl">Días prom. aprobación EP</div><div class="val">6,2</div><div class="delta"><b class="up">▼ 2,1 días</b> vs. 2025</div></div>
+            <div class="card kpi"><div class="lbl">Pagos conciliados</div><div class="val">87<small> %</small></div><div class="delta">del monto aprobado YTD</div></div>
+          </div>
+          <div class="grid g2">
+            <div class="card"><div class="card-h"><h3>KPI de despachos · tonelaje mensual</h3><small>2026</small></div><div class="card-b chart-box" id="chTon2"></div></div>
+            <div class="card"><div class="card-h"><h3>KPI de pagos · estado de la cartera</h3><small>montos por estado, M CLP</small></div><div class="card-b chart-box" id="chPagos"></div></div>
+          </div>
+        </div>
+        <div class="tabpane" data-tabgroup="ind" id="pane-i2">
+          <div class="grid g4" style="margin-bottom:16px">
+            <div class="card kpi"><div class="lbl">Tiempo medio publicación</div><div class="val">9,4<small> días</small></div><div class="delta">límite: 15 días</div></div>
+            <div class="card kpi"><div class="lbl">Tasa de adjudicación</div><div class="val">68<small> %</small></div><div class="delta">de publicaciones cerradas</div></div>
+            <div class="card kpi"><div class="lbl">Conversión a chatarra</div><div class="val">18<small> %</small></div><div class="delta">sin ofertas dentro del plazo</div></div>
+            <div class="card kpi"><div class="lbl">Ingresos obsoletos YTD</div><div class="val">$ 385<small> M</small></div><div class="delta">incluye comisión vendor</div></div>
+          </div>
+          <div class="grid g2">
+            <div class="card"><div class="card-h"><h3>Resultado de publicaciones cerradas</h3><small>2026 · unidades</small></div><div class="card-b chart-box" id="chAdj"></div></div>
+            <div class="card"><div class="card-h"><h3>Ingresos por venta de obsoletos</h3><small>M CLP por mes</small></div><div class="card-b chart-box" id="chObsIng"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= SEGURIDAD ================= -->
+      <section class="screen" id="scr-seguridad">
+        <div class="page-head">
+          <div><h1>Roles y auditoría</h1><p>Seis perfiles con permisos granulares por módulo y acción, sobre políticas de seguridad a nivel de fila (RLS). Bitácora inmutable.</p></div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h"><h3>Matriz de permisos por módulo</h3><small>● total · ◐ parcial · ○ sin acceso</small></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Módulo</th><th>Limpieza patios</th><th>Vendor</th><th>ITO</th><th>Coordinador</th><th>Adm. Venta Web</th><th>Comprador</th></tr></thead>
+            <tbody>
+              <tr><td>Programa de limpieza</td><td><span class="perm part"></span></td><td><span class="perm none"></span></td><td><span class="perm full"></span></td><td><span class="perm full"></span></td><td><span class="perm none"></span></td><td><span class="perm none"></span></td></tr>
+              <tr><td>Despachos y recepciones</td><td><span class="perm part"></span></td><td><span class="perm part"></span></td><td><span class="perm full"></span></td><td><span class="perm full"></span></td><td><span class="perm none"></span></td><td><span class="perm none"></span></td></tr>
+              <tr><td>Estados de pago</td><td><span class="perm none"></span></td><td><span class="perm part"></span></td><td><span class="perm full"></span></td><td><span class="perm full"></span></td><td><span class="perm none"></span></td><td><span class="perm none"></span></td></tr>
+              <tr><td>Repositorio documental</td><td><span class="perm part"></span></td><td><span class="perm part"></span></td><td><span class="perm full"></span></td><td><span class="perm full"></span></td><td><span class="perm part"></span></td><td><span class="perm none"></span></td></tr>
+              <tr><td>Obsoletos y publicaciones</td><td><span class="perm none"></span></td><td><span class="perm none"></span></td><td><span class="perm none"></span></td><td><span class="perm full"></span></td><td><span class="perm full"></span></td><td><span class="perm none"></span></td></tr>
+              <tr><td>Portal público / ofertas</td><td><span class="perm none"></span></td><td><span class="perm none"></span></td><td><span class="perm none"></span></td><td><span class="perm full"></span></td><td><span class="perm full"></span></td><td><span class="perm part"></span></td></tr>
+              <tr><td>Indicadores</td><td><span class="perm none"></span></td><td><span class="perm none"></span></td><td><span class="perm part"></span></td><td><span class="perm full"></span></td><td><span class="perm part"></span></td><td><span class="perm none"></span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Bitácora de auditoría</h3><small>registro inmutable — solo lectura</small></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Rol</th><th>Acción</th><th>Objeto</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">18-08 11:42:07</td><td>C. Fuentes</td><td>ITO</td><td>Validó recepción</td><td class="mono">GD-4531</td></tr>
+              <tr><td class="mono">18-08 09:15:33</td><td>Ingemet SpA</td><td>Comprador</td><td>Presentó oferta</td><td class="mono">OBS-201</td></tr>
+              <tr><td class="mono">17-08 17:03:11</td><td>C. Fuentes</td><td>ITO</td><td>Envió EP a aprobación</td><td class="mono">EP-2026-07</td></tr>
+              <tr><td class="mono">17-08 08:20:45</td><td>Serlim Ltda.</td><td>Limpieza patios</td><td>Registró retiro con evidencia</td><td class="mono">GD-4531</td></tr>
+              <tr><td class="mono">13-08 00:00:02</td><td>Sistema</td><td>—</td><td>Conversión automática a chatarra</td><td class="mono">OBS-190</td></tr>
+              <tr><td class="mono">12-08 16:40:19</td><td>P. Salinas</td><td>Adm. Venta Web</td><td>Publicó componente</td><td class="mono">OBS-201</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ================= MODALES & TOAST ================= -->
+<div class="overlay" id="ovl" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="mDespacho" hidden>
+    <div class="modal-h"><h3>Despacho <span class="mono">GD-4531</span></h3><button class="modal-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-b">
+      <div class="grid g2" style="gap:10px;margin-bottom:14px">
+        <div><small style="color:var(--muted)">Patio origen</small><br><b>Los Colorados · Sector B-3</b></div>
+        <div><small style="color:var(--muted)">Empresa</small><br><b>Serlim Ltda.</b></div>
+        <div><small style="color:var(--muted)">Categoría</small><br><b>Fierro pesado · $185/kg</b></div>
+        <div><small style="color:var(--muted)">Peso validado</small><br><b>24.580 kg → $ 4.547.300</b></div>
+      </div>
+      <small style="color:var(--muted)">Evidencia fotográfica (3)</small>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <div style="flex:1;height:90px;border-radius:8px;background:linear-gradient(140deg,#C9CFD6,#8A939C)"></div>
+        <div style="flex:1;height:90px;border-radius:8px;background:linear-gradient(140deg,#D8C4B4,#A4785A)"></div>
+        <div style="flex:1;height:90px;border-radius:8px;background:linear-gradient(140deg,#B8C6BB,#7E948B)"></div>
+      </div>
+      <ul class="flow" style="margin-top:16px">
+        <li class="done"><span class="dot">✓</span><div><b>Retiro registrado en patio</b><small>Serlim · 17-08 08:20 · báscula MEL 24.600 kg</small></div></li>
+        <li class="done"><span class="dot">✓</span><div><b>Recepción en planta vendor</b><small>Metarec · 17-08 15:47 · báscula 2: 24.580 kg (-0,08%)</small></div></li>
+        <li class="done"><span class="dot">✓</span><div><b>Validación ITO y valorización</b><small>C. Fuentes · 18-08 11:42 · incluido en EP-2026-08</small></div></li>
+      </ul>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="closeModal()">Cerrar</button><button class="btn primary" onclick="closeModal();toast('Guía GD-4531 descargada del repositorio')">Descargar guía</button></div>
+  </div>
+
+  <div class="modal" id="mOferta" hidden>
+    <div class="modal-h"><h3>Presentar oferta</h3><button class="modal-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-b">
+      <div class="field"><label>Empresa oferente</label><input value="Maestranza Andina Ltda." readonly></div>
+      <div class="field"><label>Monto ofertado (CLP)</label><input placeholder="$ 0" value="$ 31.500.000"></div>
+      <div class="field"><label>Plazo de retiro comprometido</label><select><option>5 días hábiles</option><option>10 días hábiles</option><option>15 días hábiles</option></select></div>
+      <div class="field"><label>Comentarios</label><textarea rows="2" placeholder="Condiciones, equipos de izaje, etc."></textarea></div>
+      <small style="color:var(--muted)">Al ofertar acepta las bases de venta. Su oferta queda registrada y visible para el administrador en el cuadro comparativo.</small>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="closeModal();toast('Oferta registrada — recibirá confirmación por correo')">Enviar oferta</button></div>
+  </div>
+
+  <div class="modal" id="mRegistro" hidden>
+    <div class="modal-h"><h3>Registro de comprador</h3><button class="modal-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-b">
+      <div class="grid g2" style="gap:10px">
+        <div class="field"><label>Razón social</label><input placeholder="Empresa SpA"></div>
+        <div class="field"><label>RUT</label><input placeholder="76.XXX.XXX-X"></div>
+        <div class="field"><label>Correo de contacto</label><input placeholder="contacto@empresa.cl"></div>
+        <div class="field"><label>Teléfono</label><input placeholder="+56 9 …"></div>
+      </div>
+      <small style="color:var(--muted)">El registro pasa por verificación y due diligence antes de habilitar la presentación de ofertas.</small>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="closeModal();toast('Solicitud enviada — due diligence en proceso')">Crear cuenta</button></div>
+  </div>
+
+  <div class="modal" id="mCert" hidden>
+    <div class="modal-h"><h3>Certificado de adjudicación</h3><button class="modal-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-b">
+      <div class="cert">
+        <svg class="brand-hex" viewBox="0 0 44 44" aria-hidden="true"><path d="M22 2 39 12v20L22 42 5 32V12Z" fill="none" stroke="#A4562E" stroke-width="2.5"/><path d="M22 12 31 17v10l-9 5-9-5V17Z" fill="#A4562E"/></svg>
+        <h4>Certificado de adjudicación</h4>
+        <p class="mono">CA-2026-047 · 18-08-2026</p>
+        <p>Se certifica que la venta del componente <b>Motor eléctrico 4.000 HP</b> (<span class="mono">OBS-201</span>) ha sido adjudicada a</p>
+        <p style="font-size:16px;font-weight:800;color:var(--ink)" id="certWinner">—</p>
+        <p id="certDetail">—</p>
+        <p style="font-size:11px;color:var(--muted)">Emitido según matriz de evaluación vigente · Coordinación Logística MEL</p>
+      </div>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="closeModal()">Cerrar</button><button class="btn primary" onclick="closeModal();toast('Certificado emitido y notificado a los oferentes')">Emitir y notificar</button></div>
+  </div>
+</div>
+<div id="toast"><span class="tick">✓</span><span id="toastMsg"></span></div>
+
+<script>
+/* ================= datos & estado ================= */
+const ROLES = {
+  coordinador:{name:"R. Miranda",label:"Coordinador Logístico MEL",desc:"Dueño del proceso: aprueba estados de pago y bajas, ve todo.",ini:"CL",color:"#A4562E",
+    screens:["panel","programa","despachos","valorizacion","estados","documental","inventario","publicaciones","ofertas","portal","indicadores","seguridad"],land:"panel"},
+  ito:{name:"C. Fuentes",label:"ITO",desc:"Valida despachos y recepciones, aplica descuentos, prepara el EP.",ini:"IT",color:"#2F6DA3",
+    screens:["panel","programa","despachos","valorizacion","estados","documental","indicadores"],land:"panel"},
+  limpieza:{name:"Serlim Ltda.",label:"Empresa de limpieza de patios",desc:"Consulta el programa semanal y registra retiros con evidencia.",ini:"LP",color:"#4E7A5A",
+    screens:["programa","despachos"],land:"programa"},
+  vendor:{name:"Metarec SpA",label:"Vendor de chatarra",desc:"Revisa despachos valorizados y estados de pago; carga comprobantes.",ini:"VC",color:"#6B5E7C",
+    screens:["despachos","valorizacion","estados","documental"],land:"estados"},
+  adminventa:{name:"P. Salinas",label:"Adm. Plataforma de Venta Web",desc:"Publica componentes, gestiona ofertas y emite adjudicaciones.",ini:"AV",color:"#8A6116",
+    screens:["panel","inventario","publicaciones","ofertas","portal","documental","indicadores"],land:"publicaciones"},
+  comprador:{name:"Maestranza Andina",label:"Comprador externo",desc:"Usuario autoregistrado: consulta publicaciones y presenta ofertas.",ini:"CO",color:"#38434E",
+    screens:["portal"],land:"portal"}
+};
+const NAV = [
+  {group:"Inicio",items:[["panel","Panel de control","M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z"]]},
+  {group:"Chatarra · F1–F2",items:[
+    ["programa","Programa de limpieza","M8 2v4M16 2v4M3 9h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"],
+    ["despachos","Despachos y recepciones","M1 8h13v8H1zM14 11h4l3 3v2h-7zM5 19a2 2 0 1 0 .01 0M17 19a2 2 0 1 0 .01 0"],
+    ["valorizacion","Valorización y precios","M12 2v20M17 6H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"],
+    ["estados","Estados de pago","M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 14l2 2 4-4"],
+    ["documental","Repositorio documental","M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"]]},
+  {group:"Obsoletos · F3",items:[
+    ["inventario","Inventario y logística","M21 8 12 3 3 8v8l9 5 9-5zM12 13 3 8M12 13l9-5M12 13v9"],
+    ["publicaciones","Publicaciones","M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"],
+    ["ofertas","Ofertas y adjudicación","M8 21h8M12 17v4M17 4H7v5a5 5 0 0 0 10 0zM7 6H4a3 3 0 0 0 3 5M17 6h3a3 3 0 0 1-3 5"],
+    ["portal","Portal público","M12 2a10 10 0 1 0 .01 0M2 12h20M12 2c3 3 3 17 0 20c-3-3-3-17 0-20"]]},
+  {group:"Gestión · F4",items:[
+    ["indicadores","Indicadores","M3 21h18M7 21V9M12 21V3M17 21v-8"],
+    ["seguridad","Roles y auditoría","M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10z"]]}
+];
+const TITLES = {panel:"Panel de control",programa:"Programa de limpieza",despachos:"Despachos y recepciones",valorizacion:"Valorización y precios",estados:"Estados de pago",documental:"Repositorio documental",inventario:"Inventario y logística",publicaciones:"Publicaciones",ofertas:"Ofertas y adjudicación",portal:"Portal público",indicadores:"Indicadores",seguridad:"Roles y auditoría"};
+let role = "coordinador", screen = "panel";
+
+/* ================= login ================= */
+const roleList = document.getElementById("roleList");
+Object.entries(ROLES).forEach(([k,r])=>{
+  const b=document.createElement("button");b.className="role-btn";
+  b.innerHTML=`<span class="role-ini" style="background:${r.color}">${r.ini}</span><span><b>${r.label}</b><small>${r.desc}</small></span>`;
+  b.onclick=()=>{login(k)};roleList.appendChild(b);
+});
+function login(k){document.body.classList.add("in-app");setRole(k);toast("Sesión iniciada como "+ROLES[k].label)}
+function logout(){document.body.classList.remove("in-app","role-limited","nav-open")}
+
+/* ================= nav & rbac ================= */
+const sideNav=document.getElementById("sideNav");
+NAV.forEach(g=>{
+  const div=document.createElement("div");div.className="nav-group";div.innerHTML=`<span>${g.group}</span>`;
+  g.items.forEach(([id,lbl,path])=>{
+    const b=document.createElement("button");b.className="nav-item";b.dataset.screen=id;
+    b.innerHTML=`<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg>${lbl}`;
+    b.onclick=()=>go(id);div.appendChild(b);
+  });
+  sideNav.appendChild(div);
+});
+const roleSel=document.getElementById("roleSel");
+Object.entries(ROLES).forEach(([k,r])=>{const o=document.createElement("option");o.value=k;o.textContent=r.label;roleSel.appendChild(o)});
+
+function setRole(k){
+  role=k;const r=ROLES[k];roleSel.value=k;
+  document.getElementById("userName").textContent=r.name;
+  document.getElementById("userRole").textContent=r.label;
+  document.getElementById("bannerRole").textContent=r.label;
+  document.body.classList.toggle("role-limited",k!=="coordinador");
+  document.querySelectorAll(".nav-item").forEach(b=>{b.style.display=r.screens.includes(b.dataset.screen)?"":"none"});
+  document.querySelectorAll(".nav-group").forEach(g=>{
+    const any=[...g.querySelectorAll(".nav-item")].some(b=>b.style.display!=="none");
+    g.style.display=any?"":"none";
+  });
+  go(r.screens.includes(screen)?screen:r.land);
+}
+function go(id){
+  if(!ROLES[role].screens.includes(id)){toast("Su perfil no tiene acceso a ese módulo");return}
+  screen=id;document.body.classList.remove("nav-open");
+  document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("active",s.id==="scr-"+id));
+  document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.screen===id));
+  document.getElementById("crumb").textContent=TITLES[id];
+  window.scrollTo({top:0});
+}
+
+/* ================= tabs / docs / toast / modal ================= */
+function tab(btn){
+  const g=btn.dataset.tabgroup;
+  document.querySelectorAll(`.tab[data-tabgroup="${g}"]`).forEach(t=>t.classList.toggle("active",t===btn));
+  document.querySelectorAll(`.tabpane[data-tabgroup="${g}"]`).forEach(p=>p.classList.toggle("active",p.id==="pane-"+btn.dataset.tab));
+}
+function filterDocs(btn,t){
+  document.querySelectorAll("#docFilters button").forEach(b=>b.classList.toggle("active",b===btn));
+  document.querySelectorAll("#docTable tbody tr").forEach(r=>{r.style.display=(t==="all"||r.dataset.t===t)?"":"none"});
+}
+let toastT;
+function toast(msg){
+  document.getElementById("toastMsg").textContent=msg;
+  const t=document.getElementById("toast");t.classList.add("show");
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2600);
+}
+function openModal(id){
+  document.querySelectorAll(".modal").forEach(m=>m.hidden=m.id!==id);
+  document.getElementById("ovl").classList.add("open");
+}
+function closeModal(){document.getElementById("ovl").classList.remove("open")}
+
+/* ================= estado de pago ================= */
+function approveEP(){
+  document.getElementById("ep7chip").innerHTML='<span class="chip ok">Aprobado</span>';
+  const st=document.getElementById("stepCoord");st.classList.remove("now","rej");st.classList.add("done");st.querySelector(".dot").textContent="✓";
+  document.getElementById("stepCoordTxt").textContent="Aprobado por R. Miranda · hoy "+hora();
+  document.getElementById("stepPago").classList.add("now");
+  document.getElementById("ep7actions").style.display="none";hideReject();
+  toast("EP-2026-07 aprobado — vendor notificado para facturación");
+}
+function showReject(){document.getElementById("ep7reject").style.display="block"}
+function hideReject(){document.getElementById("ep7reject").style.display="none"}
+function rejectEP(){
+  const obs=document.getElementById("rejText").value.trim();
+  if(!obs){toast("La observación es obligatoria para rechazar");return}
+  document.getElementById("ep7chip").innerHTML='<span class="chip bad">Rechazado</span>';
+  const st=document.getElementById("stepCoord");st.classList.remove("now");st.classList.add("rej");st.querySelector(".dot").textContent="✕";
+  document.getElementById("stepCoordTxt").textContent="Rechazado por R. Miranda · hoy "+hora()+' · "'+obs+'" — devuelto al ITO';
+  document.getElementById("ep7actions").style.display="none";hideReject();
+  toast("EP-2026-07 rechazado y devuelto al ITO con observación");
+}
+function hora(){const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
+
+/* ================= matriz ================= */
+const OFERENTES=["Ingemet SpA","Maestranza Andina Ltda.","Comercial Recimet"];
+function calcMatriz(){
+  const rows=[...document.querySelectorAll("#matriz tbody tr")];
+  const tot=[0,0,0];
+  rows.forEach(r=>{
+    const w=+r.dataset.w/100;
+    [...r.querySelectorAll("input")].forEach((inp,i)=>{tot[i]+=Math.min(10,Math.max(0,+inp.value||0))*w});
+  });
+  const max=Math.max(...tot);
+  tot.forEach((t,i)=>{
+    const c=document.getElementById("sc"+i);
+    c.innerHTML=t.toFixed(2)+(t===max?'<br><span class="winner-tag">Adjudicar</span>':"");
+    c.classList.toggle("win",t===max);
+  });
+  window._winner={name:OFERENTES[tot.indexOf(max)],score:max.toFixed(2)};
+  document.getElementById("winnerLbl").textContent="Mejor evaluado: "+window._winner.name+" ("+window._winner.score+" pts)";
+}
+function adjudicar(){
+  document.getElementById("certWinner").textContent=window._winner.name;
+  document.getElementById("certDetail").textContent="Puntaje ponderado "+window._winner.score+" / 10,00 · monto adjudicado según oferta vigente.";
+  openModal("mCert");
+}
+calcMatriz();
+
+/* ================= charts ================= */
+const MESES=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago"];
+const fmt=n=>n.toLocaleString("es-CL");
+function barChart(el,labels,data,{color="#A4562E",unit="",W=520,H=230}={}){
+  const box=document.getElementById(el);if(!box)return;
+  const P={l:34,r:8,t:14,b:26},iw=W-P.l-P.r,ih=H-P.t-P.b;
+  const max=Math.ceil(Math.max(...data)*1.15/50)*50;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfico de barras">`;
+  for(let i=0;i<=4;i++){const y=P.t+ih-ih*i/4;
+    s+=`<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="${i?"var(--grid)":"var(--axis)"}" stroke-width="1"/>`;
+    s+=`<text x="${P.l-6}" y="${y+3}" text-anchor="end" font-size="9.5" fill="var(--axis)" style="font-variant-numeric:tabular-nums">${fmt(max*i/4)}</text>`;}
+  const bw=Math.min(30,iw/data.length*0.55);
+  data.forEach((v,i)=>{
+    const x=P.l+iw*(i+0.5)/data.length-bw/2,h=ih*v/max,y=P.t+ih-h;
+    s+=`<path d="M${x} ${y+4} q0-4 4-4 h${bw-8} q4 0 4 4 V${P.t+ih} H${x}Z" fill="${color}" data-i="${i}" class="bar"/>`;
+    s+=`<text x="${x+bw/2}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--axis)">${labels[i]}</text>`;
+  });
+  s+=`</svg><div class="tip"></div>`;box.innerHTML=s;
+  hover(box,i=>`${labels[i]} · <b>${fmt(data[i])}${unit}</b>`,".bar");
+}
+function lineChart(el,labels,series,{W=520,H=230,unit=" M"}={}){
+  const box=document.getElementById(el);if(!box)return;
+  const P={l:34,r:8,t:14,b:26},iw=W-P.l-P.r,ih=H-P.t-P.b;
+  const all=series.flatMap(s=>s.data);
+  const max=Math.ceil(Math.max(...all)*1.15/20)*20;
+  const X=i=>P.l+iw*(i+0.5)/labels.length, Y=v=>P.t+ih-ih*v/max;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfico de líneas">`;
+  for(let i=0;i<=4;i++){const y=P.t+ih-ih*i/4;
+    s+=`<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="${i?"var(--grid)":"var(--axis)"}" stroke-width="1"/>`;
+    s+=`<text x="${P.l-6}" y="${y+3}" text-anchor="end" font-size="9.5" fill="var(--axis)" style="font-variant-numeric:tabular-nums">${fmt(max*i/4)}</text>`;}
+  labels.forEach((l,i)=>{s+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--axis)">${l}</text>`});
+  series.forEach(sr=>{
+    const pts=sr.data.map((v,i)=>`${X(i)},${Y(v)}`).join(" ");
+    s+=`<polyline points="${pts}" fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    sr.data.forEach((v,i)=>{s+=`<circle cx="${X(i)}" cy="${Y(v)}" r="3.4" fill="${sr.color}" stroke="var(--surface)" stroke-width="2" class="pt" data-i="${i}"/>`});
+  });
+  s+=`</svg><div class="tip"></div>`;box.innerHTML=s;
+  hover(box,i=>labels[i]+" · "+series.map(sr=>`<span style="opacity:.8">${sr.name}</span> <b>${fmt(sr.data[i])}${unit}</b>`).join(" · "),".pt");
+  box.insertAdjacentHTML("beforeend",`<div class="legend">${series.map(sr=>`<span><i style="background:${sr.color}"></i>${sr.name}</span>`).join("")}</div>`);
+}
+function hbarChart(el,rows,{W=520,unit="",colors}={}){
+  const box=document.getElementById(el);if(!box)return;
+  const max=Math.max(...rows.map(r=>r.v));const rh=34,P={l:150,r:56,t:6},H=P.t+rows.length*rh+6;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfico de barras horizontales">`;
+  rows.forEach((r,i)=>{
+    const y=P.t+i*rh, w=(W-P.l-P.r)*r.v/max;
+    s+=`<text x="${P.l-10}" y="${y+rh/2+3}" text-anchor="end" font-size="11" fill="var(--ink-2)">${r.k}</text>`;
+    s+=`<path d="M${P.l} ${y+8} h${Math.max(w-4,4)} q4 0 4 4 v${rh-24} q0 4 -4 4 h-${Math.max(w-4,4)}Z" fill="${(colors&&colors[i])||"#A4562E"}" class="bar" data-i="${i}"/>`;
+    s+=`<text x="${P.l+w+8}" y="${y+rh/2+3}" font-size="11" font-weight="700" fill="var(--ink)" style="font-variant-numeric:tabular-nums">${r.lbl||fmt(r.v)+unit}</text>`;
+  });
+  s+=`</svg><div class="tip"></div>`;box.innerHTML=s;
+  hover(box,i=>`${rows[i].k} · <b>${rows[i].lbl||fmt(rows[i].v)+unit}</b>`,".bar");
+}
+function hover(box,html,sel){
+  const tip=box.querySelector(".tip");
+  box.querySelectorAll(sel).forEach(m=>{
+    m.addEventListener("mousemove",e=>{
+      const r=box.getBoundingClientRect();
+      tip.style.left=(e.clientX-r.left)+"px";tip.style.top=(e.clientY-r.top)+"px";
+      tip.innerHTML=html(+m.dataset.i);tip.style.opacity=1;
+    });
+    m.addEventListener("mouseleave",()=>tip.style.opacity=0);
+  });
+}
+const TON=[358,402,371,415,389,428,441,397];
+barChart("chTon",MESES,TON,{unit:" t"});
+barChart("chTon2",MESES,TON,{unit:" t"});
+lineChart("chIng",MESES,[
+  {name:"Chatarra",color:"#2a78d6",data:[58,66,61,71,64,74,83,68]},
+  {name:"Obsoletos",color:"#eb6834",data:[12,0,45,28,95,31,120,54]}
+]);
+lineChart("chObsIng",MESES,[{name:"Obsoletos",color:"#eb6834",data:[12,0,45,28,95,31,120,54]}]);
+hbarChart("chCat",[
+  {k:"Fierro pesado",v:57.8,lbl:"$ 57,8 M"},{k:"Fierro liviano",v:14.2,lbl:"$ 14,2 M"},
+  {k:"Cables forrados",v:7.5,lbl:"$ 7,5 M"},{k:"Bronce",v:5.2,lbl:"$ 5,2 M"},{k:"Acero inox.",v:4.5,lbl:"$ 4,5 M"}
+]);
+hbarChart("chPagos",[
+  {k:"Conciliado",v:435,lbl:"$ 435 M"},{k:"Aprobado por conciliar",v:110,lbl:"$ 110 M"},
+  {k:"En aprobación",v:83,lbl:"$ 83 M"},{k:"Rechazado / en ajuste",v:12,lbl:"$ 12 M"}
+],{colors:["#3E8E5A","#2a78d6","#C98500","#C0453A"]});
+hbarChart("chAdj",[
+  {k:"Adjudicadas",v:17,lbl:"17 (68%)"},{k:"Convertidas a chatarra",v:5,lbl:"5 (18%)"},{k:"Retiradas de venta",v:3,lbl:"3 (14%)"}
+],{colors:["#3E8E5A","#C0453A","#948B80"]});
+
+setRole("coordinador");
+document.body.classList.remove("in-app");
+</script>
