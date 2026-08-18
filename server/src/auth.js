@@ -1,11 +1,12 @@
 import jwt from 'jsonwebtoken';
-import { db } from './db.js';
+import { supa, q } from './supa.js';
 
 export const SECRET = process.env.GEA_JWT_SECRET || 'gea-dev-secret';
 
-export function login(username, password) {
-  const u = db.prepare('SELECT * FROM users WHERE username=?').get(username);
-  if (!u || u.password !== password) return null; // demo: en producción, hash + política de credenciales corporativas
+export async function login(username, password) {
+  const rows = await q(supa.from('users').select('*').eq('username', username).limit(1));
+  const u = rows[0];
+  if (!u || u.password !== password) return null; // demo: en producción, Supabase Auth + credenciales corporativas
   const user = { id: u.id, username: u.username, name: u.name, role: u.role, comprador_id: u.comprador_id };
   return { token: jwt.sign(user, SECRET, { expiresIn: '12h' }), user };
 }

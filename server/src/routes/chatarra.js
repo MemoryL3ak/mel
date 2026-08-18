@@ -1,164 +1,208 @@
 import { Router } from 'express';
-import { db, audit, generarEP, recalcularEP, hoy } from '../db.js';
+import { supa, q, ah, audit, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 
 const r = Router();
 const OPER = ['limpieza', 'ito', 'coordinador'];
 const LECT = ['limpieza', 'vendor', 'ito', 'coordinador'];
 
+const finMes = (periodo) => periodo + '-31'; // límite superior inclusivo para fechas 'YYYY-MM-DD'
+
 /* ---------- maestros ---------- */
-r.get('/maestros', auth(), (_req, res) => {
-  res.json({
-    patios: db.prepare('SELECT * FROM patios').all(),
-    categorias: db.prepare('SELECT * FROM categorias ORDER BY nombre').all(),
-  });
-});
+r.get('/maestros', auth(), ah(async (_req, res) => {
+  const [patios, categorias] = await Promise.all([
+    q(supa.from('patios').select('*').order('id')),
+    q(supa.from('categorias').select('*').order('nombre')),
+  ]);
+  res.json({ patios, categorias });
+}));
 
 /* ---------- programa de limpieza ---------- */
-r.get('/programa', auth(...OPER), (req, res) => {
-  const rows = db.prepare(
-    'SELECT p.*, pa.nombre AS patio FROM programa p JOIN patios pa ON pa.id=p.patio_id ORDER BY p.semana DESC, p.id'
-  ).all();
-  const semanas = [...new Set(rows.map((x) => x.semana))];
-  res.json({ semanas, rows });
-});
+r.get('/programa', auth(...OPER), ah(async (_req, res) => {
+  const rows = (await q(
+    supa.from('programa').select('*, patios(nombre)').order('semana', { ascending: false }).order('id')
+  )).map((p) => ({ ...p, patio: p.patios?.nombre, patios: undefined }));
+  res.json({ semanas: [...new Set(rows.map((x) => x.semana))], rows });
+}));
 
-r.post('/programa/:id/ejecutar', auth(...OPER), (req, res) => {
+r.post('/programa/:id/ejecutar', auth(...OPER), ah(async (req, res) => {
   const { real_ton } = req.body || {};
   if (!real_ton || real_ton <= 0) return res.status(400).json({ error: 'Indique el tonelaje real retirado' });
-  db.prepare("UPDATE programa SET real_ton=?, estado='ejecutado', fecha=COALESCE(fecha,?) WHERE id=?")
-    .run(real_ton, hoy(), req.params.id);
+  const rows = await q(
+    supa.from('programa').update({ real_ton, estado: 'ejecutado' }).eq('id', req.params.id).select()
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Retiro programado no encontrado' });
+  if (!rows[0].fecha) await q(supa.from('programa').update({ fecha: hoy() }).eq('id', req.params.id).select('id'));
   audit(req.user.name, req.user.role, 'Registró ejecución de retiro programado', 'PRG-' + req.params.id);
   res.json({ ok: true });
-});
+}));
 
 /* ---------- despachos y recepciones ---------- */
-const DESP_SQL = `SELECT d.*, pa.nombre AS patio, c.nombre AS categoria, c.precio_kg,
-  ROUND(COALESCE(d.kg_destino, d.kg_origen) * c.precio_kg) AS valor,
-  ep.folio AS ep_folio
-  FROM despachos d
-  JOIN patios pa ON pa.id=d.patio_id
-  JOIN categorias c ON c.id=d.categoria_id
-  LEFT JOIN estados_pago ep ON ep.id=d.ep_id`;
-
-r.get('/despachos', auth(...LECT), (_req, res) => {
-  res.json(db.prepare(DESP_SQL + ' ORDER BY d.fecha DESC, d.id DESC LIMIT 60').all());
+const DESP_SEL = '*, patios(nombre), categorias(nombre, precio_kg), estados_pago(folio)';
+const despView = (d) => ({
+  ...d,
+  patio: d.patios?.nombre,
+  categoria: d.categorias?.nombre,
+  precio_kg: d.categorias?.precio_kg,
+  valor: Math.round((d.kg_destino ?? d.kg_origen) * (d.categorias?.precio_kg ?? 0)),
+  ep_folio: d.estados_pago?.folio ?? null,
+  patios: undefined, categorias: undefined, estados_pago: undefined,
 });
 
-r.get('/despachos/:id', auth(...LECT), (req, res) => {
-  const d = db.prepare(DESP_SQL + ' WHERE d.id=?').get(req.params.id);
+r.get('/despachos', auth(...LECT), ah(async (_req, res) => {
+  const rows = await q(
+    supa.from('despachos').select(DESP_SEL)
+      .order('fecha', { ascending: false }).order('id', { ascending: false }).limit(60)
+  );
+  res.json(rows.map(despView));
+}));
+
+r.get('/despachos/:id', auth(...LECT), ah(async (req, res) => {
+  const d = await q(supa.from('despachos').select(DESP_SEL).eq('id', req.params.id).maybeSingle());
   if (!d) return res.status(404).json({ error: 'Despacho no encontrado' });
-  res.json(d);
-});
+  res.json(despView(d));
+}));
 
-r.post('/despachos', auth(...OPER), (req, res) => {
+r.post('/despachos', auth(...OPER), ah(async (req, res) => {
   const { patio_id, categoria_id, kg_origen, fotos = 2 } = req.body || {};
   if (!patio_id || !categoria_id || !kg_origen) return res.status(400).json({ error: 'Patio, categoría y peso son obligatorios' });
-  const last = db.prepare("SELECT MAX(CAST(substr(guia,4) AS INTEGER)) AS n FROM despachos").get().n || 4500;
+  const guias = await q(supa.from('despachos').select('guia'));
+  const last = guias.reduce((m, g) => Math.max(m, parseInt(g.guia.slice(3)) || 0), 4500);
   const guia = 'GD-' + (last + 1);
-  db.prepare('INSERT INTO despachos(guia,fecha,patio_id,categoria_id,kg_origen,fotos) VALUES (?,?,?,?,?,?)')
-    .run(guia, hoy(), patio_id, categoria_id, kg_origen, fotos);
+  await q(supa.from('despachos').insert({ guia, fecha: hoy(), patio_id, categoria_id, kg_origen, fotos }).select('id'));
   audit(req.user.name, req.user.role, 'Registró retiro con evidencia', guia);
-  res.status(201).json(db.prepare(DESP_SQL + ' WHERE d.guia=?').get(guia));
-});
+  const d = await q(supa.from('despachos').select(DESP_SEL).eq('guia', guia).single());
+  res.status(201).json(despView(d));
+}));
 
-r.post('/despachos/:id/recepcionar', auth('ito', 'coordinador', 'vendor'), (req, res) => {
+r.post('/despachos/:id/recepcionar', auth('ito', 'coordinador', 'vendor'), ah(async (req, res) => {
   const { kg_destino } = req.body || {};
-  const d = db.prepare('SELECT * FROM despachos WHERE id=?').get(req.params.id);
+  const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).maybeSingle());
   if (!d) return res.status(404).json({ error: 'Despacho no encontrado' });
   if (!kg_destino || kg_destino <= 0) return res.status(400).json({ error: 'Indique el peso validado en destino' });
   const dif = Math.abs(kg_destino - d.kg_origen) / d.kg_origen;
   const estado = dif > 0.02 ? 'observado' : 'recepcionado';
-  db.prepare('UPDATE despachos SET kg_destino=?, estado=? WHERE id=?').run(kg_destino, estado, d.id);
+  await q(supa.from('despachos').update({ kg_destino, estado }).eq('id', d.id).select('id'));
   audit(req.user.name, req.user.role, estado === 'observado' ? 'Recepción observada (dif. de peso >2%)' : 'Validó recepción', d.guia);
   res.json({ ok: true, estado });
-});
+}));
 
 /* ---------- valorización ---------- */
-r.get('/valorizacion', auth('vendor', 'ito', 'coordinador'), (_req, res) => {
-  const categorias = db.prepare('SELECT * FROM categorias ORDER BY precio_kg DESC').all();
+r.get('/valorizacion', auth('vendor', 'ito', 'coordinador'), ah(async (_req, res) => {
   const mes = hoy().slice(0, 7);
-  const resumen = db.prepare(`
-    SELECT c.nombre, c.precio_kg,
-      COALESCE(SUM(COALESCE(d.kg_destino,d.kg_origen)),0) AS kg,
-      ROUND(COALESCE(SUM(COALESCE(d.kg_destino,d.kg_origen)*c.precio_kg),0)) AS valor
-    FROM categorias c
-    LEFT JOIN despachos d ON d.categoria_id=c.id AND substr(d.fecha,1,7)=?
-    GROUP BY c.id ORDER BY valor DESC`).all(mes);
+  const [categorias, desp] = await Promise.all([
+    q(supa.from('categorias').select('*').order('precio_kg', { ascending: false })),
+    q(supa.from('despachos').select('categoria_id, kg_origen, kg_destino').gte('fecha', mes + '-01').lte('fecha', finMes(mes))),
+  ]);
+  const resumen = categorias.map((c) => {
+    const kg = desp.filter((d) => d.categoria_id === c.id)
+      .reduce((s, d) => s + (d.kg_destino ?? d.kg_origen), 0);
+    return { nombre: c.nombre, precio_kg: c.precio_kg, kg, valor: Math.round(kg * c.precio_kg) };
+  }).sort((a, b) => b.valor - a.valor);
   res.json({ contrato: 'CTR-MEL-2025-114', vendor: 'Metarec SpA', vigencia: '2026-12-31', mes, categorias, resumen });
-});
+}));
 
 /* ---------- estados de pago ---------- */
-function epView(ep) {
-  const desc = db.prepare('SELECT * FROM descuentos WHERE ep_id=?').all(ep.id);
-  const pagos = db.prepare('SELECT * FROM pagos_vendor WHERE ep_id=? ORDER BY fecha').all(ep.id);
-  const pagado = pagos.reduce((s, p) => s + p.monto, 0);
-  const nDesp = db.prepare('SELECT COUNT(*) AS n FROM despachos WHERE ep_id=?').get(ep.id).n;
-  const lineas = db.prepare(`
-    SELECT c.nombre, COUNT(*) AS n, SUM(d.kg_destino) AS kg, ROUND(SUM(d.kg_destino*c.precio_kg)) AS monto
-    FROM despachos d JOIN categorias c ON c.id=d.categoria_id
-    WHERE d.ep_id=? GROUP BY c.id ORDER BY monto DESC`).all(ep.id);
-  return {
-    ...ep, descuentos: desc, pagos, pagado, n_despachos: nDesp, lineas,
-    conciliacion: ep.estado !== 'aprobado' ? null : pagado >= ep.total ? 'conciliado' : pagado > 0 ? 'parcial' : 'pendiente',
-    pct_pagado: ep.total ? Math.round((pagado / ep.total) * 100) : 0,
-  };
+async function epsView() {
+  const [eps, descs, pagos, desp] = await Promise.all([
+    q(supa.from('estados_pago').select('*').order('periodo', { ascending: false })),
+    q(supa.from('descuentos').select('*')),
+    q(supa.from('pagos_vendor').select('*').order('fecha')),
+    q(supa.from('despachos').select('id, ep_id, kg_destino, categorias(nombre, precio_kg)').not('ep_id', 'is', null)),
+  ]);
+  return eps.map((ep) => {
+    const descuentos = descs.filter((x) => x.ep_id === ep.id);
+    const pagosEp = pagos.filter((x) => x.ep_id === ep.id);
+    const propios = desp.filter((x) => x.ep_id === ep.id);
+    const porCat = {};
+    propios.forEach((x) => {
+      const L = (porCat[x.categorias.nombre] ??= { nombre: x.categorias.nombre, n: 0, kg: 0, monto: 0 });
+      L.n += 1; L.kg += x.kg_destino; L.monto += x.kg_destino * x.categorias.precio_kg;
+    });
+    const lineas = Object.values(porCat)
+      .map((l) => ({ ...l, monto: Math.round(l.monto) }))
+      .sort((a, b) => b.monto - a.monto);
+    const pagado = pagosEp.reduce((s, x) => s + x.monto, 0);
+    return {
+      ...ep, descuentos, pagos: pagosEp, pagado, n_despachos: propios.length, lineas,
+      conciliacion: ep.estado !== 'aprobado' ? null : pagado >= ep.total ? 'conciliado' : pagado > 0 ? 'parcial' : 'pendiente',
+      pct_pagado: ep.total ? Math.round((pagado / ep.total) * 100) : 0,
+    };
+  });
+}
+const epView = async (id) => (await epsView()).find((e) => e.id === +id);
+
+r.get('/eps', auth('vendor', 'ito', 'coordinador'), ah(async (_req, res) => {
+  res.json(await epsView());
+}));
+
+r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
+  const periodo = (req.body && req.body.periodo) || hoy().slice(0, 7);
+  const existe = await q(supa.from('estados_pago').select('id').eq('periodo', periodo));
+  if (existe.length) return res.status(409).json({ error: `Ya existe un estado de pago para el período ${periodo}` });
+  const pend = await q(
+    supa.from('despachos').select('id, kg_destino, categorias(precio_kg)')
+      .is('ep_id', null).in('estado', ['recepcionado', 'observado'])
+      .gte('fecha', periodo + '-01').lte('fecha', finMes(periodo))
+  );
+  if (!pend.length) return res.status(400).json({ error: 'No hay despachos recepcionados sin EP en ese período' });
+  const bruto = Math.round(pend.reduce((s, d) => s + d.kg_destino * d.categorias.precio_kg, 0));
+  const [ep] = await q(supa.from('estados_pago').insert({ folio: 'EP-' + periodo, periodo, bruto, total: bruto }).select());
+  await q(supa.from('despachos').update({ ep_id: ep.id }).in('id', pend.map((d) => d.id)).select('id'));
+  audit(req.user.name, req.user.role, 'Generó estado de pago', ep.folio);
+  res.status(201).json(await epView(ep.id));
+}));
+
+async function recalcularEP(epId) {
+  const [descs, ep] = await Promise.all([
+    q(supa.from('descuentos').select('monto').eq('ep_id', epId)),
+    q(supa.from('estados_pago').select('bruto').eq('id', epId).single()),
+  ]);
+  const total = ep.bruto - descs.reduce((s, d) => s + d.monto, 0);
+  await q(supa.from('estados_pago').update({ total }).eq('id', epId).select('id'));
 }
 
-r.get('/eps', auth('vendor', 'ito', 'coordinador'), (_req, res) => {
-  res.json(db.prepare('SELECT * FROM estados_pago ORDER BY periodo DESC').all().map(epView));
-});
-
-r.post('/eps/generar', auth('ito', 'coordinador'), (req, res) => {
-  const periodo = (req.body && req.body.periodo) || hoy().slice(0, 7);
-  if (db.prepare('SELECT 1 FROM estados_pago WHERE periodo=?').get(periodo))
-    return res.status(409).json({ error: `Ya existe un estado de pago para el período ${periodo}` });
-  const ep = generarEP(periodo, req.user);
-  if (!ep) return res.status(400).json({ error: 'No hay despachos recepcionados sin EP en ese período' });
-  res.status(201).json(epView(ep));
-});
-
-r.post('/eps/:id/descuentos', auth('ito', 'coordinador'), (req, res) => {
+r.post('/eps/:id/descuentos', auth('ito', 'coordinador'), ah(async (req, res) => {
   const { concepto, monto } = req.body || {};
   if (!concepto || !monto) return res.status(400).json({ error: 'Concepto y monto son obligatorios' });
-  db.prepare('INSERT INTO descuentos(ep_id,concepto,monto) VALUES (?,?,?)').run(req.params.id, concepto, monto);
-  recalcularEP(req.params.id);
-  const ep = db.prepare('SELECT * FROM estados_pago WHERE id=?').get(req.params.id);
+  await q(supa.from('descuentos').insert({ ep_id: +req.params.id, concepto, monto }).select('id'));
+  await recalcularEP(req.params.id);
+  const ep = await epView(req.params.id);
   audit(req.user.name, req.user.role, `Registró descuento: ${concepto}`, ep.folio);
-  res.json(epView(ep));
-});
+  res.json(ep);
+}));
 
-r.post('/eps/:id/aprobar', auth('coordinador'), (req, res) => {
-  const ep = db.prepare('SELECT * FROM estados_pago WHERE id=?').get(req.params.id);
+r.post('/eps/:id/aprobar', auth('coordinador'), ah(async (req, res) => {
+  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).maybeSingle());
   if (!ep) return res.status(404).json({ error: 'EP no encontrado' });
   if (ep.estado !== 'en_aprobacion') return res.status(409).json({ error: 'El EP no está en aprobación' });
-  db.prepare("UPDATE estados_pago SET estado='aprobado', aprobado_por=?, fecha_aprobacion=? WHERE id=?")
-    .run(req.user.name, hoy(), ep.id);
+  await q(supa.from('estados_pago')
+    .update({ estado: 'aprobado', aprobado_por: req.user.name, fecha_aprobacion: hoy() })
+    .eq('id', ep.id).select('id'));
   audit(req.user.name, req.user.role, 'Aprobó estado de pago', ep.folio);
-  res.json(epView(db.prepare('SELECT * FROM estados_pago WHERE id=?').get(ep.id)));
-});
+  res.json(await epView(ep.id));
+}));
 
-r.post('/eps/:id/rechazar', auth('coordinador'), (req, res) => {
+r.post('/eps/:id/rechazar', auth('coordinador'), ah(async (req, res) => {
   const { observacion } = req.body || {};
   if (!observacion || !observacion.trim())
     return res.status(400).json({ error: 'La observación es obligatoria para rechazar' });
-  const ep = db.prepare('SELECT * FROM estados_pago WHERE id=?').get(req.params.id);
+  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).maybeSingle());
   if (!ep) return res.status(404).json({ error: 'EP no encontrado' });
-  db.prepare("UPDATE estados_pago SET estado='rechazado', observacion=? WHERE id=?").run(observacion.trim(), ep.id);
+  await q(supa.from('estados_pago').update({ estado: 'rechazado', observacion: observacion.trim() }).eq('id', ep.id).select('id'));
   audit(req.user.name, req.user.role, `Rechazó EP con observación: "${observacion.trim()}"`, ep.folio);
-  res.json(epView(db.prepare('SELECT * FROM estados_pago WHERE id=?').get(ep.id)));
-});
+  res.json(await epView(ep.id));
+}));
 
-r.post('/eps/:id/pagos', auth('vendor', 'ito', 'coordinador'), (req, res) => {
+r.post('/eps/:id/pagos', auth('vendor', 'ito', 'coordinador'), ah(async (req, res) => {
   const { monto, comprobante } = req.body || {};
-  const ep = db.prepare('SELECT * FROM estados_pago WHERE id=?').get(req.params.id);
+  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).maybeSingle());
   if (!ep) return res.status(404).json({ error: 'EP no encontrado' });
   if (ep.estado !== 'aprobado') return res.status(409).json({ error: 'Solo se concilian pagos de EP aprobados' });
   if (!monto || monto <= 0) return res.status(400).json({ error: 'Indique el monto transferido' });
-  db.prepare('INSERT INTO pagos_vendor(ep_id,fecha,monto,comprobante) VALUES (?,?,?,?)')
-    .run(ep.id, hoy(), monto, comprobante || null);
+  await q(supa.from('pagos_vendor').insert({ ep_id: ep.id, fecha: hoy(), monto, comprobante: comprobante || null }).select('id'));
   audit(req.user.name, req.user.role, `Registró pago recibido ($${monto.toLocaleString('es-CL')})`, ep.folio);
-  res.json(epView(ep));
-});
+  res.json(await epView(ep.id));
+}));
 
 export default r;
