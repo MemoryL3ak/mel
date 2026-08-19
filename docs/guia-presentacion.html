@@ -1,0 +1,372 @@
+<title>Guía GEA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#F5F3F0; --surface:#FFFFFF; --surface-2:#FAF8F5;
+    --ink:#24201B; --ink-2:#6B6259; --muted:#968D82; --line:#E5E0D8; --line-2:#EFEBE4;
+    --copper:#A4562E; --copper-strong:#83421F; --copper-tint:#F5E8DF; --copper-line:#E3CBBA;
+    --graphite:#232930; --graphite-ink:#E8E4DE; --graphite-sub:#9AA3AC;
+    --ok:#1E6B3A; --ok-bg:#E6F2E8; --warn:#8A6116; --warn-bg:#FAF1DA; --bad:#A3352B; --bad-bg:#F9E7E4; --info:#2A5F8F; --info-bg:#E8F0F9;
+    --code-bg:#2A2F36; --code-ink:#D8DCE0;
+    --shadow:0 1px 2px rgba(36,32,27,.05),0 10px 28px rgba(36,32,27,.07);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#191C20; --surface:#22262B; --surface-2:#272C32;
+      --ink:#ECE8E2; --ink-2:#B3ABA1; --muted:#8B847B; --line:#383E45; --line-2:#2E343A;
+      --copper:#D08A5C; --copper-strong:#E0A97F; --copper-tint:#33291F; --copper-line:#4D3A2A;
+      --graphite:#15181C; --graphite-ink:#ECE8E2; --graphite-sub:#8B949D;
+      --ok:#7CC08F; --ok-bg:#1E2E23; --warn:#D9B45C; --warn-bg:#2E2919; --bad:#E08B7F; --bad-bg:#32211E; --info:#8AB4DC; --info-bg:#1E2833;
+      --code-bg:#111417; --code-ink:#C8CED4;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#191C20; --surface:#22262B; --surface-2:#272C32;
+    --ink:#ECE8E2; --ink-2:#B3ABA1; --muted:#8B847B; --line:#383E45; --line-2:#2E343A;
+    --copper:#D08A5C; --copper-strong:#E0A97F; --copper-tint:#33291F; --copper-line:#4D3A2A;
+    --graphite:#15181C; --graphite-ink:#ECE8E2; --graphite-sub:#8B949D;
+    --ok:#7CC08F; --ok-bg:#1E2E23; --warn:#D9B45C; --warn-bg:#2E2919; --bad:#E08B7F; --bad-bg:#32211E; --info:#8AB4DC; --info-bg:#1E2833;
+    --code-bg:#111417; --code-ink:#C8CED4;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15.5px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  main{max-width:880px;margin:0 auto;padding:0 24px 90px}
+  h1,h2,h3,h4{text-wrap:balance;line-height:1.2}
+  a{color:var(--copper-strong)}
+  ::selection{background:var(--copper-tint)}
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace;font-size:.86em}
+  code{background:var(--line-2);border-radius:5px;padding:1px 6px}
+  p,li{max-width:70ch}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+  /* header */
+  .hero{background:linear-gradient(155deg,#2A3038 0%,var(--graphite) 60%,#1A1F25 100%);color:var(--graphite-ink);border-radius:0 0 20px 20px;padding:44px 28px 38px;position:relative;overflow:hidden}
+  .hero::after{content:"";position:absolute;right:-120px;top:-120px;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle at 30% 30%,rgba(196,110,61,.35),rgba(196,110,61,0) 65%)}
+  .hero-in{max-width:832px;margin:0 auto;position:relative}
+  .hero .mark{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+  .hero .mark b{font-size:18px;font-weight:800;letter-spacing:.08em}
+  .hero .mark small{display:block;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--graphite-sub)}
+  .hero h1{margin:0;font-size:clamp(26px,4.5vw,38px);font-weight:800}
+  .hero p{color:#B9C0C7;max-width:60ch;margin:12px 0 0}
+  .hero .meta{margin-top:20px;font-size:12.5px;color:var(--graphite-sub)}
+
+  /* TOC */
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:26px 0 8px}
+  .toc a{text-decoration:none;font-size:12.5px;font-weight:600;color:var(--ink-2);border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 13px}
+  .toc a:hover{border-color:var(--copper);color:var(--copper-strong)}
+
+  /* sections */
+  section{margin-top:54px}
+  .eyebrow{font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--copper);margin-bottom:6px}
+  h2{font-size:24px;font-weight:800;margin:0 0 6px}
+  .lede{color:var(--ink-2);margin:0 0 20px;font-size:15.5px}
+  h3{font-size:16.5px;font-weight:700;margin:26px 0 8px}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .pad{padding:18px 22px}
+
+  /* pitch */
+  .pitch{border-left:4px solid var(--copper);background:var(--surface);border-radius:10px;box-shadow:var(--shadow);padding:20px 24px;font-size:17px;max-width:none}
+  .pitch b{color:var(--copper-strong)}
+
+  /* tables */
+  .tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:12px 16px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td b{font-weight:700}
+  td small{color:var(--ink-2)}
+
+  /* flow */
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 6px}
+  .flow span{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;box-shadow:var(--shadow)}
+  .flow i{color:var(--copper);font-style:normal;font-weight:800}
+  .flow span.hot{background:var(--copper-tint);border-color:var(--copper-line);color:var(--copper-strong)}
+
+  /* feature list */
+  .feats{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media (max-width:700px){.feats{grid-template-columns:1fr}}
+  .feat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+  .feat b{display:block;font-size:14.5px;margin-bottom:4px}
+  .feat b .mono{color:var(--muted);font-weight:500}
+  .feat p{margin:0;font-size:13.5px;color:var(--ink-2)}
+
+  /* callouts */
+  .callout{border-radius:12px;padding:16px 20px;margin:18px 0;font-size:14.5px;border:1px solid}
+  .callout b:first-child{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+  .callout.rule{background:var(--copper-tint);border-color:var(--copper-line);color:var(--ink)}
+  .callout.rule b:first-child{color:var(--copper-strong)}
+  .callout.tip{background:var(--info-bg);border-color:transparent;color:var(--ink)}
+  .callout.tip b:first-child{color:var(--info)}
+
+  /* chips */
+  .chip{display:inline-block;border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:700;white-space:nowrap}
+  .chip.ok{background:var(--ok-bg);color:var(--ok)}
+  .chip.warn{background:var(--warn-bg);color:var(--warn)}
+  .chip.bad{background:var(--bad-bg);color:var(--bad)}
+  .chip.info{background:var(--info-bg);color:var(--info)}
+
+  /* demo script */
+  .script{counter-reset:paso;display:flex;flex-direction:column;gap:12px;margin-top:16px}
+  .paso{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px 16px 60px;position:relative;box-shadow:var(--shadow)}
+  .paso::before{counter-increment:paso;content:counter(paso);position:absolute;left:16px;top:16px;width:28px;height:28px;border-radius:50%;background:var(--copper);color:#fff;font-weight:800;font-size:13px;display:grid;place-items:center}
+  .paso b{font-size:14.5px}
+  .paso p{margin:4px 0 0;font-size:13.5px;color:var(--ink-2)}
+  .paso .say{margin-top:10px;border-left:3px solid var(--copper-line);padding:2px 0 2px 12px;font-size:13.5px;color:var(--ink);font-style:italic}
+  .paso .say::before{content:"Dilo así: ";font-style:normal;font-weight:700;color:var(--copper-strong)}
+
+  /* FAQ */
+  .faq{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+  details{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  summary{cursor:pointer;padding:14px 18px;font-weight:700;font-size:14.5px;list-style:none;display:flex;gap:10px;align-items:baseline}
+  summary::before{content:"+";color:var(--copper);font-weight:800;font-size:16px}
+  details[open] summary::before{content:"–"}
+  details .a{padding:0 18px 16px 38px;font-size:14px;color:var(--ink-2)}
+  details .a p{margin:0 0 8px}
+
+  pre{background:var(--code-bg);color:var(--code-ink);border-radius:10px;padding:14px 18px;overflow-x:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px;line-height:1.6}
+  pre code{background:none;padding:0;color:inherit}
+
+  footer{margin-top:70px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+  :focus-visible{outline:2px solid var(--copper);outline-offset:2px;border-radius:4px}
+</style>
+
+<div class="hero"><div class="hero-in">
+  <div class="mark">
+    <svg width="40" height="40" viewBox="0 0 44 44" aria-hidden="true"><path d="M22 2 39 12v20L22 42 5 32V12Z" fill="none" stroke="#C46E3D" stroke-width="2.5"/><path d="M22 12 31 17v10l-9 5-9-5V17Z" fill="#C46E3D"/></svg>
+    <div><b>GEA</b><small>Gestión de Enajenación de Activos · Minera Escondida</small></div>
+  </div>
+  <h1>Guía de presentación del prototipo</h1>
+  <p>Todo lo que necesitas entender y decir mañana: qué problema resuelve, cómo funciona cada módulo, qué es real y qué es simulado, un guion de demo de 10 minutos y respuestas a las preguntas probables.</p>
+  <div class="meta">Basada en la Cotización v2.0 (julio 2026) · Prototipo full-stack sobre Supabase</div>
+</div></div>
+
+<main>
+  <nav class="toc" aria-label="Contenido">
+    <a href="#pitch">El pitch</a>
+    <a href="#contexto">Contexto</a>
+    <a href="#actores">Los 6 actores</a>
+    <a href="#f1">F1 · Chatarra</a>
+    <a href="#f2">F2 · Documental</a>
+    <a href="#f3">F3 · Obsoletos</a>
+    <a href="#f4">F4 · Indicadores</a>
+    <a href="#transversal">Transversales</a>
+    <a href="#real">Real vs. simulado</a>
+    <a href="#guion">Guion de demo</a>
+    <a href="#faq">Preguntas probables</a>
+    <a href="#operar">Operar la demo</a>
+  </nav>
+
+  <!-- ============ PITCH ============ -->
+  <section id="pitch">
+    <div class="eyebrow">Para abrir la presentación</div>
+    <h2>El pitch en 30 segundos</h2>
+    <div class="pitch">
+      Minera Escondida gestiona hoy <b>dos procesos de venta de activos dados de baja</b> —la chatarra industrial de sus patios y los componentes obsoletos— de forma fragmentada: planillas, correos y documentos dispersos. <b>GEA</b> los une en una sola plataforma web trazable: desde el retiro en el patio hasta el pago conciliado, con repositorio documental, portal público de venta y paneles de indicadores. Lo que van a ver <b>no son pantallas pintadas</b>: es un prototipo funcional con base de datos PostgreSQL, seis perfiles con permisos reales y las reglas de negocio corriendo de verdad.
+    </div>
+  </section>
+
+  <!-- ============ CONTEXTO ============ -->
+  <section id="contexto">
+    <div class="eyebrow">De dónde viene esto</div>
+    <h2>Contexto del proyecto</h2>
+    <p class="lede">Tres cosas que debes tener claras antes de cualquier pregunta.</p>
+    <div class="feats">
+      <div class="feat"><b>1 · Hay una cotización formal detrás</b><p>El prototipo implementa el alcance de la Cotización v2.0 (julio 2026): 4 fases entregables, 300 horas, ~12 semanas, $9.280.203 IVA incluido con infraestructura del primer año. Cada fase se paga por separado y MEL puede detenerse entre fases sin penalización.</p></div>
+      <div class="feat"><b>2 · No existe sistema previo</b><p>MEL no tiene plataforma que reemplazar ni branding definido. Por eso la Fase 1 incluye el modelo de datos desde cero y la propuesta de identidad visual — la marca «GEA» (cobre sobre grafito) que ven en el prototipo es parte de esa propuesta.</p></div>
+      <div class="feat"><b>3 · Dos procesos de negocio</b><p><b>Chatarra:</b> fierro, cables y metales que se acumulan en los patios de la mina; una empresa contratista los retira y un «vendor» los compra por peso según tabla de precios. <b>Obsoletos:</b> equipos mayores dados de baja (motores, tolvas, reductores) que se publican en un portal y se venden al mejor oferente.</p></div>
+      <div class="feat"><b>4 · La arquitectura es la cotizada</b><p>Frontend React responsive; backend con API REST; base de datos <b>PostgreSQL gestionado (Supabase)</b> con seguridad a nivel de fila (RLS), tal como indica la Sección 8 de la cotización. El prototipo ya corre sobre esa base real.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ ACTORES ============ -->
+  <section id="actores">
+    <div class="eyebrow">Quién usa la plataforma</div>
+    <h2>Los seis actores</h2>
+    <p class="lede">Cada perfil entra con su propia cuenta y ve <em>solo</em> los módulos de su función. En la demo, la pantalla de ingreso los muestra como tarjetas (contraseña <code>demo</code> para todos).</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Rol</th><th>Quién es en la vida real</th><th>Qué hace en GEA</th></tr></thead>
+      <tbody>
+        <tr><td><b>Empresa de limpieza de patios</b><br><small class="mono">limpieza · «Serlim Ltda.»</small></td><td>Contratista que retira físicamente la chatarra de los patios de la mina.</td><td>Consulta el programa semanal y registra cada retiro con peso y evidencia fotográfica.</td></tr>
+        <tr><td><b>Vendor de chatarra</b><br><small class="mono">vendor · «Metarec SpA»</small></td><td>Empresa que compra la chatarra por peso; la recibe en su planta y paga mensualmente.</td><td>Revisa despachos valorizados y estados de pago; registra sus pagos con comprobante.</td></tr>
+        <tr><td><b>ITO</b><br><small class="mono">ito · «C. Fuentes»</small></td><td>Inspector técnico que fiscaliza el contrato por parte de MEL.</td><td>Valida recepciones, controla diferencias de peso, aplica descuentos y prepara el estado de pago.</td></tr>
+        <tr><td><b>Coordinador Logístico MEL</b><br><small class="mono">coordinador · «R. Miranda»</small></td><td>El dueño del proceso dentro de MEL.</td><td>Aprueba o rechaza estados de pago, autoriza bajas de activo, ve todos los paneles y la auditoría.</td></tr>
+        <tr><td><b>Adm. Plataforma de Venta Web</b><br><small class="mono">adminventa · «P. Salinas»</small></td><td>Quien opera la venta de componentes obsoletos.</td><td>Publica componentes en el portal, gestiona ofertas, aplica la matriz de evaluación y adjudica.</td></tr>
+        <tr><td><b>Comprador externo</b><br><small class="mono">comprador · «Maestranza Andina»</small></td><td>Empresa externa interesada en comprar componentes.</td><td>Se autoregistra (pasa por due diligence), consulta el portal público, oferta y sigue su adjudicación.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ FASE 1 ============ -->
+  <section id="f1">
+    <div class="eyebrow">Fase 1 · MVP</div>
+    <h2>El proceso de chatarra, de punta a punta</h2>
+    <p class="lede">Es el corazón del sistema: convierte un flujo hoy informal en una cadena donde cada eslabón queda registrado, pesado, valorizado y aprobado.</p>
+    <div class="flow">
+      <span>Programa semanal</span><i>→</i>
+      <span>Retiro con evidencia</span><i>→</i>
+      <span>Recepción y doble pesaje</span><i>→</i>
+      <span class="hot">Valorización automática</span><i>→</i>
+      <span class="hot">Estado de pago mensual</span><i>→</i>
+      <span>Aprobación multinivel</span><i>→</i>
+      <span>Conciliación de pagos</span>
+    </div>
+
+    <h3>Programa de limpieza de patios</h3>
+    <p>El Coordinador planifica la semana: qué patio se limpia, qué día, qué material y cuántas toneladas se esperan. La empresa de limpieza ve su programa y, al ejecutar cada retiro, registra el tonelaje real con fotos. La pantalla muestra el <b>% de cumplimiento semanal</b> (ejecutados vs. programados) y compara tonelaje real contra estimado.</p>
+
+    <h3>Despachos y recepciones</h3>
+    <p>Cada retiro genera un despacho con <b>guía foliada automáticamente</b> (GD-4526, GD-4527…), patio de origen, categoría de material, peso en báscula MEL y evidencia fotográfica. Cuando el camión llega a la planta del vendor se registra el <b>segundo pesaje</b>: si la diferencia entre ambas básculas supera el <b>2%</b>, el sistema marca la recepción como «observada» para que el ITO la revise. Ese control de merma es plata: evita que se pague menos de lo que salió de la mina.</p>
+
+    <h3>Valorización automática</h3>
+    <p>El contrato con el vendor fija un <b>precio por kilo para cada categoría</b> (fierro pesado $185/kg, cables forrados $2.400/kg, bronce $4.200/kg…). El sistema valoriza cada despacho automáticamente: peso validado × precio vigente. Nadie calcula a mano, nadie discute el número: la tabla de precios es una sola y está en el contrato.</p>
+
+    <h3>Estados de pago (EP)</h3>
+    <p>Al cierre del mes, un clic genera el <b>estado de pago del período</b>: el sistema toma todos los despachos recepcionados del mes, los agrupa por categoría y arma el documento de cobro al vendor. El ITO puede aplicar <b>descuentos</b> con motivo (ej.: un flete que asumió MEL) y el total se recalcula. Luego corre el <b>flujo de aprobación</b>: el Coordinador aprueba, o rechaza con <b>observación obligatoria</b> y el EP vuelve al ITO. Aprobado el EP, el vendor registra sus transferencias y el sistema <b>concilia</b>: pagado vs. adeudado, con estado «parcial» o «conciliado».</p>
+    <div class="callout tip"><b>Dato para la demo</b>El EP-2026-07 que aparece «en aprobación» por $81.736.995 no es un número escrito a mano: la base lo calculó desde 17 despachos reales de julio. Si aplicas otro descuento, el total se recalcula en vivo.</div>
+  </section>
+
+  <!-- ============ FASE 2 ============ -->
+  <section id="f2">
+    <div class="eyebrow">Fase 2 · Control documental</div>
+    <h2>Repositorio documental</h2>
+    <p class="lede">Todo el papeleo del proceso, en un solo lugar y amarrado al hito que lo originó.</p>
+    <p>Cubre los <b>nueve tipos documentales</b> de la especificación: contratos con el vendor y la empresa de limpieza, guías de despacho y de venta, estados de pago, registros de descuentos, facturas, comprobantes de pago, certificados de disposición final y comprobantes de baja del activo (scrap). Cada documento tiene:</p>
+    <div class="feats">
+      <div class="feat"><b>Versionado automático</b><p>Si cargas de nuevo el mismo archivo para el mismo hito, se crea la versión 2 y la anterior queda en el historial. Nada se pisa.</p></div>
+      <div class="feat"><b>Control de vencimientos</b><p>Los documentos con fecha de vencimiento cambian de estado solos: vigente → por vencer (30 días) → vencido. Los que están por vencer aparecen en la bandeja de pendientes del panel.</p></div>
+      <div class="feat"><b>Vinculación al hito</b><p>Cada archivo queda amarrado a su origen: «Despacho GD-4531», «EP julio 2026», «Contrato Metarec». Buscas por proceso, no por nombre de archivo.</p></div>
+      <div class="feat"><b>Carga real</b><p>En la demo puedes subir un archivo de verdad: queda almacenado, versionado y descargable, y la carga se registra en la auditoría.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ FASE 3 ============ -->
+  <section id="f3">
+    <div class="eyebrow">Fase 3 · Obsoletos y portal público</div>
+    <h2>Venta de componentes obsoletos</h2>
+    <p class="lede">El segundo proceso completo: publicar equipos dados de baja, recibir ofertas de externos y adjudicar con criterios objetivos.</p>
+    <div class="flow">
+      <span>Inventario y ubicación</span><i>→</i>
+      <span>Publicación en portal</span><i>→</i>
+      <span class="hot">Plazo de 15 días</span><i>→</i>
+      <span>Ofertas de compradores</span><i>→</i>
+      <span class="hot">Matriz de evaluación</span><i>→</i>
+      <span>Certificado de adjudicación</span><i>→</i>
+      <span>Entrega y baja del activo</span>
+    </div>
+
+    <h3>Inventario y logística</h3>
+    <p>Cada componente (un motor de 4.000 HP, una tolva de camión CAEX, neumáticos de 63") se registra con código, ficha técnica, <b>ubicación exacta en terreno</b> (patio, sector, fila) y valor referencial. La pantalla incluye la <b>bandeja de pendientes de entrega</b>: componentes ya adjudicados que el comprador aún no retira, con alerta de días de espera y acciones de notificar o agendar el retiro.</p>
+
+    <h3>Portal público de venta</h3>
+    <p>Es lo que ve un comprador externo <b>sin credenciales</b>: las publicaciones vigentes con ficha, valor mínimo y días restantes. Para ofertar debe registrarse; el registro pasa por <b>due diligence</b> antes de habilitarse (en la demo, «Comercial Recimet» está aún en revisión y el sistema le bloquea la adjudicación). El comprador autenticado presenta ofertas y sigue el estado de cada una: en evaluación, adjudicada o no adjudicada.</p>
+
+    <div class="callout rule"><b>La regla de negocio crítica — memorízala</b>
+    Todo componente que cumpla <b>15 días publicado sin adjudicarse se convierte automáticamente en chatarra</b> y pasa al flujo de enajenación de la Fase 1. En el prototipo esta regla no es un texto en pantalla: es una función dentro de la base de datos (<code>convertir_vencidos()</code>) que corre sola — convierte el componente, genera el documento de baja del activo y deja el asiento en la bitácora firmado por «Sistema». En los datos de demo, el impulsor de celda de flotación (OBS-190) ya cayó por esta regla, y la tolva CAEX está en el día 14 de 15: mañana vence.</div>
+
+    <h3>Ofertas, matriz de evaluación y adjudicación</h3>
+    <p>Para cada publicación hay un <b>cuadro comparativo</b>: oferente, monto, plazo de retiro, forma de pago y estado de su due diligence. La <b>matriz de evaluación</b> pondera criterios configurables (precio 50%, plazo 20%, experiencia 20%, forma de pago 10%); los puntajes se pueden ajustar y el ponderado se recalcula en vivo, marcando al mejor evaluado. Al adjudicar, el sistema emite el <b>certificado de adjudicación foliado</b> (CA-2026-046…), notifica a los oferentes, marca las ofertas perdedoras y crea la entrega pendiente. Después vienen el pago por transferencia, la comisión de venta al vendor y la <b>baja del activo fijo</b> con su comprobante en el repositorio.</p>
+  </section>
+
+  <!-- ============ FASE 4 ============ -->
+  <section id="f4">
+    <div class="eyebrow">Fase 4 · Indicadores</div>
+    <h2>Paneles de indicadores</h2>
+    <p class="lede">La capa de gestión: cómo va el negocio, calculado en vivo desde la base de datos.</p>
+    <div class="feats">
+      <div class="feat"><b>KPI de despachos (chatarra)</b><p>Tonelaje mensual y acumulado del año, con la serie 2026 completa en gráficos con tooltip.</p></div>
+      <div class="feat"><b>KPI de pagos (chatarra)</b><p>Estado de la cartera: cuánto está conciliado, cuánto aprobado por conciliar, cuánto en aprobación y cuánto rechazado. Más el % de pagos conciliados y los días promedio de aprobación de EP.</p></div>
+      <div class="feat"><b>Panel de obsoletos</b><p>Tiempo medio de publicación, tasa de adjudicación, % de conversión a chatarra e ingresos por venta — los cuatro indicadores que pide la especificación.</p></div>
+      <div class="feat"><b>Exportación</b><p>Botones de Excel y PDF presentes en la interfaz (simulados en el prototipo; el formato final de los reportes se define con MEL antes de la Fase 4, como indica la cotización).</p></div>
+    </div>
+  </section>
+
+  <!-- ============ TRANSVERSALES ============ -->
+  <section id="transversal">
+    <div class="eyebrow">Transversal a todo el sistema</div>
+    <h2>Seguridad, auditoría y base técnica</h2>
+    <div class="feats">
+      <div class="feat"><b>RBAC — permisos por rol</b><p>Los seis perfiles ven solo sus módulos, y no es cosmético: el servidor valida cada operación (si la empresa de limpieza intenta consultar estados de pago por API, recibe un 403). La pantalla «Roles y auditoría» muestra la matriz de permisos completa.</p></div>
+      <div class="feat"><b>Bitácora de auditoría inmutable</b><p>Cada acción queda registrada: quién, cuándo, qué hizo y sobre qué objeto — aprobaciones, rechazos con su observación, cargas de documentos, ofertas y las conversiones automáticas del «Sistema». Solo se agrega, nunca se edita.</p></div>
+      <div class="feat"><b>PostgreSQL + RLS (Supabase)</b><p>Los datos viven en PostgreSQL gestionado con Row Level Security habilitado en todas las tablas — la arquitectura exacta de la Sección 8 de la cotización, ya operando.</p></div>
+      <div class="feat"><b>Responsive + identidad visual</b><p>La interfaz se adapta a móvil (sidebar colapsable) y estrena la propuesta de identidad: GEA, cobre sobre grafito — guiño al cobre de Escondida. Es la propuesta de branding que la Fase 1 compromete.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ REAL VS SIMULADO ============ -->
+  <section id="real">
+    <div class="eyebrow">Honestidad técnica — te lo van a preguntar</div>
+    <h2>Qué es real y qué es simulado</h2>
+    <p class="lede">La respuesta corta: la lógica de negocio, los datos y la seguridad son reales; los bordes externos (correo, tributario, fotos) están representados.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Funciona de verdad</th><th>Está representado (simulado)</th></tr></thead>
+      <tbody>
+        <tr><td>API REST completa + base PostgreSQL en Supabase; todo lo que ves sale de consultas en vivo</td><td>Fotografías de evidencia y de componentes (recuadros de color como placeholder)</td></tr>
+        <tr><td>Generación del EP desde los despachos del período, descuentos con recálculo, aprobación/rechazo, conciliación</td><td>Exportación a Excel y PDF (botones presentes, generación pendiente para Fase 4)</td></tr>
+        <tr><td>Regla de los 15 días como función en la base de datos, con baja y auditoría automáticas</td><td>Notificaciones por correo (el sistema las anuncia, no envía emails)</td></tr>
+        <tr><td>Login por rol con validación en servidor (403 real si no corresponde), carga y descarga real de documentos con versionado</td><td>Contraseñas de demostración («demo»); en producción, autenticación corporativa vía Supabase Auth</td></tr>
+        <tr><td>Matriz de evaluación con recálculo en vivo, certificado foliado, bitácora inmutable</td><td>Integración con SII y ERP (excluidas del alcance por cotización; se cotizan aparte)</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ============ GUION ============ -->
+  <section id="guion">
+    <div class="eyebrow">10 minutos, 12 pasos</div>
+    <h2>Guion de demo sugerido</h2>
+    <p class="lede">Recorre los dos procesos con un cambio de rol al medio. Practícalo una vez completo antes de presentar.</p>
+    <div class="script">
+      <div class="paso"><b>Login como Coordinador</b><p>Abre la pantalla de ingreso y muestra las seis tarjetas de perfil. Entra como <b>Coordinador Logístico</b>.</p><div class="say">«La plataforma tiene seis perfiles con permisos diferenciados. Voy a entrar como el dueño del proceso, que lo ve todo.»</div></div>
+      <div class="paso"><b>Panel de control</b><p>Recorre los 4 KPI y la bandeja de pendientes. Pasa el mouse por los gráficos (tienen tooltip).</p><div class="say">«Esto no es una imagen: cada número sale de la base de datos en este momento. La bandeja me dice qué requiere acción hoy: un estado de pago por aprobar y una publicación que vence mañana.»</div></div>
+      <div class="paso"><b>Programa de limpieza</b><p>Muestra la semana en curso, el % de cumplimiento y el botón «Registrar retiro» de un día pendiente.</p><div class="say">«Aquí se planifica la semana de limpieza de patios y el contratista registra cada retiro con evidencia.»</div></div>
+      <div class="paso"><b>Despachos y doble pesaje</b><p>Abre «Despachos», muestra la guía observada GD-4527 (diferencia -2,25%) y la pestaña «Recepciones vendor».</p><div class="say">«Cada carga se pesa dos veces: al salir de la mina y al llegar al vendor. Si difieren más de 2%, el sistema la observa solo — este control de merma es plata.»</div></div>
+      <div class="paso"><b>Estado de pago: aprobar o rechazar</b><p>Entra a «Estados de pago». Muestra el detalle del EP-2026-07 (líneas por categoría + descuento) y el flujo de aprobación. <b>Apruébalo en vivo</b> — o recházalo con observación para mostrar la vuelta al ITO.</p><div class="say">«El estado de pago se generó solo desde los 17 despachos de julio: $81,7 millones. Yo como Coordinador lo apruebo… y queda trazado quién, cuándo y qué aprobó.»</div></div>
+      <div class="paso"><b>Repositorio documental</b><p>Filtra por tipo, muestra versiones y el CDF-118 «por vencer». Si quieres, sube un archivo real.</p><div class="say">«Los nueve tipos documentales del proceso, versionados y amarrados a su hito. El certificado de disposición final está por vencer — por eso aparecía en la bandeja del panel.»</div></div>
+      <div class="paso"><b>Cambio de rol → RBAC en vivo</b><p>Cierra sesión y entra como <b>Empresa de limpieza</b>. El menú se reduce a dos módulos.</p><div class="say">«Mismo sistema, otro perfil: el contratista solo ve su programa y sus retiros. Y no es solo visual — el servidor rechaza cualquier operación fuera de su rol.»</div></div>
+      <div class="paso"><b>Cambio a Administrador de Venta Web</b><p>Entra como <b>adminventa</b>. Abre «Publicaciones»: barras de plazo, la tolva CAEX en día 14, y el impulsor convertido a chatarra.</p><div class="say">«Regla crítica del negocio: 15 días publicado sin adjudicar y el componente se convierte solo en chatarra. Este impulsor ya cayó — lo convirtió el sistema, generó la baja del activo y quedó en la auditoría firmado por “Sistema”.»</div></div>
+      <div class="paso"><b>Ofertas y matriz de evaluación</b><p>Abre «Ofertas» para el motor 4.000 HP: cuadro comparativo con due diligence, matriz ponderada. <b>Cambia un puntaje</b> para que recalcule, luego «Emitir certificado».</p><div class="say">«Tres ofertas, criterios ponderados y configurables. Cambio un puntaje y la adjudicación se recalcula. Adjudico: certificado foliado, oferentes notificados, y pasa a pendientes de entrega.»</div></div>
+      <div class="paso"><b>Portal público como Comprador</b><p>Cambia al perfil <b>Comprador</b>: el portal con las publicaciones, presenta una oferta y muestra «Mis ofertas».</p><div class="say">«Y esto es lo que ve una empresa externa: consulta sin credenciales, se registra pasando por due diligence, oferta y sigue su estado.»</div></div>
+      <div class="paso"><b>Indicadores</b><p>Vuelve como Coordinador (o adminventa) a «Indicadores»: pestañas Chatarra y Obsoletos, botones de exportar.</p><div class="say">«La capa de gestión: tonelaje, cartera de pagos, tasa de adjudicación y conversión — calculados en vivo. La exportación a Excel y PDF se cierra en la Fase 4 con el formato que defina MEL.»</div></div>
+      <div class="paso"><b>Cierre: auditoría + próximos pasos</b><p>Termina en «Roles y auditoría»: la matriz de permisos y la bitácora con todo lo que acabas de hacer en la demo.</p><div class="say">«Todo lo que hice en estos 10 minutos quedó aquí: quién, cuándo, qué. Esto es la Fase 1 a 3 en miniatura; la cotización las entrega en 12 semanas, por fases que se validan y pagan por separado.»</div></div>
+    </div>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section id="faq">
+    <div class="eyebrow">Prepárate para esto</div>
+    <h2>Preguntas probables</h2>
+    <div class="faq">
+      <details><summary>¿Esto es el producto final?</summary><div class="a"><p>No: es un prototipo funcional que demuestra el alcance completo de la cotización con datos ficticios. El producto final se construye en 4 fases (~12 semanas, 300 horas). La ventaja de este prototipo es que ya valida la arquitectura (React + API + PostgreSQL/Supabase con RLS) y las reglas de negocio clave.</p></div></details>
+      <details><summary>¿Dónde están los datos? ¿Es una maqueta?</summary><div class="a"><p>Los datos viven en PostgreSQL gestionado (Supabase) — la misma arquitectura de la cotización. Todo lo que se ve en pantalla sale de consultas en vivo: si apruebas un EP o adjudicas un componente, la base cambia y la auditoría lo registra.</p></div></details>
+      <details><summary>¿Cuánto cuesta y cuánto demora?</summary><div class="a"><p>$9.280.203 IVA incluido (desarrollo $8.925.000 + infraestructura primer año $355.203), en ~12 semanas. Precio cerrado por fase: F1 MVP $4.403.000 (semanas 1–6), F2 documental $892.500 (semana 7), F3 obsoletos y portal $2.915.500 (semanas 8–11), F4 indicadores $714.000 (semana 12). Cada fase se factura 40% al inicio y 60% contra entrega, y MEL puede detenerse entre fases sin penalización.</p></div></details>
+      <details><summary>¿Qué pasa con la seguridad?</summary><div class="a"><p>Control de acceso por roles verificado en el servidor (no solo en pantalla), Row Level Security habilitado en todas las tablas de PostgreSQL, cifrado en tránsito y reposo por la infraestructura gestionada, y bitácora de auditoría inmutable sobre pagos, despachos, aprobaciones y bajas. En producción, la autenticación se integra con credenciales corporativas.</p></div></details>
+      <details><summary>¿Qué falta para llevarlo a producción?</summary><div class="a"><p>Lo que la cotización programa por fase: autenticación corporativa (Supabase Auth), archivos en Storage gestionado, notificaciones por correo, exportación real Excel/PDF, el set completo de políticas RLS por rol/acción, y las definiciones que MEL debe entregar (tabla de precios real, flujo de aprobación definitivo, criterios de la matriz, volúmenes esperados).</p></div></details>
+      <details><summary>¿Hay app para iOS/Android?</summary><div class="a"><p>Por alcance, «web y móvil» se resuelve como aplicación web responsive: funciona desde el navegador del teléfono sin instalar nada. Las apps nativas de tienda están explícitamente excluidas de esta etapa (se cotizarían aparte).</p></div></details>
+      <details><summary>¿Se integra con el SII o con el ERP de MEL?</summary><div class="a"><p>No en esta etapa: ambas integraciones están excluidas por cotización. Los documentos tributarios se cargan manualmente al repositorio documental, en el mismo flujo que el resto. Si MEL las requiere, se cotizan como ampliación de alcance.</p></div></details>
+      <details><summary>¿Y si el volumen de datos crece mucho?</summary><div class="a"><p>La infraestructura gestionada escala cómputo y almacenamiento sin migración. La cotización dimensiona para escala corporativa media porque MEL dejó los volúmenes en blanco en la especificación — es una de las preguntas abiertas del kickoff.</p></div></details>
+    </div>
+  </section>
+
+  <!-- ============ OPERAR ============ -->
+  <section id="operar">
+    <div class="eyebrow">Antes de presentar</div>
+    <h2>Cómo operar la demo</h2>
+    <p>Desde la carpeta del proyecto (requiere <code>server/.env</code> con las credenciales de Supabase):</p>
+    <pre><code># opción demo en un solo puerto (recomendada para presentar)
+npm run build
+npm start          # → http://localhost:4001
+
+# opción desarrollo (recarga en vivo)
+npm run dev        # → http://localhost:5173</code></pre>
+    <p>Usuarios: <code>coordinador</code>, <code>ito</code>, <code>limpieza</code>, <code>vendor</code>, <code>adminventa</code>, <code>comprador</code> — todos con contraseña <code>demo</code> (la pantalla de login los muestra como tarjetas; un clic basta).</p>
+    <div class="callout tip"><b>Reset antes de presentar</b>Si ensuciaste los datos ensayando (EP aprobado, componente adjudicado), vuelve al estado inicial re-ejecutando <span class="mono">server/db/supabase.sql</span> completo en el SQL Editor de Supabase. Recrea todo el esquema con los datos de demostración en segundos.</div>
+    <div class="callout tip"><b>Plan B sin internet</b>La demo necesita conexión (la base está en Supabase). Si la sala no tiene red confiable, ten el respaldo: la maqueta estática navegable en <span class="mono">prototipo/index.html</span> abre desde el disco sin servidor ni internet — misma apariencia, datos fijos.</div>
+  </section>
+
+  <footer>Guía interna de presentación · Prototipo GEA para Minera Escondida Limitada · Basada en la Cotización v2.0 de Ariel Beroíza (julio 2026). Los nombres de empresas contratistas y compradores son ficticios.</footer>
+</main>
