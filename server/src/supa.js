@@ -29,7 +29,11 @@ export async function q(builder) {
 // Envuelve handlers async para que Express 4 derive los errores al middleware.
 export const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-export const hoy = () => new Date().toISOString().slice(0, 10);
+// Fecha local (no UTC): de noche en Chile, toISOString() ya está en el día siguiente
+export const hoy = () => {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+};
 export function diasDesde(fecha) {
   return Math.floor((Date.now() - new Date(fecha + 'T00:00:00').getTime()) / 86400000);
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { api } from './api.js';
 
 // Pantallas visibles por rol (espejo del RBAC del servidor; el servidor es la autoridad)
@@ -15,6 +15,9 @@ export const LANDING = {
   adminventa: '/publicaciones', comprador: '/portal',
 };
 
+// Leído antes de que monte el router (los redirects borran el query string)
+const DEMO_PARAM = new URLSearchParams(window.location.search).get('demo');
+
 const Ctx = createContext(null);
 export const useAuth = () => useContext(Ctx);
 
@@ -22,6 +25,16 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gea_user')); } catch { return null; }
   });
+
+  // Acceso directo de demo: ?demo=<perfil> inicia sesión automáticamente conservando la ruta pedida
+  const [booting, setBooting] = useState(() => !!DEMO_PARAM);
+  useEffect(() => {
+    if (DEMO_PARAM && (!user || user.username !== DEMO_PARAM)) {
+      login(DEMO_PARAM, 'demo').catch(() => {}).finally(() => setBooting(false));
+    } else {
+      setBooting(false);
+    }
+  }, []);
 
   async function login(username, password) {
     const { token, user } = await api('/auth/login', { method: 'POST', body: { username, password } });
@@ -36,5 +49,5 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
   const can = (screen) => !!user && SCREENS[user.role]?.includes(screen);
-  return <Ctx.Provider value={{ user, login, logout, can }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, login, logout, can, booting }}>{children}</Ctx.Provider>;
 }

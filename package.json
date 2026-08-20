@@ -7,7 +7,8 @@
     "install:all": "npm install && npm --prefix server install && npm --prefix client install",
     "dev": "concurrently -n api,web -c yellow,cyan \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
     "build": "npm --prefix client run build",
-    "start": "node server/src/index.js"
+    "start": "node server/src/index.js",
+    "demo:refresh": "node server/scripts/refresh-demo.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

@@ -32,6 +32,8 @@ Abrir **http://localhost:5173**. Alternativa "producción local" en un solo puer
 npm run build && npm start   # la API sirve la SPA en http://localhost:4001
 ```
 
+Utilidades de demo: `npm run demo:refresh` re-ancla las fechas del seed a hoy y restaura los estados canónicos (ideal antes de presentar o tras ensayar); `?demo=<usuario>` en la URL inicia sesión directa con ese perfil (ej. `http://localhost:4001/?demo=coordinador`).
+
 Opcional: para que la regla de los 15 días corra también sin el servidor encendido, habilitar **pg_cron** en Supabase y programar `select convertir_vencidos()` (la línea exacta está comentada en el script SQL).
 
 ## Usuarios de demostración
