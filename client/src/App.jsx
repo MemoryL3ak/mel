@@ -23,7 +23,8 @@ function Guard({ screen, children }) {
 }
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, booting } = useAuth();
+  if (booting) return <div className="loading">Iniciando sesión de demostración…</div>;
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to={LANDING[user.role]} replace /> : <Login />} />
