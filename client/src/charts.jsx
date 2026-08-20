@@ -122,4 +122,19 @@ export function HBarChart({ rows, unit = '' }) {
   );
 }
 
+// Medidor radial para % de avance hacia una meta
+export function Gauge({ pct, label }) {
+  const R = 56, C = 2 * Math.PI * R;
+  const fill = Math.max(0, Math.min(100, pct));
+  return (
+    <svg viewBox="0 0 150 150" role="img" aria-label={`${label}: ${pct}%`} style={{ width: '100%', maxWidth: 190 }}>
+      <circle cx="75" cy="75" r={R} fill="none" stroke="var(--line-2)" strokeWidth="14" />
+      <circle cx="75" cy="75" r={R} fill="none" stroke="var(--copper)" strokeWidth="14" strokeLinecap="round"
+        strokeDasharray={`${(C * fill) / 100} ${C}`} transform="rotate(-90 75 75)" />
+      <text x="75" y="72" textAnchor="middle" fontSize="27" fontWeight="800" fill="var(--ink)">{pct}%</text>
+      <text x="75" y="94" textAnchor="middle" fontSize="9.5" fontWeight="700" letterSpacing="1" fill="var(--muted)">{label}</text>
+    </svg>
+  );
+}
+
 export const mesLabel = (m) => ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][+m.slice(5, 7)];

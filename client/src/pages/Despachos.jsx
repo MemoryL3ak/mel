@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Chip, Field, Modal, PageHead, Tabs, useToast } from '../ui.jsx';
@@ -18,6 +19,8 @@ export default function Despachos() {
   const [kgDest, setKgDest] = useState('');
   const { user } = useAuth();
   const toast = useToast();
+  // Componente convertido a chatarra que derivó hasta aquí (destaca la asociación)
+  const [conv, setConv] = useState(useLocation().state?.conv || null);
 
   const load = () => api('/despachos').then(setRows).catch((e) => toast(e.message, true));
   useEffect(() => { load(); api('/maestros').then(setMaestros).catch(() => {}); }, []);
@@ -49,6 +52,19 @@ export default function Despachos() {
       <PageHead title="Despachos y recepciones" sub="Registro con evidencia: pesaje, fotografías y guía vinculada. La valorización se calcula automáticamente con la tabla de precios del contrato.">
         {puedeCrear && <button className="btn primary" onClick={() => setNuevo(true)}>+ Registrar despacho</button>}
       </PageHead>
+
+      {conv && (
+        <div className="conv-banner">
+          <div>
+            <b>◈ Proveniente de conversión automática · <span className="mono">{conv.codigo}</span></b>
+            <p>«{conv.nombre}» se convirtió a chatarra al cumplir 15 días publicado sin adjudicarse. El material está en <b>{conv.patio} · {conv.sector}</b> con su baja documentada (<span className="mono">SCRAP-{conv.codigo}.pdf</span>). Su retiro entra a este flujo: se programa en la limpieza de patios y se registra aquí como despacho valorizado.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            {puedeCrear && <button className="btn sm primary" onClick={() => { setNuevo(true); }}>Registrar su despacho</button>}
+            <button className="btn sm" onClick={() => setConv(null)}>Entendido</button>
+          </div>
+        </div>
+      )}
       <Tabs tabs={[['d1', 'Despachos'], ['d2', 'Recepciones vendor']]} active={tab} onChange={setTab} />
 
       {tab === 'd1' && (

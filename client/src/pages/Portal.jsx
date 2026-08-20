@@ -3,6 +3,56 @@ import { api, fmtCLP } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Chip, Field, Modal, PageHead, useToast } from '../ui.jsx';
 
+const CONTACTO = {
+  wsp: '56955550000', // número de demostración
+  correo: 'ventas.componentes@gea-escondida.cl',
+};
+
+// Ficha técnica imprimible: se abre en una ventana lista para imprimir o guardar como PDF
+function generarFicha(p, diasTxt) {
+  const w = window.open('', '_blank', 'width=760,height=920');
+  if (!w) return;
+  w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Ficha ${p.codigo} · GEA</title>
+<style>
+  body{font-family:Archivo,system-ui,sans-serif;color:#24201B;margin:0;background:#fff}
+  .top{background:#232930;color:#EDEAE6;padding:26px 34px;display:flex;justify-content:space-between;align-items:center}
+  .top b{font-size:20px;letter-spacing:.06em}
+  .top small{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#9AA3AC}
+  .cod{font-family:monospace;font-size:13px;background:#A4562E;color:#fff;border-radius:6px;padding:4px 12px}
+  main{padding:30px 34px;max-width:640px}
+  h1{font-size:24px;margin:0 0 4px}
+  .sub{color:#6B6259;margin:0 0 22px}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin-bottom:22px}
+  td{padding:9px 0;border-bottom:1px solid #EFEBE4;vertical-align:top}
+  td:first-child{width:200px;color:#948B80;font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+  .precio{font-size:22px;font-weight:800;color:#83421F}
+  .cond{background:#FAF8F5;border:1px solid #E5E0D8;border-radius:10px;padding:14px 18px;font-size:13px;color:#6B6259}
+  .contacto{margin-top:18px;font-size:13.5px}
+  .contacto b{color:#83421F}
+  .foot{margin-top:26px;padding-top:14px;border-top:1px solid #E5E0D8;font-size:11px;color:#948B80}
+  .btn-print{position:fixed;right:22px;bottom:22px;background:#A4562E;color:#fff;border:0;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+  @media print{.btn-print{display:none}}
+</style></head><body>
+<div class="top"><div><b>GEA</b><small>Venta de componentes · Minera Escondida</small></div><span class="cod">${p.codigo}</span></div>
+<main>
+  <h1>${p.nombre}</h1>
+  <p class="sub">Ficha técnica de publicación · portal público de venta</p>
+  <table>
+    <tr><td>Descripción</td><td>${p.descripcion}</td></tr>
+    <tr><td>Oferta mínima</td><td class="precio">$ ${p.valor_ref.toLocaleString('es-CL')} CLP</td></tr>
+    <tr><td>Plazo de publicación</td><td>${diasTxt}</td></tr>
+    <tr><td>Publicado el</td><td>${p.publicado_el}</td></tr>
+    <tr><td>Retiro</td><td>En faena, coordinado con Logística MEL tras la adjudicación</td></tr>
+  </table>
+  <div class="cond">Condiciones: venta en el estado en que se encuentra («as is, where is»). Para ofertar se requiere registro de comprador con due diligence aprobada. Pago por transferencia según bases; comisión y baja del activo según contrato.</div>
+  <div class="contacto">Consultas: <b>WhatsApp +56 9 5555 0000</b> · <b>${CONTACTO.correo}</b></div>
+  <div class="foot">Documento generado por la plataforma GEA · datos de demostración · los plazos se rigen por la publicación vigente en el portal</div>
+</main>
+<button class="btn-print" onclick="print()">Imprimir / guardar PDF</button>
+</body></html>`);
+  w.document.close();
+}
+
 const TONO = {
   steel: 'linear-gradient(140deg,#5A6B7C,#38434E)',
   copper: 'linear-gradient(140deg,#8C6A4E,#5C4232)',
@@ -81,6 +131,14 @@ export default function Portal() {
                     onClick={() => { setOferta(p); setForm({ ...form, monto: String(p.valor_ref) }); }}>
                     Presentar oferta
                   </button>
+                </div>
+                <div className="pcontact">
+                  <button className="btn sm" onClick={() => generarFicha(p, p.dias_restantes === 1 ? 'Vence mañana' : `${p.dias_restantes} días restantes`)}>
+                    ⎙ Generar ficha
+                  </button>
+                  <a className="btn sm" href={`https://wa.me/${CONTACTO.wsp}?text=${encodeURIComponent(`Consulta por publicación ${p.codigo} · ${p.nombre}`)}`}
+                    target="_blank" rel="noreferrer">WhatsApp</a>
+                  <a className="btn sm" href={`mailto:${CONTACTO.correo}?subject=${encodeURIComponent(`Consulta ${p.codigo} · ${p.nombre}`)}`}>Correo</a>
                 </div>
               </div>
             </div>
