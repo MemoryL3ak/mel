@@ -1,0 +1,181 @@
+<title>GEA en quince minutos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root{
+    --bg:#F3F1EE; --surface:#FFFFFF; --surface-2:#FAF8F5;
+    --ink:#221D18; --ink-2:#6B6259; --muted:#948B80;
+    --line:#E5E0D8; --line-2:#EFEBE4;
+    --copper:#A4562E; --copper-deep:#83421F; --copper-tint:#F5E8DF; --copper-line:#E2C9B8;
+    --graphite:#232930; --graphite-ink:#EDEAE6; --graphite-mut:#9AA3AC;
+    --ok:#1E6B3A; --ok-bg:#E6F2E8; --warn-bg:#FAF1DA; --warn-tx:#8A6116;
+    --sans:'Archivo',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#191D22; --surface:#22272E; --surface-2:#262C34;
+      --ink:#ECE8E2; --ink-2:#B8B0A6; --muted:#8B8378;
+      --line:#39404A; --line-2:#2E343D;
+      --copper:#D07A45; --copper-deep:#DE8A52; --copper-tint:#3A2E25; --copper-line:#54402F;
+      --graphite:#12161B; --graphite-ink:#EDEAE6; --graphite-mut:#8D97A1;
+      --ok:#7FCC93; --ok-bg:#20362A; --warn-bg:#332B18; --warn-tx:#D9B25E;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#191D22; --surface:#22272E; --surface-2:#262C34;
+    --ink:#ECE8E2; --ink-2:#B8B0A6; --muted:#8B8378;
+    --line:#39404A; --line-2:#2E343D;
+    --copper:#D07A45; --copper-deep:#DE8A52; --copper-tint:#3A2E25; --copper-line:#54402F;
+    --graphite:#12161B; --graphite-ink:#EDEAE6; --graphite-mut:#8D97A1;
+    --ok:#7FCC93; --ok-bg:#20362A; --warn-bg:#332B18; --warn-tx:#D9B25E;
+  }
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;margin:0;font-size:16px}
+  .wrap{max-width:860px;margin:0 auto;padding:48px 22px 90px}
+  header.hero{background:var(--graphite);color:var(--graphite-ink);border-radius:16px;padding:34px 36px;margin-bottom:14px}
+  .hero .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--graphite-mut)}
+  .hero h1{margin:10px 0 8px;font-size:34px;font-weight:800;letter-spacing:-.01em;text-wrap:balance}
+  .hero p{margin:0;color:var(--graphite-mut);max-width:56ch}
+  .hero .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+  .hero .chip{font-family:var(--mono);font-size:11.5px;border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:4px 12px;color:var(--graphite-ink)}
+  .timeline{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:0 0 26px}
+  .timeline a{display:block;text-decoration:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+  .timeline a:hover{border-color:var(--copper)}
+  .timeline .t{font-family:var(--mono);font-size:10.5px;color:var(--copper-deep);font-weight:600}
+  .timeline .n{font-size:11.5px;color:var(--ink-2);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:760px){.timeline{grid-template-columns:repeat(2,1fr)}}
+  .prep{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin-bottom:34px}
+  .prep h2{margin:0 0 10px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .prep ul{margin:0;padding-left:20px;color:var(--ink-2)}
+  .prep li{margin:5px 0}
+  .prep code{font-family:var(--mono);font-size:13px;background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:1px 7px;color:var(--copper-deep)}
+  section{margin:0 0 38px;scroll-margin-top:20px}
+  .sec-h{display:flex;align-items:baseline;gap:14px;border-bottom:2px solid var(--line);padding-bottom:8px;margin-bottom:18px}
+  .sec-h .time{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--copper);border-radius:7px;padding:3px 10px;flex-shrink:0}
+  :root[data-theme="dark"] .sec-h .time{color:#1c1610}
+  .sec-h h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .sec-h .dur{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .cut{font-family:var(--mono);font-size:10.5px;background:var(--warn-bg);color:var(--warn-tx);border-radius:999px;padding:2px 10px;white-space:nowrap}
+  .stage{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);background:var(--surface-2);border-left:3px solid var(--copper);border-radius:0 8px 8px 0;padding:9px 14px;margin:16px 0}
+  .stage b{color:var(--copper-deep);font-weight:600}
+  .say{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 24px;margin:12px 0;font-size:17px;color:var(--ink)}
+  .say p{margin:0 0 12px}.say p:last-child{margin:0}
+  .say em{font-style:normal;font-weight:700;color:var(--copper-deep)}
+  .note{display:flex;gap:10px;font-size:13.5px;color:var(--ink-2);background:var(--copper-tint);border:1px solid var(--copper-line);border-radius:10px;padding:10px 16px;margin:14px 0}
+  .note b{color:var(--copper-deep)}
+  .foot{margin-top:46px;border-top:1px solid var(--line);padding-top:16px;font-size:12.5px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="kicker">Guion de presentación · Plataforma GEA · Minera Escondida</div>
+    <h1>GEA en quince minutos</h1>
+    <p>Texto completo para decir, con las acciones en pantalla intercaladas. Dicho a ritmo tranquilo son ~12 minutos; la navegación en vivo completa los 15.</p>
+    <div class="chips"><span class="chip">7 bloques</span><span class="chip">demo en vivo</span><span class="chip">cifras calculadas en vivo</span></div>
+  </header>
+
+  <nav class="timeline">
+    <a href="#s1"><div class="t">0:00</div><div class="n">Apertura</div></a>
+    <a href="#s2"><div class="t">1:30</div><div class="n">Qué es GEA</div></a>
+    <a href="#s3"><div class="t">2:30</div><div class="n">Chatarra</div></a>
+    <a href="#s4"><div class="t">7:00</div><div class="n">Obsoletos</div></a>
+    <a href="#s5"><div class="t">10:30</div><div class="n">Indicadores</div></a>
+    <a href="#s6"><div class="t">12:30</div><div class="n">Seguridad</div></a>
+    <a href="#s7"><div class="t">13:30</div><div class="n">Cierre</div></a>
+  </nav>
+
+  <div class="prep">
+    <h2>Antes de entrar a la sala</h2>
+    <ul>
+      <li>Correr <code>npm run demo:refresh</code> esa misma mañana: re-ancla las fechas (tolva en día 14, EP en aprobación) y limpia los ensayos.</li>
+      <li>Servidor arriba en <code>http://localhost:4001</code>; pestañas pre-abiertas con <code>?demo=coordinador</code> y <code>?demo=comprador</code> ahorran logins en vivo.</li>
+      <li>Plan B sin internet ni servidor: <code>prototipo/index.html</code> (maqueta navegable offline).</li>
+      <li>Las cifras de este guion ($ 463 M, 76%, $ 512 M…) se calculan en vivo y pueden variar unos puntos el día de la demo — di lo que muestre la pantalla.</li>
+    </ul>
+  </div>
+
+  <section id="s1">
+    <div class="sec-h"><span class="time">0:00</span><h2>Apertura: el problema</h2><span class="dur">1½ min</span></div>
+    <div class="stage"><b>EN PANTALLA</b> · portada de login de GEA, con los seis perfiles a la vista. Todavía no entres.</div>
+    <div class="say">
+      <p>Buenos días. En los próximos quince minutos les voy a mostrar cómo Escondida puede pasar de administrar la chatarra y los componentes obsoletos con planillas, correos y carpetas dispersas, a controlar los dos procesos en una sola plataforma, con trazabilidad completa y reglas de negocio que se ejecutan solas.</p>
+      <p>Hoy esos dos mundos corren por separado. La chatarra se acumula en los patios, la retira un contratista y la compra un vendor que paga por peso. Los componentes dados de baja — motores, tolvas, reductores — esperan comprador sin una vitrina formal. Y en ambos casos la información queda repartida: cuesta responder cuánto se ha recuperado en el año, cuánto está pendiente de pago, y qué pasó con cada activo. Cuando llega una auditoría, reconstruir esa historia es un trabajo en sí mismo.</p>
+      <p>Lo que vengo a mostrar es la respuesta a eso. Y no es una lámina: <em>es un prototipo funcionando</em>, así que lo vamos a recorrer en vivo.</p>
+    </div>
+  </section>
+
+  <section id="s2">
+    <div class="sec-h"><span class="time">1:30</span><h2>Qué es GEA</h2><span class="dur">1 min</span></div>
+    <div class="say">
+      <p>La plataforma se llama GEA — gestión de enajenación de activos. Un solo sistema, dos flujos de negocio y una capa de gestión encima: el flujo de <em>chatarra</em>, desde la limpieza de patios hasta el pago conciliado; el flujo de <em>obsoletos</em>, desde la baja del activo hasta su venta en un portal público; y sobre ambos, <em>indicadores</em> para dirigir.</p>
+      <p>Todo corre sobre una base de datos PostgreSQL real, con seis perfiles de usuario y control de acceso por rol: cada persona ve solo lo que le corresponde. Entremos como el Coordinador, que es quien dirige la operación.</p>
+    </div>
+    <div class="stage"><b>ACCIÓN</b> · entra como R. Miranda, Coordinador Logístico. Aterriza en el Panel de control.</div>
+  </section>
+
+  <section id="s3">
+    <div class="sec-h"><span class="time">2:30</span><h2>Chatarra: del patio al pago</h2><span class="dur">4½ min</span></div>
+    <div class="say">
+      <p>Este es el panel del Coordinador. Lo urgente arriba — un estado de pago esperando su aprobación, una publicación a punto de vencer — y la actividad reciente abajo. La idea es simple: entrar y saber en treinta segundos qué requiere mi decisión hoy.</p>
+    </div>
+    <div class="stage"><b>ACCIÓN</b> · ir a <b>Programa de limpieza</b>.</div>
+    <div class="say">
+      <p>Todo parte en los patios. Este es el programa semanal de limpieza: qué patio, qué material, cuántas toneladas estimadas. Lo planificado y lo realmente ejecutado quedan registrados uno al lado del otro — y eso alimenta el indicador de cumplimiento que veremos al final.</p>
+    </div>
+    <div class="stage"><b>ACCIÓN</b> · ir a <b>Despachos y recepciones</b>. Abrir el detalle de una guía; si hay tiempo, registrar un despacho en vivo.</div>
+    <div class="say">
+      <p>Cuando el material sale, se registra el despacho: patio de origen, categoría, peso en báscula y evidencia fotográfica. Dos cosas que quiero que noten: la guía se folia <em>automáticamente</em>, y la valorización se calcula sola con la tabla de precios del contrato — aquí nadie tipea un monto.</p>
+      <p>Después el vendor recepciona en destino con su propia báscula. Y si la diferencia de peso supera el dos por ciento, el sistema deja la recepción <em>observada</em> para revisión del ITO. Esa regla del contrato vive en el sistema, no en la memoria de una persona.</p>
+    </div>
+    <div class="stage"><b>ACCIÓN</b> · ir a <b>Estados de pago</b>. Mostrar el EP en aprobación con sus líneas y descuentos.</div>
+    <div class="say">
+      <p>Fin de mes: el estado de pago se genera automáticamente con todos los despachos del período — categorías, kilos, montos, descuentos. El Coordinador aprueba o rechaza; si rechaza, la observación es <em>obligatoria</em> y queda escrita. Con el EP aprobado, los pagos del vendor se concilian contra lo aprobado. El ciclo completo — del patio a la plata — queda cerrado y trazable.</p>
+      <p>Y cada papel del camino — guías, actas, certificados, bajas — queda en un repositorio documental con folio y vencimientos controlados.</p>
+    </div>
+  </section>
+
+  <section id="s4">
+    <div class="sec-h"><span class="time">7:00</span><h2>Obsoletos: de la baja a la venta</h2><span class="dur">3½ min</span></div>
+    <div class="stage"><b>ACCIÓN</b> · ir a <b>Publicaciones</b>. Mostrar la tolva en día 14 con su barra de plazo. Publicar un componente si hay tiempo.</div>
+    <div class="say">
+      <p>Segundo negocio: los componentes dados de baja. El inventario los registra con su valor referencial, su ubicación y su estado. Publicar es un clic — y desde ese momento el componente aparece en el portal público y le empieza a correr un reloj de <em>quince días</em>. Aquí lo ven: esta tolva está en el día catorce.</p>
+    </div>
+    <div class="stage"><b>ACCIÓN</b> · abrir <b>Portal público</b>. Mostrar una ficha; presentar una oferta (si estás con perfil interno, el botón ofrece entrar como comprador demo).</div>
+    <div class="say">
+      <p>Así lo ve un comprador externo: la vitrina con la oferta mínima y los días restantes. Puede generar la ficha técnica en PDF, consultar por WhatsApp o correo con el asunto ya pre-cargado, y presentar su oferta. Para ofertar tiene que registrarse, y el registro pasa por <em>due diligence</em>: en la demo hay un comprador que sigue en revisión, y el sistema le bloquea la adjudicación. El control de contraparte está embebido en el flujo, no en un checklist aparte.</p>
+      <p>Del otro lado, el administrador ve el cuadro comparativo de ofertas con la matriz de criterios y adjudica: el sistema emite el certificado foliado, notifica al ganador y agenda la entrega.</p>
+    </div>
+    <div class="stage"><b>ACCIÓN</b> · volver a <b>Publicaciones</b> → «Ver flujo chatarra» del impulsor OBS-190 → «Ir al flujo de chatarra» (banner destacado en Despachos).</div>
+    <div class="say">
+      <p>¿Y si nadie compra? Esta es la regla que más me gusta. Al día quince sin adjudicación, el sistema convierte el componente a chatarra <em>solo</em>: genera la baja documental, lo registra en auditoría con autor «Sistema», lo saca del portal — y el material entra al flujo de chatarra que acabamos de ver, donde se programa su retiro y se despacha por peso. Aquí está la trazabilidad completa de este impulsor: publicado, convertido, dado de baja, y su destino en el patio. Nada queda olvidado: <em>o se vende, o se convierte — pero siempre sale</em>.</p>
+    </div>
+  </section>
+
+  <section id="s5">
+    <div class="sec-h"><span class="time">10:30</span><h2>Indicadores: la meta</h2><span class="dur">2 min</span></div>
+    <div class="stage"><b>ACCIÓN</b> · ir a <b>Indicadores</b> → pestaña <b>Componentes obsoletos</b>. Dejar la franja de la meta a pantalla completa unos segundos antes de hablar.</div>
+    <div class="say">
+      <p>Y esta es la capa de gestión — el indicador que a la gerencia le importa. Todo lo dado de baja este año suma una cartera: hoy, cuatrocientos sesenta y tres millones. La meta es una sola: <em>llevarla a cero</em>. El medidor marca cuánto va enajenado — un setenta y seis por ciento, entre lo vendido y lo convertido — y cuánto sigue pendiente en los patios: ciento diez millones. Abajo, el avance acumulado del año corre contra la línea de la cartera total: la brecha que falta por cerrar se ve de un vistazo.</p>
+      <p>En chatarra, lo mismo: recuperado en el año, tonelaje, cartera por conciliar, cumplimiento del programa y la mezcla de materiales. Y ojo con un detalle: todo esto se calcula <em>en vivo</em> desde la base de datos — si adjudicáramos el motor ahora mismo, el medidor subiría al tiro. Las exportaciones a Excel y PDF se cierran en la fase final, con el formato que defina Escondida.</p>
+    </div>
+  </section>
+
+  <section id="s6">
+    <div class="sec-h"><span class="time">12:30</span><h2>Seguridad y arquitectura</h2><span class="dur">1 min</span><span class="cut">recortable si vas atrasado</span></div>
+    <div class="say">
+      <p>Dos palabras sobre lo que no se ve. Seis roles con permisos por pantalla y por acción — es lo que vieron cambiar cada vez que pasamos de un perfil a otro. Una bitácora de auditoría donde todo queda escrito: quién, cuándo, qué hizo y sobre qué objeto — solo se agrega, nunca se edita. Y por debajo, PostgreSQL con seguridad a nivel de fila: la misma arquitectura que iría a producción. De todo el alcance de la cotización, el cien por ciento está representado en este prototipo, y cerca del ochenta por ciento ya es funcional de verdad.</p>
+    </div>
+  </section>
+
+  <section id="s7">
+    <div class="sec-h"><span class="time">13:30</span><h2>Cierre y siguiente paso</h2><span class="dur">1½ min</span></div>
+    <div class="stage"><b>ACCIÓN</b> · puedes quedarte en Indicadores o volver al Panel. Mirar a la sala, no a la pantalla.</div>
+    <div class="say">
+      <p>La propuesta se estructura en cuatro fases — el flujo de chatarra con sus estados de pago, el repositorio documental, la venta de obsoletos con su portal, y la capa de indicadores y seguridad — por un total de nueve millones doscientos ochenta mil pesos. Lo que acaban de ver no es una promesa de cómo se vería: <em>es el punto de partida</em>. No arrancamos de una hoja en blanco.</p>
+      <p>El siguiente paso que propongo es una sesión de trabajo con los dueños de cada proceso para validar las reglas — la tabla de precios, el umbral del dos por ciento, el plazo de quince días, la matriz de adjudicación — y con eso dar inicio a la Fase 1.</p>
+      <p>Quedo atento a sus preguntas. Y si quieren, lo recorremos de nuevo con calma, pantalla por pantalla.</p>
+    </div>
+    <div class="note"><div><b>Si preguntan algo que no sabes:</b> «Buena pregunta — lo dejo anotado y lo validamos en la sesión de reglas de negocio; justamente para eso es la Fase 1.» La guía completa de la plataforma tiene un FAQ con las ocho preguntas más probables.</div></div>
+  </section>
+
+  <div class="foot">Guion de demostración de la plataforma GEA · las cifras se calculan en vivo desde la base de datos y pueden variar el día de la presentación · complemento de la «Guía GEA» (funcionalidades, ciclo de vida y cobertura del alcance).</div>
+</div>
