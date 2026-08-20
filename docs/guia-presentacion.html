@@ -157,6 +157,7 @@
     <a href="#f4">F4 · Indicadores</a>
     <a href="#transversal">Transversales</a>
     <a href="#real">Real vs. simulado</a>
+    <a href="#cobertura">Cobertura del alcance</a>
     <a href="#guion">Guion de demo</a>
     <a href="#faq">Preguntas probables</a>
     <a href="#operar">Operar la demo</a>
@@ -313,6 +314,25 @@
         <tr><td>Matriz de evaluación con recálculo en vivo, certificado foliado, bitácora inmutable</td><td>Integración con SII y ERP (excluidas del alcance por cotización; se cotizan aparte)</td></tr>
       </tbody>
     </table></div>
+  </section>
+
+  <!-- ============ COBERTURA ============ -->
+  <section id="cobertura">
+    <div class="eyebrow">Trazabilidad con la Sección 3 de la cotización</div>
+    <h2>¿Cubre todo el alcance cotizado?</h2>
+    <p class="lede">Sí a nivel de alcance: los 39 requerimientos de la tabla de trazabilidad están presentes. La profundidad tiene dos niveles: <span class="chip ok">funcional</span> = la lógica opera de verdad sobre la base de datos; <span class="chip warn">representado</span> = se ve y se explica en la interfaz, pero aún no opera (se construye en la fase correspondiente).</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Grupo</th><th>Requerimientos</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="2"><b>Chatarra</b><br><small>F1–F2 · 15 ítems</small></td><td>Programa de limpieza · despachos y recepciones · valorización · EP mensual · flujo de aprobación · descuentos · pagos del vendor y conciliación · KPI de despachos y pagos</td><td><span class="chip ok">Funcional</span></td></tr>
+        <tr><td>Los 9 tipos documentales (contratos, guías, EP, descuentos, facturas, pagos, disposición final, baja scrap) en el repositorio con versionado, vencimientos y carga real</td><td><span class="chip ok">Funcional</span></td></tr>
+        <tr><td rowspan="2"><b>Obsoletos</b><br><small>F3 · 20 ítems</small></td><td>Planificación de venta · ubicación en terreno · pendientes de entrega · publicación en portal · control de tiempos · <b>conversión automática a los 15 días</b> · registro y comparación de ofertas · matriz de evaluación · certificado de adjudicación · due diligence · baja por conversión · panel de indicadores</td><td><span class="chip ok">Funcional</span></td></tr>
+        <tr><td>Guías y despachos propios de obsoletos · certificado de entrega · facturas de venta · pago por transferencia del comprador · comisión al vendor · memos firmados · los 14 tipos documentales precargados</td><td><span class="chip warn">Representado</span></td></tr>
+        <tr><td><b>Transversales</b><br><small>F1 · 4 ítems</small></td><td>Seis roles con RBAC verificado en servidor · web responsive · modelo de datos completo (PostgreSQL) · propuesta de identidad visual GEA</td><td><span class="chip ok">Funcional</span></td></tr>
+        <tr><td><b>Exclusiones</b></td><td>Integración SII · apps nativas iOS/Android · integración ERP · migración de datos históricos — correctamente fuera, tal como la Sección 10.2 de la cotización</td><td><span class="chip info">Fuera de alcance</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout tip"><b>La frase que responde esta pregunta</b>«El prototipo recorre el 100% del alcance de la cotización — las cuatro fases de punta a punta — y cerca del 80% ya tiene la lógica de negocio operando de verdad sobre la arquitectura definitiva. Lo representado sin operar es la cola administrativa posterior a la adjudicación de obsoletos: exactamente lo que la Fase 3 construye en las semanas 8 a 11.»</div>
   </section>
 
   <!-- ============ GUION ============ -->
