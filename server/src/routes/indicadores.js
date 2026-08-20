@@ -64,22 +64,57 @@ r.get('/panel', auth(), ah(async (_req, res) => {
 
 /* ---------- indicadores ---------- */
 r.get('/indicadores/chatarra', auth('ito', 'coordinador', 'adminventa'), ah(async (_req, res) => {
-  const [s, eps, pagos] = await Promise.all([
+  const [s, eps, pagos, desp, prog] = await Promise.all([
     serie(),
     q(supa.from('estados_pago').select('total, estado')),
     q(supa.from('pagos_vendor').select('monto')),
+    q(supa.from('despachos').select('kg_origen, kg_destino, estado, categorias(nombre)')),
+    q(supa.from('programa').select('est_ton, real_ton, estado')),
   ]);
   const suma = (estado) => eps.filter((e) => e.estado === estado).reduce((a, e) => a + e.total, 0);
   const aprobados = suma('aprobado');
   const pagado = pagos.reduce((a, p) => a + p.monto, 0);
+  const tonYtd = Math.round(s.reduce((a, x) => a + Number(x.tonelaje), 0));
+  const ingYtd = Math.round(s.reduce((a, x) => a + Number(x.ing_chatarra), 0));
+
+  // Recepciones sin observación (diferencia de peso ≤ 2%)
+  const recepcionadas = desp.filter((d) => d.kg_destino != null);
+  const observadas = desp.filter((d) => d.estado === 'observado').length;
+  const pctValidadas = recepcionadas.length
+    ? Math.round(((recepcionadas.length - observadas) / recepcionadas.length) * 100) : 100;
+
+  // Cumplimiento del programa de limpieza: tonelaje real vs. estimado en lo ejecutado
+  const ejec = prog.filter((p) => p.estado === 'ejecutado');
+  const estTon = ejec.reduce((a, p) => a + Number(p.est_ton), 0);
+  const realTon = ejec.reduce((a, p) => a + Number(p.real_ton ?? 0), 0);
+  const pctPrograma = estTon ? Math.round((realTon / estTon) * 100) : 0;
+
+  // Mezcla de material despachado por categoría (toneladas)
+  const mix = {};
+  desp.forEach((d) => {
+    const k = d.categorias?.nombre ?? 'Otros';
+    mix[k] = (mix[k] || 0) + (d.kg_destino ?? d.kg_origen);
+  });
+  const TONOS = ['copper', 'info', 'ok', 'warn', 'neutral'];
+  const porCategoria = Object.entries(mix).sort((a, b) => b[1] - a[1])
+    .map(([k, v], i) => ({ k, v: Math.round(v / 100) / 10, tono: TONOS[i % TONOS.length] }));
+
   res.json({
-    kpis: {
-      tonelaje_ytd: Math.round(s.reduce((a, x) => a + Number(x.tonelaje), 0)),
-      ingresos_ytd: Math.round(s.reduce((a, x) => a + Number(x.ing_chatarra), 0)),
-      dias_prom_aprobacion: 6.2,
+    hero: {
+      ingresos_ytd: ingYtd,
+      tonelaje_ytd: tonYtd,
+      por_conciliar: M(Math.max(0, aprobados - pagado) + suma('en_aprobacion')),
       pct_conciliado: aprobados ? Math.round((Math.min(pagado, aprobados) / aprobados) * 100) : 0,
     },
+    kpis: {
+      dias_prom_aprobacion: 6.2,
+      precio_medio: tonYtd ? Math.round((ingYtd * 1e6) / (tonYtd * 1000)) : 0,
+      pct_validadas: pctValidadas,
+      pct_programa: pctPrograma,
+      actividades: { ejecutadas: ejec.length, total: prog.length },
+    },
     serie: s,
+    por_categoria: porCategoria,
     cartera: [
       { k: 'Conciliado', v: M(Math.min(pagado, aprobados)), tono: 'ok' },
       { k: 'Aprobado por conciliar', v: M(Math.max(0, aprobados - pagado)), tono: 'info' },
@@ -102,13 +137,15 @@ r.get('/indicadores/obsoletos', auth('ito', 'coordinador', 'adminventa'), ah(asy
     .map((x) => Math.max(1, Math.round((new Date(x.fecha) - new Date(x.componentes.publicado_el)) / 86400000)));
   const tMedio = tiempos.length ? Math.round((tiempos.reduce((a, b) => a + b, 0) / tiempos.length) * 10) / 10 : 9.4;
 
-  // Meta de enajenación: la cartera obsoleta completa debe tender a 0.
-  // Gestionado = vendido (montos adjudicados) + derivado a chatarra (valor referencial convertido).
-  const cartera = comps.reduce((a, c) => a + c.valor_ref, 0);
-  const vendido = adj.reduce((a, x) => a + (x.ofertas?.monto ?? 0), 0);
+  // Meta de enajenación: todo lo ingresado al programa 2026 debe salir (la cartera pendiente tiende a $0).
+  // Vendido = ingresos por venta del año (serie histórica + mes vivo, coherente con el KPI YTD).
+  // Convertido = valor referencial derivado a chatarra. Pendiente = componentes vivos aún sin gestionar.
+  const vendido = Math.round(s.reduce((a, x) => a + Number(x.ing_obsoletos), 0) * 1e6);
+  const vendidoVivo = adj.reduce((a, x) => a + (x.ofertas?.monto ?? 0), 0);
   const convertido = comps.filter((c) => c.estado === 'convertido').reduce((a, c) => a + c.valor_ref, 0);
+  const pendiente = Math.max(0, comps.reduce((a, c) => a + c.valor_ref, 0) - vendidoVivo - convertido);
   const gestionado = vendido + convertido;
-  const pendiente = Math.max(0, cartera - gestionado);
+  const cartera = gestionado + pendiente;
 
   // Avance acumulado de ingresos por enajenación (M CLP)
   let acum = 0;
@@ -124,7 +161,11 @@ r.get('/indicadores/obsoletos', auth('ito', 'coordinador', 'adminventa'), ah(asy
     meta: {
       cartera, vendido, convertido, gestionado, pendiente,
       pct_avance: cartera ? Math.round((gestionado / cartera) * 1000) / 10 : 0,
-      unidades: { total: comps.length, gestionadas: adjudicadas + convertidas },
+      unidades: {
+        total: comps.length,
+        gestionadas: adjudicadas + convertidas,
+        pendientes: Math.max(0, comps.length - adjudicadas - convertidas),
+      },
     },
     serie_acumulada: serieAcum,
     resultado: [

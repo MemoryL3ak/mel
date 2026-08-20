@@ -73,7 +73,8 @@ export default function Portal() {
   const [form, setForm] = useState({ monto: '', plazo_retiro: '5 días hábiles', forma_pago: 'Transferencia 100%', comentarios: '' });
   const [registro, setRegistro] = useState(false);
   const [reg, setReg] = useState({ razon_social: '', rut: '', email: '', telefono: '' });
-  const { user } = useAuth();
+  const [acceso, setAcceso] = useState(null); // publicación elegida por un perfil que aún no es comprador
+  const { user, login } = useAuth();
   const toast = useToast();
   const esComprador = user.role === 'comprador';
 
@@ -81,8 +82,22 @@ export default function Portal() {
     api('/public/publicaciones').then(setPubs).catch((e) => toast(e.message, true));
     if (esComprador) api('/public/mis-ofertas').then(setMisOfertas).catch(() => {});
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [user.role]);
   if (!pubs) return <div className="loading">Cargando portal…</div>;
+
+  function abrirOferta(p) {
+    if (!esComprador) { setAcceso(p); return; }
+    setOferta(p); setForm({ ...form, monto: String(p.valor_ref) });
+  }
+  async function entrarComoComprador() {
+    try {
+      const p = acceso;
+      await login('comprador', 'demo');
+      toast('Sesión de comprador iniciada · Maestranza Andina Ltda.');
+      setAcceso(null);
+      setOferta(p); setForm({ ...form, monto: String(p.valor_ref) });
+    } catch (e) { toast(e.message, true); }
+  }
 
   async function ofertar() {
     try {
@@ -126,11 +141,7 @@ export default function Portal() {
                   <Chip tone={p.dias_restantes <= 1 ? 'bad' : 'info'}>
                     {p.dias_restantes <= 0 ? 'Cierra hoy' : p.dias_restantes === 1 ? 'Vence mañana' : `${p.dias_restantes} días restantes`}
                   </Chip>
-                  <button className="btn sm primary" disabled={!esComprador}
-                    title={esComprador ? '' : 'Inicie sesión como comprador para ofertar'}
-                    onClick={() => { setOferta(p); setForm({ ...form, monto: String(p.valor_ref) }); }}>
-                    Presentar oferta
-                  </button>
+                  <button className="btn sm primary" onClick={() => abrirOferta(p)}>Presentar oferta</button>
                 </div>
                 <div className="pcontact">
                   <button className="btn sm" onClick={() => generarFicha(p, p.dias_restantes === 1 ? 'Vence mañana' : `${p.dias_restantes} días restantes`)}>
@@ -186,6 +197,15 @@ export default function Portal() {
         </Field>
         <Field label="Comentarios"><textarea rows="2" value={form.comentarios} onChange={(e) => setForm({ ...form, comentarios: e.target.value })} placeholder="Condiciones, equipos de izaje, etc." /></Field>
         <small style={{ color: 'var(--muted)' }}>Al ofertar acepta las bases de venta. Su oferta queda en el cuadro comparativo del administrador.</small>
+      </Modal>
+
+      <Modal open={!!acceso} title={`Ofertar por ${acceso?.nombre ?? ''}`} onClose={() => setAcceso(null)}
+        footer={<>
+          <button className="btn" onClick={() => { setAcceso(null); setRegistro(true); }}>Registrarse como comprador</button>
+          <button className="btn primary" onClick={entrarComoComprador}>Entrar como comprador demo</button>
+        </>}>
+        <p style={{ marginTop: 0 }}>Las ofertas se presentan con una <b>cuenta de comprador registrada</b> y con due diligence aprobada. Su perfil actual ({user.name}) es de gestión interna, por lo que ve el portal tal como lo ve el público.</p>
+        <p style={{ marginBottom: 0 }}>Para la demostración puede <b>entrar como comprador demo</b> (Maestranza Andina Ltda., ya verificado) y presentar la oferta de inmediato, o registrar una empresa nueva que quedará en verificación.</p>
       </Modal>
 
       <Modal open={registro} title="Registro de comprador" onClose={() => setRegistro(false)}
