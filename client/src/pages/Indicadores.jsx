@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api.js';
+import { useLocation } from 'react-router-dom';
+import { api, fmtCLP } from '../api.js';
 import { KPI, PageHead, Tabs, useToast } from '../ui.jsx';
-import { BarChart, HBarChart, LineChart, mesLabel } from '../charts.jsx';
+import { BarChart, Gauge, HBarChart, LineChart, mesLabel } from '../charts.jsx';
+
+const M = (n) => '$ ' + Math.round((n ?? 0) / 1000000).toLocaleString('es-CL') + ' M';
 
 export default function Indicadores() {
-  const [tab, setTab] = useState('chatarra');
+  const loc = useLocation();
+  const [tab, setTab] = useState(() =>
+    new URLSearchParams(loc.search).get('tab') === 'obsoletos' ? 'obsoletos' : 'chatarra');
   const [cha, setCha] = useState(null);
   const [obs, setObs] = useState(null);
   const toast = useToast();
@@ -47,13 +52,36 @@ export default function Indicadores() {
 
       {tab === 'obsoletos' && obs && (
         <>
+          <div className="card meta-hero" style={{ marginBottom: 16 }}>
+            <div className="meta-gauge">
+              <Gauge pct={obs.meta.pct_avance} label="DE LA META" />
+            </div>
+            <div className="meta-tiles">
+              <div>
+                <div className="lbl">Meta: cartera total obsoletos</div>
+                <div className="val">{M(obs.meta.cartera)}</div>
+                <div className="delta">{obs.meta.unidades.total} componentes ingresados · el objetivo es llevarla a $ 0</div>
+              </div>
+              <div>
+                <div className="lbl">Enajenado a la fecha</div>
+                <div className="val" style={{ color: 'var(--ok-tx)' }}>{M(obs.meta.gestionado)}</div>
+                <div className="delta">vendido {M(obs.meta.vendido)} · convertido a chatarra {M(obs.meta.convertido)} · {obs.meta.unidades.gestionadas} unidades</div>
+              </div>
+              <div>
+                <div className="lbl">Pendiente por enajenar</div>
+                <div className="val" style={{ color: 'var(--copper-deep)' }}>{M(obs.meta.pendiente)}</div>
+                <div className="delta"><b className="down">debe tender a $ 0</b> · {100 - Math.round(obs.meta.pct_avance)}% de la cartera aún en patios</div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid g4" style={{ marginBottom: 16 }}>
             <KPI label="Tiempo medio publicación" value={obs.kpis.tiempo_medio} unit="días" delta="límite: 15 días" />
             <KPI label="Tasa de adjudicación" value={obs.kpis.tasa_adjudicacion} unit="%" delta="de publicaciones cerradas" />
             <KPI label="Conversión a chatarra" value={obs.kpis.pct_conversion} unit="%" delta="sin adjudicar dentro del plazo" />
             <KPI label="Ingresos obsoletos YTD" value={`$ ${obs.kpis.ingresos_ytd}`} unit="M" delta="ventas adjudicadas" />
           </div>
-          <div className="grid g2">
+          <div className="grid g2" style={{ marginBottom: 16 }}>
             <div className="card">
               <div className="card-h"><h3>Resultado de publicaciones</h3><small>unidades</small></div>
               <div className="card-b"><HBarChart rows={obs.resultado} /></div>
@@ -64,6 +92,12 @@ export default function Indicadores() {
                 <LineChart labels={obs.serie.map((s) => mesLabel(s.mes))}
                   series={[{ name: 'Obsoletos', color: '#eb6834', data: obs.serie.map((s) => s.ing_obsoletos) }]} />
               </div>
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-h"><h3>Avance acumulado de enajenación</h3><small>millones CLP · acumulado 2026</small></div>
+            <div className="card-b">
+              <BarChart labels={obs.serie_acumulada.map((s) => mesLabel(s.mes))} data={obs.serie_acumulada.map((s) => s.v)} unit=" M" />
             </div>
           </div>
         </>

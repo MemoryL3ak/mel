@@ -92,8 +92,8 @@ r.get('/indicadores/chatarra', auth('ito', 'coordinador', 'adminventa'), ah(asyn
 r.get('/indicadores/obsoletos', auth('ito', 'coordinador', 'adminventa'), ah(async (_req, res) => {
   const [s, comps, adj] = await Promise.all([
     serie(),
-    q(supa.from('componentes').select('estado')),
-    q(supa.from('adjudicaciones').select('fecha, componentes(publicado_el)')),
+    q(supa.from('componentes').select('estado, valor_ref')),
+    q(supa.from('adjudicaciones').select('fecha, ofertas(monto), componentes(publicado_el)')),
   ]);
   const adjudicadas = adj.length;
   const convertidas = comps.filter((c) => c.estado === 'convertido').length;
@@ -101,6 +101,19 @@ r.get('/indicadores/obsoletos', auth('ito', 'coordinador', 'adminventa'), ah(asy
   const tiempos = adj.filter((x) => x.componentes?.publicado_el)
     .map((x) => Math.max(1, Math.round((new Date(x.fecha) - new Date(x.componentes.publicado_el)) / 86400000)));
   const tMedio = tiempos.length ? Math.round((tiempos.reduce((a, b) => a + b, 0) / tiempos.length) * 10) / 10 : 9.4;
+
+  // Meta de enajenación: la cartera obsoleta completa debe tender a 0.
+  // Gestionado = vendido (montos adjudicados) + derivado a chatarra (valor referencial convertido).
+  const cartera = comps.reduce((a, c) => a + c.valor_ref, 0);
+  const vendido = adj.reduce((a, x) => a + (x.ofertas?.monto ?? 0), 0);
+  const convertido = comps.filter((c) => c.estado === 'convertido').reduce((a, c) => a + c.valor_ref, 0);
+  const gestionado = vendido + convertido;
+  const pendiente = Math.max(0, cartera - gestionado);
+
+  // Avance acumulado de ingresos por enajenación (M CLP)
+  let acum = 0;
+  const serieAcum = s.map((x) => ({ mes: x.mes, v: Math.round((acum += Number(x.ing_obsoletos)) * 10) / 10 }));
+
   res.json({
     kpis: {
       tiempo_medio: tMedio,
@@ -108,6 +121,12 @@ r.get('/indicadores/obsoletos', auth('ito', 'coordinador', 'adminventa'), ah(asy
       pct_conversion: cerradas ? Math.round((convertidas / cerradas) * 100) : 0,
       ingresos_ytd: Math.round(s.reduce((a, x) => a + Number(x.ing_obsoletos), 0)),
     },
+    meta: {
+      cartera, vendido, convertido, gestionado, pendiente,
+      pct_avance: cartera ? Math.round((gestionado / cartera) * 1000) / 10 : 0,
+      unidades: { total: comps.length, gestionadas: adjudicadas + convertidas },
+    },
+    serie_acumulada: serieAcum,
     resultado: [
       { k: 'Adjudicadas', v: adjudicadas, tono: 'ok' },
       { k: 'Convertidas a chatarra', v: convertidas, tono: 'bad' },
