@@ -166,7 +166,7 @@
     <div><b>GEA</b><small>Gestión de Enajenación de Activos · Minera Escondida</small></div>
   </div>
   <h1>Guía de presentación del prototipo</h1>
-  <p>Todo lo que necesitas entender y decir mañana: qué problema resuelve, cómo funciona cada módulo, qué es real y qué es simulado, un guion de demo de 10 minutos y respuestas a las preguntas probables.</p>
+  <p>Todo lo necesario para entender y presentar el prototipo: qué problema resuelve, cómo funciona cada módulo, qué es real y qué es simulado, un guion de demo de 10 minutos y respuestas a las preguntas probables.</p>
   <div class="meta">Basada en la Cotización v2.0 (julio 2026) · Prototipo full-stack sobre Supabase</div>
 </div></div>
 
@@ -621,10 +621,10 @@ npm start          # → http://localhost:4001
 # opción desarrollo (recarga en vivo)
 npm run dev        # → http://localhost:5173</code></pre>
     <p>Usuarios: <code>coordinador</code>, <code>ito</code>, <code>limpieza</code>, <code>vendor</code>, <code>adminventa</code>, <code>comprador</code> — todos con contraseña <code>demo</code> (la pantalla de login los muestra como tarjetas; un clic basta).</p>
-    <div class="callout tip"><b>Reset antes de presentar</b>La mañana de la presentación (o tras ensayar) ejecuta <span class="mono">npm run demo:refresh</span>: re-ancla todas las fechas a hoy y restaura los estados canónicos — EP en aprobación, tolva en día 14 de 15, OBS-190 convertido — y limpia lo que hayas tocado ensayando. Para un reset total del esquema, re-ejecuta <span class="mono">server/db/supabase.sql</span> en el SQL Editor de Supabase.</div>
+    <div class="callout tip"><b>Reset antes de presentar</b>Antes de una presentación (o después de ensayar) ejecutar <span class="mono">npm run demo:refresh</span>: re-ancla todas las fechas a hoy y restaura los estados canónicos — EP en aprobación, tolva en día 14 de 15, OBS-190 convertido — y limpia cualquier dato de ensayo. Para un reset total del esquema, re-ejecutar <span class="mono">server/db/supabase.sql</span> en el SQL Editor de Supabase.</div>
     <div class="callout tip"><b>Atajo para presentar</b>Puedes entrar directo con un perfil usando la URL: <span class="mono">http://localhost:4001/?demo=coordinador</span> (o <span class="mono">?demo=adminventa</span>, <span class="mono">?demo=comprador</span>…). Útil para saltar entre roles sin pasar por el login durante la demo.</div>
     <div class="callout tip"><b>Plan B sin internet</b>La demo necesita conexión (la base está en Supabase). Si la sala no tiene red confiable, ten el respaldo: la maqueta estática navegable en <span class="mono">prototipo/index.html</span> abre desde el disco sin servidor ni internet — misma apariencia, datos fijos.</div>
   </section>
 
-  <footer>Guía interna de presentación · Prototipo GEA para Minera Escondida Limitada · Basada en la Cotización v2.0 de Ariel Beroíza (julio 2026). Los nombres de empresas contratistas y compradores son ficticios.</footer>
+  <footer>Guía de presentación · Prototipo GEA para Minera Escondida Limitada · Basada en la Cotización v2.0 de Ariel Beroíza (julio 2026). Los nombres de empresas contratistas y compradores son ficticios; los datos de la demo son de demostración.</footer>
 </main>
