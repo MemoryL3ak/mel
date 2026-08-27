@@ -1,0 +1,235 @@
+<title>Carta Gantt GEA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root{
+    --bg:#F3F1EE; --surface:#FFFFFF; --surface-2:#FAF8F5;
+    --ink:#221D18; --ink-2:#6B6259; --muted:#948B80;
+    --line:#E5E0D8; --line-2:#EFEBE4;
+    --copper:#A4562E; --copper-deep:#83421F; --copper-tint:#F5E8DF; --copper-line:#E2C9B8;
+    --graphite:#232930; --graphite-ink:#EDEAE6; --graphite-mut:#9AA3AC;
+    --c-build:#A4562E; --c-meet:#2a78d6; --c-go:#3E8E5A;
+    --sans:'Archivo',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#191D22; --surface:#22272E; --surface-2:#262C34;
+      --ink:#ECE8E2; --ink-2:#B8B0A6; --muted:#8B8378;
+      --line:#39404A; --line-2:#2E343D;
+      --copper:#D07A45; --copper-deep:#DE8A52; --copper-tint:#3A2E25; --copper-line:#54402F;
+      --graphite:#12161B; --graphite-ink:#EDEAE6; --graphite-mut:#8D97A1;
+      --c-build:#C97646; --c-meet:#6293D8; --c-go:#55A06E;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#191D22; --surface:#22272E; --surface-2:#262C34;
+    --ink:#ECE8E2; --ink-2:#B8B0A6; --muted:#8B8378;
+    --line:#39404A; --line-2:#2E343D;
+    --copper:#D07A45; --copper-deep:#DE8A52; --copper-tint:#3A2E25; --copper-line:#54402F;
+    --graphite:#12161B; --graphite-ink:#EDEAE6; --graphite-mut:#8D97A1;
+    --c-build:#C97646; --c-meet:#6293D8; --c-go:#55A06E;
+  }
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;margin:0;font-size:15px}
+  .wrap{max-width:960px;margin:0 auto;padding:44px 22px 90px}
+  header.hero{background:var(--graphite);color:var(--graphite-ink);border-radius:16px;padding:30px 36px;margin-bottom:30px}
+  .hero .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--graphite-mut)}
+  .hero h1{margin:10px 0 6px;font-size:30px;font-weight:800;letter-spacing:-.01em;text-wrap:balance}
+  .hero p{margin:0;color:var(--graphite-mut);max-width:64ch}
+  .hero .meta{display:flex;gap:26px;flex-wrap:wrap;margin-top:18px;font-size:12.5px}
+  .hero .meta div b{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--graphite-mut);font-weight:700;margin-bottom:2px}
+  h2{font-size:20px;font-weight:800;letter-spacing:-.01em;margin:38px 0 6px;border-bottom:2px solid var(--line);padding-bottom:8px}
+  h2 small{font-size:12px;color:var(--muted);font-weight:600;margin-left:8px}
+  p{max-width:72ch}
+  .lead{font-size:16px;color:var(--ink-2)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin:16px 0}
+  strong{color:var(--copper-deep)}
+  .mono{font-family:var(--mono);font-size:.92em}
+
+  /* ---- Gantt ---- */
+  .gantt-scroll{overflow-x:auto;margin:16px 0}
+  .gantt{min-width:860px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px 14px;position:relative}
+  .g-grid{display:grid;grid-template-columns:200px 1fr;row-gap:7px;position:relative}
+  .g-weeks{display:grid;grid-template-columns:repeat(28,1fr);font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .g-weeks span{grid-column:span 5;border-left:1px solid var(--line);padding:2px 0 4px 7px;white-space:nowrap}
+  .g-weeks span:last-child{grid-column:span 3}
+  .g-label{font-size:12.5px;font-weight:600;color:var(--ink-2);padding:5px 12px 5px 0;display:flex;align-items:center}
+  .g-label b{color:var(--ink)}
+  .track{display:grid;grid-template-columns:repeat(28,1fr);align-items:center;min-height:30px;border-radius:6px;
+    background:repeating-linear-gradient(to right, var(--line-2) 0 1px, transparent 1px calc(100%/28*5));}
+  .g-grid .rowpair:hover .track{background-color:var(--surface-2)}
+  .bar{height:16px;border-radius:4px;display:flex;align-items:center;padding:0 7px;color:#fff;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:.02em;white-space:nowrap;overflow:hidden}
+  :root[data-theme="dark"] .bar{color:#14100c}
+  .bar.build{background:var(--c-build)}
+  .bar.meet{background:var(--c-meet)}
+  .bar.go{background:var(--c-go)}
+  .dia{width:11px;height:11px;background:var(--ink);transform:rotate(45deg);justify-self:center;border-radius:2px}
+  .dia.big{width:14px;height:14px;background:var(--copper)}
+  .holiday{position:absolute;top:0;bottom:0;pointer-events:none;
+    background:repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 8px);opacity:.5;border-radius:4px}
+  .g-legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line-2);font-size:12px;color:var(--ink-2)}
+  .g-legend span{display:flex;align-items:center;gap:7px}
+  .g-legend i{width:14px;height:9px;border-radius:3px;flex-shrink:0}
+  .g-legend .di{width:9px;height:9px;background:var(--ink);transform:rotate(45deg);border-radius:2px;flex-shrink:0}
+  .g-legend .ho{width:14px;height:9px;border-radius:2px;background:repeating-linear-gradient(135deg, var(--line) 0 2px, transparent 2px 5px);border:1px solid var(--line);flex-shrink:0}
+
+  /* ---- tablas ---- */
+  .tbl-wrap{overflow-x:auto;margin:14px 0}
+  table{border-collapse:collapse;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13.5px}
+  th{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.mono{white-space:nowrap;font-family:var(--mono);font-size:12px}
+  .num{text-align:right}
+
+  ul.terms{margin:8px 0;padding-left:20px}
+  ul.terms li{margin:7px 0;color:var(--ink-2)}
+  ul.terms li b{color:var(--ink)}
+  .foot{margin-top:44px;border-top:1px solid var(--line);padding-top:16px;font-size:12.5px;color:var(--muted);max-width:none}
+  @media print{
+    body{background:#fff}
+    .hero{border-radius:0}
+    .gantt-scroll,.tbl-wrap{overflow:visible}
+    h2{break-after:avoid}
+    .card,.gantt,table{break-inside:avoid}
+  }
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="kicker">Plataforma GEA · Enajenación de chatarra y venta de componentes obsoletos</div>
+    <h1>Carta Gantt — Plan de ejecución</h1>
+    <p>Entrega total de la plataforma en producción al 30 de septiembre de 2026, con el programa de reuniones de levantamiento y los compromisos que sostienen el calendario.</p>
+    <div class="meta">
+      <div><b>Cliente</b>Minera Escondida Limitada</div>
+      <div><b>Preparado por</b>Ariel Beroíza · Consultor Senior</div>
+      <div><b>Fecha</b>20 de agosto de 2026</div>
+      <div><b>Referencia</b>Cotización v2.0 (27-jul-2026), aprobada</div>
+    </div>
+  </header>
+
+  <p class="lead">La cotización aprobada estimó 12 semanas de calendario. El plazo solicitado —plataforma completa al <strong>miércoles 30 de septiembre de 2026</strong>— es alcanzable sin reducir el alcance por una razón concreta: el proyecto no parte de cero. El prototipo presentado a MEL ya opera sobre la arquitectura definitiva (PostgreSQL con seguridad a nivel de fila, aplicación React, seis roles) y cubre funcionalmente la mayor parte del alcance de las cuatro fases. El trabajo restante consiste en incorporar las reglas reales de negocio que se recojan en el levantamiento, completar los módulos pendientes y endurecer el conjunto para producción. Sobre esa base, las fases 2 y 3 se ejecutan en paralelo —solapamiento ya previsto en la Sección 7 de la cotización— y la última semana queda reservada como colchón para QA, capacitación y puesta en marcha.</p>
+
+  <h2>Carta Gantt <small>24 de agosto — 30 de septiembre de 2026 · días hábiles</small></h2>
+  <div class="gantt-scroll"><div class="gantt">
+    <div class="g-grid">
+      <div></div>
+      <div class="g-weeks">
+        <span>24–28 ago</span><span>31 ago–4 sep</span><span>7–11 sep</span><span>14–18 sep</span><span>21–25 sep</span><span>28–30 sep</span>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Levantamiento de procesos</b></div>
+        <div class="track">
+          <div class="bar meet" style="grid-column:1/6" title="Reuniones R0 a R3 · 24 al 28 de agosto">R0–R3</div>
+          <div class="bar meet" style="grid-column:16/17" title="R4 · indicadores y reportes · lunes 14 de septiembre">R4</div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Fase 1</b>&nbsp;· Base + chatarra</div>
+        <div class="track">
+          <div class="bar build" style="grid-column:1/11" title="Construcción · 24 de agosto al 4 de septiembre">construcción</div>
+          <div class="bar go" style="grid-column:11/13" title="Validación MEL y puesta en producción · 7 y 8 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Fase 2</b>&nbsp;· Documental chatarra</div>
+        <div class="track">
+          <div class="bar build" style="grid-column:11/16" title="Construcción · 7 al 11 de septiembre">construcción</div>
+          <div class="bar go" style="grid-column:16/17" title="Validación MEL y producción · lunes 14 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Fase 3</b>&nbsp;· Obsoletos + portal</div>
+        <div class="track">
+          <div class="bar build" style="grid-column:11/20" title="Construcción · 7 al 17 de septiembre">construcción</div>
+          <div class="bar go" style="grid-column:21/23" title="Validación MEL y puesta en producción · 21 y 22 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Fase 4</b>&nbsp;· Indicadores y reportería</div>
+        <div class="track">
+          <div class="bar build" style="grid-column:21/25" title="Construcción · 21 al 24 de septiembre">construcción</div>
+          <div class="bar go" style="grid-column:25/26" title="Validación MEL · viernes 25 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>QA integral + capacitación</b></div>
+        <div class="track">
+          <div class="bar go" style="grid-column:26/28" title="QA de extremo a extremo y capacitación de los seis perfiles · 28 y 29 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Puesta en marcha total</b></div>
+        <div class="track">
+          <div class="dia big" style="grid-column:28/29" title="Plataforma completa en producción · miércoles 30 de septiembre de 2026"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label">Compromisos MEL <span class="mono" style="color:var(--muted)">&nbsp;◆</span></div>
+        <div class="track">
+          <div class="dia" style="grid-column:5/6" title="Información de la Sección 9 completa · viernes 28 de agosto"></div>
+          <div class="dia" style="grid-column:11/12" title="Validación de la Fase 1 · lunes 7 de septiembre"></div>
+          <div class="dia" style="grid-column:16/17" title="Métricas definitivas de indicadores y formatos de reportes · lunes 14 de septiembre"></div>
+          <div class="dia" style="grid-column:21/22" title="Validación de la Fase 3 · lunes 21 de septiembre"></div>
+          <div class="dia" style="grid-column:25/26" title="Validación de la Fase 4 · viernes 25 de septiembre"></div>
+        </div>
+      </div>
+      <div class="holiday" style="left:calc(200px + (100% - 200px)/28*19);width:calc((100% - 200px)/28)" title="Feriado 18 de septiembre"></div>
+    </div>
+    <div class="g-legend">
+      <span><i style="background:var(--c-build)"></i>Construcción</span>
+      <span><i style="background:var(--c-meet)"></i>Reuniones de levantamiento</span>
+      <span><i style="background:var(--c-go)"></i>Validación y puesta en producción</span>
+      <span><span class="di"></span>&nbsp;Compromiso MEL</span>
+      <span><span class="ho"></span>&nbsp;Feriado 18 sep</span>
+    </div>
+  </div></div>
+
+  <h2>Programa de reuniones de levantamiento</h2>
+  <p>Concentradas en la primera semana para que la construcción avance desde el día uno con las reglas reales. Cada reunión indica los insumos que MEL debe traer (Sección 9 de la cotización); con ellos en la mesa, una sesión basta por tema.</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th></th><th>Fecha propuesta</th><th>Duración</th><th>Tema</th><th>Asistentes MEL</th><th>Insumos requeridos</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">R0</td><td class="mono">Lun 24 ago</td><td class="mono">45 min</td><td><b>Kickoff</b>: contrapartes, accesos, calendario y volúmenes</td><td>Contraparte técnica y de negocio</td><td>Designación de contrapartes · volúmenes esperados de usuarios y transacciones</td></tr>
+      <tr><td class="mono">R1</td><td class="mono">Mar 25 ago</td><td class="mono">90 min</td><td><b>Proceso de chatarra</b>: valorización, estados de pago y descuentos</td><td>Coordinador Logístico, ITO</td><td>Contratos vigentes con vendor y empresa de limpieza · tabla de categorías y precios · flujo de aprobación del EP (quién, orden, facultades, rechazo)</td></tr>
+      <tr><td class="mono">R2</td><td class="mono">Jue 27 ago</td><td class="mono">90 min</td><td><b>Obsoletos y portal</b>: publicación, ofertas y adjudicación</td><td>Adm. Plataforma de Venta, Coordinador</td><td>Matriz de evaluación y ponderaciones · protocolo de due diligence · condiciones de venta y comisión al vendor</td></tr>
+      <tr><td class="mono">R3</td><td class="mono">Vie 28 ago</td><td class="mono">60 min</td><td><b>Control documental</b>: tipos, vencimientos y firmantes</td><td>Coordinador, ITO, referente documental</td><td>Los 9 tipos documentales de chatarra y 14 de obsoletos con sus responsables y plazos de vencimiento</td></tr>
+      <tr><td class="mono">R4</td><td class="mono">Lun 14 sep</td><td class="mono">60 min</td><td><b>Indicadores y reportes</b> (previo a la Fase 4)</td><td>Contraparte de negocio</td><td>Métricas y cortes de tiempo definitivos por panel · formato esperado de reportes Excel y PDF</td></tr>
+      <tr><td class="mono">V</td><td class="mono">Viernes</td><td class="mono">45 min</td><td><b>Validación semanal de entregas</b> (4, 11, 17 y 25 sep)</td><td>Contrapartes</td><td>Revisión del entregable de la semana en el ambiente de producción</td></tr>
+      <tr><td class="mono">C</td><td class="mono">Lun 28 – Mar 29 sep</td><td class="mono">2 h por perfil</td><td><b>Capacitación</b> de los seis perfiles de usuario</td><td>Usuarios finales por rol</td><td>Convocatoria de los usuarios de cada perfil</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Hitos de entrega y facturación</h2>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Fase</th><th>Entrega</th><th>Validación MEL</th><th>En producción</th><th>Facturación (según cotización, 40/60)</th></tr></thead>
+    <tbody>
+      <tr><td><b>Fase 1</b> · Base + chatarra</td><td class="mono">Vie 4 sep</td><td class="mono">Lun 7 sep</td><td class="mono">Mar 8 sep</td><td>Anticipo al 24 ago (junto a infraestructura) · saldo al 8 sep</td></tr>
+      <tr><td><b>Fase 2</b> · Documental chatarra</td><td class="mono">Vie 11 sep</td><td class="mono">Lun 14 sep</td><td class="mono">Lun 14 sep</td><td>Anticipo al 7 sep · saldo al 14 sep</td></tr>
+      <tr><td><b>Fase 3</b> · Obsoletos + portal</td><td class="mono">Jue 17 sep</td><td class="mono">Lun 21 sep</td><td class="mono">Mar 22 sep</td><td>Anticipo al 7 sep · saldo al 22 sep</td></tr>
+      <tr><td><b>Fase 4</b> · Indicadores y reportería</td><td class="mono">Jue 24 sep</td><td class="mono">Vie 25 sep</td><td class="mono">Mié 30 sep</td><td>Anticipo al 21 sep · saldo al 30 sep</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Compromisos que sostienen el calendario</h2>
+  <p>Un plazo de seis semanas donde la cotización estimaba doce se cumple con disciplina de ambas partes. Estos son los compromisos recíprocos; son la condición del plan, no letra chica.</p>
+  <div class="card">
+    <b>Del consultor</b>
+    <ul class="terms">
+      <li><b>Dedicación exclusiva</b> al proyecto durante las seis semanas del plan.</li>
+      <li><b>Entrega semanal en producción</b>: cada viernes hay un avance operable en el ambiente real, no una promesa en diapositivas.</li>
+      <li><b>Reporte de avance semanal</b> escrito, con lo entregado, lo próximo y los riesgos.</li>
+      <li>La <b>semana final queda reservada como colchón</b> de QA, capacitación y puesta en marcha: el alcance no depende de que esa semana produzca funcionalidad nueva.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>De MEL</b>
+    <ul class="terms">
+      <li><b>Asistencia a las reuniones R0–R3</b> en la semana del 24 de agosto, con los insumos indicados en la tabla. La información de la Sección 9 completa el <b>viernes 28 de agosto</b>.</li>
+      <li><b>Validación de cada entrega en 48 horas hábiles</b>. Una validación pendiente detiene la puesta en producción de esa fase, no la construcción de la siguiente.</li>
+      <li><b>Métricas de indicadores y formatos de reportes definidos el 14 de septiembre</b> (reunión R4); es el insumo que habilita la Fase 4.</li>
+      <li>Conforme a la Sección 7 de la cotización, las demoras en validaciones, aprobaciones o entrega de información <b>desplazan el calendario en la misma proporción</b>. Con los compromisos anteriores cumplidos, la fecha del 30 de septiembre queda asegurada.</li>
+    </ul>
+  </div>
+
+  <div class="foot">Este plan complementa la Cotización v2.0 del 27 de julio de 2026 y no modifica su alcance, sus precios ni sus condiciones comerciales; únicamente comprime el calendario aprovechando el solapamiento de fases previsto en su Sección 7 y la base ya construida del prototipo. Ariel Beroíza · beroiza.ariel@gmail.com · +56 9 9545 5073.</div>
+</div>
