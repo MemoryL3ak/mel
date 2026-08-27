@@ -91,11 +91,33 @@
   ul.terms li b{color:var(--ink)}
   .foot{margin-top:44px;border-top:1px solid var(--line);padding-top:16px;font-size:12.5px;color:var(--muted);max-width:none}
   @media print{
-    body{background:#fff}
-    .hero{border-radius:0}
+    body{background:#fff;font-size:12.5px}
+    .wrap{max-width:none;padding:0}
+    .hero{border-radius:10px;padding:22px 26px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .hero h1{font-size:24px}
     .gantt-scroll,.tbl-wrap{overflow:visible}
-    h2{break-after:avoid}
-    .card,.gantt,table{break-inside:avoid}
+    .gantt{min-width:0;padding:12px 14px 10px}
+    .g-grid{grid-template-columns:150px 1fr}
+    .g-label{font-size:10.5px}
+    .g-weeks{font-size:8px;letter-spacing:.02em}
+    .bar{font-size:8px;padding:0 4px;height:13px}
+    .track{min-height:24px}
+    .dia{width:9px;height:9px}.dia.big{width:12px;height:12px}
+    .holiday{left:calc(150px + (100% - 150px)/39*13) !important;width:calc((100% - 150px)/39) !important;background:var(--line-2);opacity:1}
+    .holiday+.holiday{left:calc(150px + (100% - 150px)/39*29) !important}
+    .g-legend .ho{background:var(--line-2)}
+    .wline{display:none}
+    .g-legend{font-size:10px;gap:14px}
+    .foot{margin-top:14px;padding-top:10px}
+    table{font-size:11px}
+    th{font-size:9px;padding:7px 10px}
+    td{padding:7px 10px}
+    .two-stage{break-inside:avoid}
+    h2{break-after:avoid;margin-top:24px}
+    .card,.gantt{break-inside:avoid}
+    table{break-inside:auto}
+    tr{break-inside:avoid}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   }
 </style>
 
@@ -143,14 +165,14 @@
         </div>
       </div>
       <div class="rowpair" style="display:contents">
-        <div class="g-label"><b>Fase 1</b>&nbsp;· Base + chatarra</div>
+        <div class="g-label"><b>Fase&nbsp;1</b>&nbsp;· Base + chatarra</div>
         <div class="track">
           <div class="bar build" style="grid-column:1/10" title="Construcción · 1 al 11 de septiembre">construcción</div>
           <div class="bar go" style="grid-column:10/12" title="Validación MEL y puesta en producción · 14 y 15 de septiembre"></div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
-        <div class="g-label"><b>Fase 3</b>&nbsp;· Obsoletos + portal</div>
+        <div class="g-label"><b>Fase&nbsp;3</b>&nbsp;· Obsoletos + portal</div>
         <div class="track">
           <div class="bar build" style="grid-column:10/20" title="Construcción · 14 al 25 de septiembre (feriado 18 excluido)">construcción</div>
           <div class="bar go" style="grid-column:20/22" title="Validación MEL y puesta en producción · 28 y 29 de septiembre"></div>
@@ -169,14 +191,14 @@
         </div>
       </div>
       <div class="rowpair" style="display:contents">
-        <div class="g-label"><b>Fase 2</b>&nbsp;· Documental chatarra</div>
+        <div class="g-label"><b>Fase&nbsp;2</b>&nbsp;· Documental chatarra</div>
         <div class="track">
           <div class="bar build" style="grid-column:23/28" title="Construcción · 1 al 7 de octubre">construcción</div>
           <div class="bar go" style="grid-column:28/30" title="Validación MEL y producción · 8 y 9 de octubre"></div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
-        <div class="g-label"><b>Fase 4</b>&nbsp;· Indicadores y reportería</div>
+        <div class="g-label"><b>Fase&nbsp;4</b>&nbsp;· Indicadores y reportería</div>
         <div class="track">
           <div class="bar build" style="grid-column:29/35" title="Construcción · 9 al 16 de octubre (feriado 12 excluido)">construcción</div>
           <div class="bar go" style="grid-column:35/37" title="Validación MEL y producción · 19 y 20 de octubre"></div>
