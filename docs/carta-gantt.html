@@ -30,30 +30,36 @@
     --c-build:#C97646; --c-meet:#6293D8; --c-go:#55A06E;
   }
   body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;margin:0;font-size:15px}
-  .wrap{max-width:960px;margin:0 auto;padding:44px 22px 90px}
+  .wrap{max-width:1020px;margin:0 auto;padding:44px 22px 90px}
   header.hero{background:var(--graphite);color:var(--graphite-ink);border-radius:16px;padding:30px 36px;margin-bottom:30px}
   .hero .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--graphite-mut)}
   .hero h1{margin:10px 0 6px;font-size:30px;font-weight:800;letter-spacing:-.01em;text-wrap:balance}
-  .hero p{margin:0;color:var(--graphite-mut);max-width:64ch}
+  .hero p{margin:0;color:var(--graphite-mut);max-width:70ch}
   .hero .meta{display:flex;gap:26px;flex-wrap:wrap;margin-top:18px;font-size:12.5px}
   .hero .meta div b{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--graphite-mut);font-weight:700;margin-bottom:2px}
   h2{font-size:20px;font-weight:800;letter-spacing:-.01em;margin:38px 0 6px;border-bottom:2px solid var(--line);padding-bottom:8px}
   h2 small{font-size:12px;color:var(--muted);font-weight:600;margin-left:8px}
-  p{max-width:72ch}
+  p{max-width:74ch}
   .lead{font-size:16px;color:var(--ink-2)}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin:16px 0}
   strong{color:var(--copper-deep)}
   .mono{font-family:var(--mono);font-size:.92em}
+  .two-stage{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+  .two-stage .card{margin:0}
+  .two-stage .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--copper-deep);font-weight:600}
+  .two-stage h3{margin:6px 0 8px;font-size:16.5px}
+  .two-stage p{font-size:13.5px;color:var(--ink-2);margin:0}
+  @media (max-width:760px){.two-stage{grid-template-columns:1fr}}
 
   /* ---- Gantt ---- */
   .gantt-scroll{overflow-x:auto;margin:16px 0}
-  .gantt{min-width:860px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px 14px;position:relative}
+  .gantt{min-width:940px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px 14px;position:relative}
   .g-grid{display:grid;grid-template-columns:200px 1fr;row-gap:7px;position:relative}
-  .g-weeks{display:grid;grid-template-columns:repeat(22,1fr);font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-  .g-weeks span{border-left:1px solid var(--line);padding:2px 0 4px 7px;white-space:nowrap}
+  .g-weeks{display:grid;grid-template-columns:repeat(39,1fr);font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+  .g-weeks span{border-left:1px solid var(--line);padding:2px 0 4px 5px;white-space:nowrap}
   .g-label{font-size:12.5px;font-weight:600;color:var(--ink-2);padding:5px 12px 5px 0;display:flex;align-items:center}
   .g-label b{color:var(--ink)}
-  .track{display:grid;grid-template-columns:repeat(22,1fr);align-items:center;min-height:30px;border-radius:6px}
+  .track{display:grid;grid-template-columns:repeat(39,1fr);align-items:center;min-height:30px;border-radius:6px}
   .g-grid .rowpair:hover .track{background-color:var(--surface-2)}
   .bar{height:16px;border-radius:4px;display:flex;align-items:center;padding:0 7px;color:#fff;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:.02em;white-space:nowrap;overflow:hidden;position:relative;z-index:1}
   :root[data-theme="dark"] .bar{color:#14100c}
@@ -63,6 +69,7 @@
   .dia{width:11px;height:11px;background:var(--ink);transform:rotate(45deg);justify-self:center;border-radius:2px;position:relative;z-index:1}
   .dia.big{width:14px;height:14px;background:var(--copper)}
   .wline{position:absolute;top:0;bottom:0;width:1px;background:var(--line-2);pointer-events:none}
+  .wline.m{width:2px;background:var(--line)}
   .holiday{position:absolute;top:0;bottom:0;pointer-events:none;
     background:repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 8px);opacity:.5;border-radius:4px}
   .g-legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line-2);font-size:12px;color:var(--ink-2)}
@@ -78,7 +85,6 @@
   td{padding:10px 14px;border-bottom:1px solid var(--line-2);vertical-align:top}
   tr:last-child td{border-bottom:0}
   td.mono{white-space:nowrap;font-family:var(--mono);font-size:12px}
-  .num{text-align:right}
 
   ul.terms{margin:8px 0;padding-left:20px}
   ul.terms li{margin:7px 0;color:var(--ink-2)}
@@ -97,7 +103,7 @@
   <header class="hero">
     <div class="kicker">Plataforma GEA · Enajenación de chatarra y venta de componentes obsoletos</div>
     <h1>Carta Gantt — Plan de ejecución</h1>
-    <p>Inicio en la primera semana de septiembre y entrega total de la plataforma en producción el 30 de septiembre de 2026, con el programa de reuniones de levantamiento y los compromisos que sostienen el calendario.</p>
+    <p>Inicio en la primera semana de septiembre. Al 30 de septiembre, el grueso: los dos procesos de negocio operando en producción. Durante octubre, los detalles: control documental, indicadores y los ajustes del uso real, con cierre total el 23 de octubre.</p>
     <div class="meta">
       <div><b>Cliente</b>Minera Escondida Limitada</div>
       <div><b>Preparado por</b>Ariel Beroíza · Consultor Senior</div>
@@ -106,133 +112,172 @@
     </div>
   </header>
 
-  <p class="lead">La cotización aprobada estimó 12 semanas de calendario. El plazo solicitado —inicio en la primera semana de septiembre y plataforma completa al <strong>miércoles 30 de septiembre de 2026</strong>— deja un mes calendario, y es alcanzable sin reducir el alcance por una razón concreta: el proyecto no parte de cero. El prototipo presentado a MEL ya opera sobre la arquitectura definitiva (PostgreSQL con seguridad a nivel de fila, aplicación React, seis roles) y cubre funcionalmente la mayor parte del alcance de las cuatro fases. El trabajo restante consiste en incorporar las reglas reales de negocio que se recojan en el levantamiento, completar los módulos pendientes y endurecer el conjunto para producción. Sobre esa base, el levantamiento y la construcción de la Fase 1 comparten la primera semana, las fases 2 y 3 se ejecutan en paralelo —solapamiento ya previsto en la Sección 7 de la cotización— y los tres días finales quedan reservados para QA, capacitación y puesta en marcha. Con este margen, los compromisos de la última sección no son formalidad: son la condición del plazo.</p>
+  <p class="lead">El plan se organiza en dos etapas alineadas con la prioridad indicada por MEL: <strong>septiembre entrega el grueso</strong> —el proceso de chatarra de punta a punta y el de componentes obsoletos con su portal público, operando en producción— y <strong>octubre entrega los detalles</strong> —el repositorio documental completo, los paneles de indicadores con reportería y los ajustes que surjan del uso real—. El calendario es alcanzable porque el proyecto no parte de cero: el prototipo presentado ya opera sobre la arquitectura definitiva (PostgreSQL con seguridad a nivel de fila, aplicación React, seis roles) y cubre la mayor parte del alcance. Esta división tiene además una ventaja de calidad: las fases de negocio se construyen en secuencia y con foco completo, y octubre absorbe el feedback de las primeras semanas de operación real antes del cierre.</p>
 
-  <h2>Carta Gantt <small>1 — 30 de septiembre de 2026 · días hábiles</small></h2>
+  <div class="two-stage">
+    <div class="card">
+      <div class="tag">Etapa 1 · Septiembre</div>
+      <h3>El grueso: ambos procesos operando</h3>
+      <p><b>Fase 1</b> (base técnica + chatarra completa: programa de limpieza, despachos, valorización, estados de pago y conciliación) y <b>Fase 3</b> (obsoletos: inventario, publicaciones con regla de 15 días, portal público, ofertas y adjudicación). En producción el <b>30 de septiembre</b>, con los perfiles operativos capacitados.</p>
+    </div>
+    <div class="card">
+      <div class="tag">Etapa 2 · Octubre</div>
+      <h3>Los detalles: documental, indicadores y ajustes</h3>
+      <p><b>Fase 2</b> (repositorio documental completo, 9 + 14 tipos, versionado y vencimientos), <b>Fase 4</b> (paneles de indicadores y exportación Excel/PDF) y los <b>ajustes del uso real</b> de septiembre. QA integral, capacitación completa y <b>cierre total el viernes 23 de octubre</b>.</p>
+    </div>
+  </div>
+
+  <h2>Carta Gantt <small>1 de septiembre — 23 de octubre de 2026 · días hábiles</small></h2>
   <div class="gantt-scroll"><div class="gantt">
     <div class="g-grid">
       <div></div>
       <div class="g-weeks">
-        <span style="grid-column:span 4">1–4 sep</span><span style="grid-column:span 5">7–11 sep</span><span style="grid-column:span 5">14–18 sep</span><span style="grid-column:span 5">21–25 sep</span><span style="grid-column:span 3">28–30 sep</span>
+        <span style="grid-column:span 4">1–4 sep</span><span style="grid-column:span 5">7–11</span><span style="grid-column:span 5">14–18</span><span style="grid-column:span 5">21–25</span><span style="grid-column:span 3">28–30</span><span style="grid-column:span 2">oct</span><span style="grid-column:span 5">5–9</span><span style="grid-column:span 5">12–16</span><span style="grid-column:span 5">19–23</span>
       </div>
       <div class="rowpair" style="display:contents">
         <div class="g-label"><b>Levantamiento de procesos</b></div>
         <div class="track">
-          <div class="bar meet" style="grid-column:1/5" title="Reuniones R0 a R3 · martes 1 al viernes 4 de septiembre">R0–R3</div>
-          <div class="bar meet" style="grid-column:10/11" title="R4 · indicadores y reportes · lunes 14 de septiembre">R4</div>
+          <div class="bar meet" style="grid-column:1/4" title="Reuniones R0 a R2 · martes 1 al jueves 3 de septiembre">R0–R2</div>
+          <div class="bar meet" style="grid-column:23/24" title="R3 · control documental · jueves 1 de octubre">R3</div>
+          <div class="bar meet" style="grid-column:25/26" title="R4 · indicadores y reportes · lunes 5 de octubre">R4</div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
         <div class="g-label"><b>Fase 1</b>&nbsp;· Base + chatarra</div>
         <div class="track">
-          <div class="bar build" style="grid-column:1/8" title="Construcción · 1 al 9 de septiembre">construcción</div>
-          <div class="bar go" style="grid-column:8/10" title="Validación MEL y puesta en producción · 10 y 11 de septiembre"></div>
-        </div>
-      </div>
-      <div class="rowpair" style="display:contents">
-        <div class="g-label"><b>Fase 2</b>&nbsp;· Documental chatarra</div>
-        <div class="track">
-          <div class="bar build" style="grid-column:8/12" title="Construcción · 10 al 15 de septiembre">construcción</div>
-          <div class="bar go" style="grid-column:12/13" title="Validación MEL y producción · miércoles 16 de septiembre"></div>
+          <div class="bar build" style="grid-column:1/10" title="Construcción · 1 al 11 de septiembre">construcción</div>
+          <div class="bar go" style="grid-column:10/12" title="Validación MEL y puesta en producción · 14 y 15 de septiembre"></div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
         <div class="g-label"><b>Fase 3</b>&nbsp;· Obsoletos + portal</div>
         <div class="track">
-          <div class="bar build" style="grid-column:8/17" title="Construcción · 10 al 22 de septiembre (feriado 18 excluido)">construcción</div>
-          <div class="bar go" style="grid-column:17/19" title="Validación MEL y puesta en producción · 23 y 24 de septiembre"></div>
+          <div class="bar build" style="grid-column:10/20" title="Construcción · 14 al 25 de septiembre (feriado 18 excluido)">construcción</div>
+          <div class="bar go" style="grid-column:20/22" title="Validación MEL y puesta en producción · 28 y 29 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Capacitación operativa</b></div>
+        <div class="track">
+          <div class="bar go" style="grid-column:21/23" title="Capacitación de los perfiles operativos de ambos procesos · 29 y 30 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>El grueso en producción</b></div>
+        <div class="track">
+          <div class="dia big" style="grid-column:22/23" title="Ambos procesos de negocio operando en producción · miércoles 30 de septiembre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Fase 2</b>&nbsp;· Documental chatarra</div>
+        <div class="track">
+          <div class="bar build" style="grid-column:23/28" title="Construcción · 1 al 7 de octubre">construcción</div>
+          <div class="bar go" style="grid-column:28/30" title="Validación MEL y producción · 8 y 9 de octubre"></div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
         <div class="g-label"><b>Fase 4</b>&nbsp;· Indicadores y reportería</div>
         <div class="track">
-          <div class="bar build" style="grid-column:15/20" title="Construcción · 21 al 25 de septiembre">construcción</div>
-          <div class="bar go" style="grid-column:20/21" title="Validación MEL · lunes 28 de septiembre"></div>
+          <div class="bar build" style="grid-column:29/35" title="Construcción · 9 al 16 de octubre (feriado 12 excluido)">construcción</div>
+          <div class="bar go" style="grid-column:35/37" title="Validación MEL y producción · 19 y 20 de octubre"></div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
-        <div class="g-label"><b>QA integral + capacitación</b></div>
+        <div class="g-label">Ajustes del uso real</div>
         <div class="track">
-          <div class="bar go" style="grid-column:20/22" title="QA de extremo a extremo y capacitación de los seis perfiles · 28 y 29 de septiembre"></div>
+          <div class="bar build" style="grid-column:23/37" title="Observaciones y afinamientos de la operación real de ambos procesos · 1 al 20 de octubre">detalles y afinamientos</div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
-        <div class="g-label"><b>Puesta en marcha total</b></div>
+        <div class="g-label"><b>QA final + capacitación completa</b></div>
         <div class="track">
-          <div class="dia big" style="grid-column:22/23" title="Plataforma completa en producción · miércoles 30 de septiembre de 2026"></div>
+          <div class="bar go" style="grid-column:37/39" title="QA de extremo a extremo y capacitación de los seis perfiles · 21 y 22 de octubre"></div>
+        </div>
+      </div>
+      <div class="rowpair" style="display:contents">
+        <div class="g-label"><b>Cierre total</b></div>
+        <div class="track">
+          <div class="dia big" style="grid-column:39/40" title="Plataforma completa cerrada y validada · viernes 23 de octubre de 2026"></div>
         </div>
       </div>
       <div class="rowpair" style="display:contents">
         <div class="g-label">Compromisos MEL <span class="mono" style="color:var(--muted)">&nbsp;◆</span></div>
         <div class="track">
-          <div class="dia" style="grid-column:4/5" title="Información de la Sección 9 completa · viernes 4 de septiembre"></div>
-          <div class="dia" style="grid-column:8/9" title="Validación de la Fase 1 · jueves 10 de septiembre"></div>
-          <div class="dia" style="grid-column:10/11" title="Métricas definitivas de indicadores y formatos de reportes · lunes 14 de septiembre"></div>
-          <div class="dia" style="grid-column:17/18" title="Validación de la Fase 3 · miércoles 23 de septiembre"></div>
-          <div class="dia" style="grid-column:20/21" title="Validación de la Fase 4 · lunes 28 de septiembre"></div>
+          <div class="dia" style="grid-column:4/5" title="Información de la Sección 9 (chatarra y obsoletos) completa · viernes 4 de septiembre"></div>
+          <div class="dia" style="grid-column:10/11" title="Validación de la Fase 1 · lunes 14 de septiembre"></div>
+          <div class="dia" style="grid-column:20/21" title="Validación de la Fase 3 · lunes 28 de septiembre"></div>
+          <div class="dia" style="grid-column:25/26" title="Métricas definitivas de indicadores y formatos de reportes · lunes 5 de octubre"></div>
+          <div class="dia" style="grid-column:35/36" title="Validación de la Fase 4 · lunes 19 de octubre"></div>
         </div>
       </div>
-      <div class="wline" style="left:calc(200px + (100% - 200px)/22*4)"></div>
-      <div class="wline" style="left:calc(200px + (100% - 200px)/22*9)"></div>
-      <div class="wline" style="left:calc(200px + (100% - 200px)/22*14)"></div>
-      <div class="wline" style="left:calc(200px + (100% - 200px)/22*19)"></div>
-      <div class="holiday" style="left:calc(200px + (100% - 200px)/22*13);width:calc((100% - 200px)/22)" title="Feriado 18 de septiembre"></div>
+      <div class="wline" style="left:calc(200px + (100% - 200px)/39*4)"></div>
+      <div class="wline" style="left:calc(200px + (100% - 200px)/39*9)"></div>
+      <div class="wline" style="left:calc(200px + (100% - 200px)/39*14)"></div>
+      <div class="wline" style="left:calc(200px + (100% - 200px)/39*19)"></div>
+      <div class="wline m" style="left:calc(200px + (100% - 200px)/39*22)"></div>
+      <div class="wline" style="left:calc(200px + (100% - 200px)/39*24)"></div>
+      <div class="wline" style="left:calc(200px + (100% - 200px)/39*29)"></div>
+      <div class="wline" style="left:calc(200px + (100% - 200px)/39*34)"></div>
+      <div class="holiday" style="left:calc(200px + (100% - 200px)/39*13);width:calc((100% - 200px)/39)" title="Feriado 18 de septiembre"></div>
+      <div class="holiday" style="left:calc(200px + (100% - 200px)/39*29);width:calc((100% - 200px)/39)" title="Feriado 12 de octubre"></div>
     </div>
     <div class="g-legend">
       <span><i style="background:var(--c-build)"></i>Construcción</span>
       <span><i style="background:var(--c-meet)"></i>Reuniones de levantamiento</span>
       <span><i style="background:var(--c-go)"></i>Validación y puesta en producción</span>
       <span><span class="di"></span>&nbsp;Compromiso MEL</span>
-      <span><span class="ho"></span>&nbsp;Feriado 18 sep</span>
+      <span><span class="ho"></span>&nbsp;Feriados (18 sep · 12 oct)</span>
     </div>
   </div></div>
 
   <h2>Programa de reuniones de levantamiento</h2>
-  <p>Concentradas en la primera semana para que la construcción avance desde el día uno con las reglas reales. Cada reunión indica los insumos que MEL debe traer (Sección 9 de la cotización); con ellos en la mesa, una sesión basta por tema.</p>
+  <p>Cada levantamiento llega justo antes de la fase que lo necesita: los procesos de negocio se levantan en la primera semana de septiembre; el documental y los indicadores, al abrirse octubre. Cada reunión indica los insumos que MEL debe traer (Sección 9 de la cotización); con ellos en la mesa, una sesión basta por tema.</p>
   <div class="tbl-wrap"><table>
     <thead><tr><th></th><th>Fecha propuesta</th><th>Duración</th><th>Tema</th><th>Asistentes MEL</th><th>Insumos requeridos</th></tr></thead>
     <tbody>
       <tr><td class="mono">R0</td><td class="mono">Mar 1 sep</td><td class="mono">45 min</td><td><b>Kickoff</b>: contrapartes, accesos, calendario y volúmenes</td><td>Contraparte técnica y de negocio</td><td>Designación de contrapartes · volúmenes esperados de usuarios y transacciones</td></tr>
       <tr><td class="mono">R1</td><td class="mono">Mié 2 sep</td><td class="mono">90 min</td><td><b>Proceso de chatarra</b>: valorización, estados de pago y descuentos</td><td>Coordinador Logístico, ITO</td><td>Contratos vigentes con vendor y empresa de limpieza · tabla de categorías y precios · flujo de aprobación del EP (quién, orden, facultades, rechazo)</td></tr>
       <tr><td class="mono">R2</td><td class="mono">Jue 3 sep</td><td class="mono">90 min</td><td><b>Obsoletos y portal</b>: publicación, ofertas y adjudicación</td><td>Adm. Plataforma de Venta, Coordinador</td><td>Matriz de evaluación y ponderaciones · protocolo de due diligence · condiciones de venta y comisión al vendor</td></tr>
-      <tr><td class="mono">R3</td><td class="mono">Vie 4 sep</td><td class="mono">60 min</td><td><b>Control documental</b>: tipos, vencimientos y firmantes</td><td>Coordinador, ITO, referente documental</td><td>Los 9 tipos documentales de chatarra y 14 de obsoletos con sus responsables y plazos de vencimiento</td></tr>
-      <tr><td class="mono">R4</td><td class="mono">Lun 14 sep</td><td class="mono">60 min</td><td><b>Indicadores y reportes</b> (previo a la Fase 4)</td><td>Contraparte de negocio</td><td>Métricas y cortes de tiempo definitivos por panel · formato esperado de reportes Excel y PDF</td></tr>
-      <tr><td class="mono">V</td><td class="mono">Al cierre de cada fase</td><td class="mono">45 min</td><td><b>Validación de entregas</b> (10, 16, 23 y 28 sep)</td><td>Contrapartes</td><td>Revisión del entregable de la fase en el ambiente de producción</td></tr>
-      <tr><td class="mono">C</td><td class="mono">Lun 28 – Mar 29 sep</td><td class="mono">2 h por perfil</td><td><b>Capacitación</b> de los seis perfiles de usuario</td><td>Usuarios finales por rol</td><td>Convocatoria de los usuarios de cada perfil</td></tr>
+      <tr><td class="mono">R3</td><td class="mono">Jue 1 oct</td><td class="mono">60 min</td><td><b>Control documental</b>: tipos, vencimientos y firmantes</td><td>Coordinador, ITO, referente documental</td><td>Los 9 tipos documentales de chatarra y 14 de obsoletos con sus responsables y plazos de vencimiento</td></tr>
+      <tr><td class="mono">R4</td><td class="mono">Lun 5 oct</td><td class="mono">60 min</td><td><b>Indicadores y reportes</b> (previo a la Fase 4)</td><td>Contraparte de negocio</td><td>Métricas y cortes de tiempo definitivos por panel · formato esperado de reportes Excel y PDF</td></tr>
+      <tr><td class="mono">V</td><td class="mono">Al cierre de cada fase</td><td class="mono">45 min</td><td><b>Validación de entregas</b> (14 sep, 28 sep, 8 oct y 19 oct)</td><td>Contrapartes</td><td>Revisión del entregable de la fase en el ambiente de producción</td></tr>
+      <tr><td class="mono">C1</td><td class="mono">Mar 29 – Mié 30 sep</td><td class="mono">2 h por perfil</td><td><b>Capacitación operativa</b> de los perfiles de ambos procesos</td><td>Usuarios de operación por rol</td><td>Convocatoria de los usuarios de cada perfil</td></tr>
+      <tr><td class="mono">C2</td><td class="mono">Mié 21 – Jue 22 oct</td><td class="mono">2 h por perfil</td><td><b>Capacitación completa</b>: documental, indicadores y repaso general</td><td>Usuarios finales por rol</td><td>Convocatoria de los usuarios de cada perfil</td></tr>
     </tbody>
   </table></div>
 
   <h2>Hitos de entrega y facturación</h2>
+  <p>El orden de fases se ajusta a la prioridad de MEL (procesos primero, documental e indicadores después), facultad prevista en la Sección 10.1 de la cotización. Precios y modalidad 40/60 no cambian.</p>
   <div class="tbl-wrap"><table>
     <thead><tr><th>Fase</th><th>Entrega</th><th>Validación MEL</th><th>En producción</th><th>Facturación (según cotización, 40/60)</th></tr></thead>
     <tbody>
-      <tr><td><b>Fase 1</b> · Base + chatarra</td><td class="mono">Mié 9 sep</td><td class="mono">Jue 10 sep</td><td class="mono">Vie 11 sep</td><td>Anticipo al 1 sep (junto a infraestructura) · saldo al 11 sep</td></tr>
-      <tr><td><b>Fase 2</b> · Documental chatarra</td><td class="mono">Mar 15 sep</td><td class="mono">Mié 16 sep</td><td class="mono">Mié 16 sep</td><td>Anticipo al 10 sep · saldo al 16 sep</td></tr>
-      <tr><td><b>Fase 3</b> · Obsoletos + portal</td><td class="mono">Mar 22 sep</td><td class="mono">Mié 23 sep</td><td class="mono">Jue 24 sep</td><td>Anticipo al 10 sep · saldo al 24 sep</td></tr>
-      <tr><td><b>Fase 4</b> · Indicadores y reportería</td><td class="mono">Vie 25 sep</td><td class="mono">Lun 28 sep</td><td class="mono">Mié 30 sep</td><td>Anticipo al 21 sep · saldo al 30 sep</td></tr>
+      <tr><td><b>Fase 1</b> · Base + chatarra</td><td class="mono">Vie 11 sep</td><td class="mono">Lun 14 sep</td><td class="mono">Mar 15 sep</td><td>Anticipo al 1 sep (junto a infraestructura) · saldo al 15 sep</td></tr>
+      <tr><td><b>Fase 3</b> · Obsoletos + portal</td><td class="mono">Vie 25 sep</td><td class="mono">Lun 28 sep</td><td class="mono">Mar 29 sep</td><td>Anticipo al 14 sep · saldo al 29 sep</td></tr>
+      <tr><td><b>Fase 2</b> · Documental chatarra</td><td class="mono">Mié 7 oct</td><td class="mono">Jue 8 oct</td><td class="mono">Vie 9 oct</td><td>Anticipo al 1 oct · saldo al 9 oct</td></tr>
+      <tr><td><b>Fase 4</b> · Indicadores y reportería</td><td class="mono">Vie 16 oct</td><td class="mono">Lun 19 oct</td><td class="mono">Mar 20 oct</td><td>Anticipo al 9 oct · saldo al 20 oct</td></tr>
     </tbody>
   </table></div>
 
   <h2>Compromisos que sostienen el calendario</h2>
-  <p>Un mes calendario donde la cotización estimaba doce semanas se cumple con disciplina de ambas partes. Estos son los compromisos recíprocos; con el margen que deja este plan, son la condición del plazo, no letra chica.</p>
+  <p>La fecha visible para el negocio es el 30 de septiembre —ambos procesos operando— y el cierre total es el 23 de octubre. Ambas dependen de compromisos recíprocos.</p>
   <div class="card">
     <b>Del consultor</b>
     <ul class="terms">
-      <li><b>Dedicación exclusiva</b> al proyecto durante todo septiembre.</li>
+      <li><b>Dedicación exclusiva</b> al proyecto durante septiembre y octubre.</li>
       <li><b>Entrega continua en producción</b>: cada fase se despliega en el ambiente real al cerrarse, no al final del proyecto.</li>
       <li><b>Reporte de avance semanal</b> escrito, con lo entregado, lo próximo y los riesgos.</li>
-      <li>Los <b>tres días finales quedan reservados como cierre</b> —QA integral, capacitación y marcha—: el alcance no depende de que esos días produzcan funcionalidad nueva.</li>
+      <li><b>Los ajustes del uso real de septiembre se absorben en octubre</b> sin cargo, como parte del alcance: la operación temprana del grueso es parte del diseño del plan, no una versión beta.</li>
     </ul>
   </div>
   <div class="card">
     <b>De MEL</b>
     <ul class="terms">
-      <li><b>Kickoff el martes 1 de septiembre</b> y asistencia a las reuniones R0–R3 esa misma semana, con los insumos indicados en la tabla. La información de la Sección 9 completa el <b>viernes 4 de septiembre</b>.</li>
+      <li><b>Kickoff el martes 1 de septiembre</b> y asistencia a R0–R2 esa misma semana, con los insumos indicados en la tabla. La información de la Sección 9 para chatarra y obsoletos, completa el <b>viernes 4 de septiembre</b>.</li>
       <li><b>Validación de cada entrega en 24–48 horas hábiles</b>. Una validación pendiente detiene la puesta en producción de esa fase, no la construcción de la siguiente.</li>
-      <li><b>Métricas de indicadores y formatos de reportes definidos el 14 de septiembre</b> (reunión R4); es el insumo que habilita la Fase 4.</li>
-      <li>Conforme a la Sección 7 de la cotización, las demoras en validaciones, aprobaciones o entrega de información <b>desplazan el calendario en la misma proporción</b> — incluido el propio inicio: si el kickoff se corre, el 30 de septiembre se corre con él. Con los compromisos anteriores cumplidos, la fecha queda asegurada.</li>
+      <li><b>Insumos de octubre a tiempo</b>: tipos documentales en R3 (1 oct) y métricas de indicadores en R4 (5 oct); son los insumos que habilitan las Fases 2 y 4.</li>
+      <li>Conforme a la Sección 7 de la cotización, las demoras en validaciones, aprobaciones o entrega de información <b>desplazan el calendario en la misma proporción</b> — incluido el propio inicio: si el kickoff se corre, ambas fechas se corren con él. Con los compromisos anteriores cumplidos, las fechas quedan aseguradas.</li>
     </ul>
   </div>
 
-  <div class="foot">Este plan complementa la Cotización v2.0 del 27 de julio de 2026 y no modifica su alcance, sus precios ni sus condiciones comerciales; únicamente comprime el calendario aprovechando el solapamiento de fases previsto en su Sección 7 y la base ya construida del prototipo. Ariel Beroíza · beroiza.ariel@gmail.com · +56 9 9545 5073.</div>
+  <div class="foot">Este plan complementa la Cotización v2.0 del 27 de julio de 2026 y no modifica su alcance, sus precios ni sus condiciones comerciales; reordena las fases según la facultad prevista en su Sección 10.1 (procesos de negocio primero, documental e indicadores después) y aprovecha la base ya construida del prototipo. Ariel Beroíza · beroiza.ariel@gmail.com · +56 9 9545 5073.</div>
 </div>
