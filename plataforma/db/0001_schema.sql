@@ -5,11 +5,20 @@
 -- Re-ejecutable: borra y recrea todo el esquema de la Fase 1.
 -- ============================================================
 
+-- Guardián: este script es para el proyecto NUEVO de la plataforma oficial.
+-- Si detecta tablas de la demo (portal de obsoletos), se detiene sin tocar nada.
+do $$
+begin
+  if exists (select from information_schema.tables
+             where table_schema = 'public' and table_name in ('componentes', 'ofertas', 'compradores')) then
+    raise exception 'Este parece ser el proyecto Supabase de la DEMO (tiene tablas del portal de obsoletos). '
+      'Ejecute este script en el proyecto nuevo y exclusivo de la plataforma oficial.';
+  end if;
+end $$;
+
 drop table if exists auditoria, ep_descuentos, cuadraturas, traslados,
   despachos, programa, estados_pago, precios, folios, users, sitios,
   categorias, patios cascade;
-drop function if exists next_folio(text);
-drop function if exists app_role();
 
 -- ===================== maestros =====================
 
