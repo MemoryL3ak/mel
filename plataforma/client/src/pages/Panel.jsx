@@ -21,12 +21,16 @@ export default function Panel() {
     <div>
       <PageHead title="Panel de control" sub="Estado del proceso de chatarra: lo que requiere su decisión aparece primero." />
       <div className="grid g4" style={{ marginBottom: 16 }}>
-        <KPI label="Kg recepcionados · mes" value={fmtKg(kpis.kg_mes)} unit="kg" delta="pesaje validado en La Negra" />
-        <KPI label="Valorizado · mes" value={fmtCLP(kpis.valor_mes)} delta="según tabla de precios del contrato" />
-        <KPI label="Despachos en tránsito" value={kpis.en_transito} delta="camiones por recepcionar en La Negra" />
+        <KPI label="Kg recepcionados · mes" value={fmtKg(kpis.kg_mes)} unit="kg" delta="pesaje validado en La Negra"
+          ico={<path d="M6 20V10M12 20V4M18 20v-8" />} />
+        <KPI label="Valorizado · mes" value={fmtCLP(kpis.valor_mes)} delta="según tabla de precios del contrato"
+          ico={<path d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5h-4a2.5 2.5 0 0 0 0 5h6" />} />
+        <KPI label="Despachos en tránsito" value={kpis.en_transito} delta="camiones por recepcionar en La Negra"
+          ico={<><path d="M2 7h11v9H2zM13 10h4l3 3v3h-7z" /><circle cx="6" cy="18" r="1.6" /><circle cx="16" cy="18" r="1.6" /></>} />
         <KPI label={`Programa semana ${kpis.programa.semana}`}
           value={`${kpis.programa.ejecutadas}/${kpis.programa.total || '—'}`}
-          delta="actividades ejecutadas / planificadas" />
+          delta="actividades ejecutadas / planificadas"
+          ico={<><path d="M5 5h14v15H5zM5 9h14M9 3v4M15 3v4" /><path d="M9 14l2 2 4-4" /></>} />
       </div>
 
       <div className="grid g2">

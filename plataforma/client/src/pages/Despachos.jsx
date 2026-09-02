@@ -72,7 +72,7 @@ export default function Despachos() {
           <tbody>
             {rows.map((d) => (
               <tr key={d.id}>
-                <td className="mono">{d.guia}</td><td>{d.fecha}</td><td>{d.patio}</td>
+                <td className="mono">{d.guia}</td><td className="mono">{d.fecha}</td><td>{d.patio}</td>
                 <td>{d.categoria}{d.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {d.categoria_final}</span>}</td>
                 <td className="num">{fmtKg(d.kg_origen)}</td>
                 <td className="num">{d.kg_destino != null ? fmtKg(d.kg_destino) : '—'}</td>
@@ -124,7 +124,7 @@ export default function Despachos() {
           <tbody>
             {traslados.map((t) => (
               <tr key={t.id}>
-                <td className="mono">{t.guia}</td><td>{t.fecha}</td><td>{t.categoria}</td>
+                <td className="mono">{t.guia}</td><td className="mono">{t.fecha}</td><td>{t.categoria}</td>
                 <td className="num">{fmtKg(t.kg)}</td>
                 <td className="num">{t.kg_lampa != null ? fmtKg(t.kg_lampa) : '—'}</td>
                 <td><Chip tone={t.estado === 'recepcionado' ? 'ok' : 'info'}>{t.estado === 'recepcionado' ? 'Recepcionado' : 'En tránsito'}</Chip></td>
