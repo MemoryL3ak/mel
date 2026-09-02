@@ -50,9 +50,11 @@ r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
   const existe = await q(supa.from('estados_pago').select('id').eq('periodo', periodo));
   if (existe.length) return res.status(409).json({ error: `El período ${periodo} ya tiene estado de pago` });
 
+  const [anio, mes] = periodo.split('-').map(Number);
+  const mesSiguiente = mes === 12 ? `${anio + 1}-01-01` : `${anio}-${String(mes + 1).padStart(2, '0')}-01`;
   const desp = await q(supa.from('despachos').select('id, valor')
     .eq('estado', 'recepcionado').is('ep_id', null)
-    .gte('fecha', periodo + '-01').lte('fecha', periodo + '-31'));
+    .gte('fecha', periodo + '-01').lt('fecha', mesSiguiente));
   if (!desp.length) return res.status(400).json({ error: 'El período no tiene despachos recepcionados pendientes de EP' });
 
   const bruto = desp.reduce((a, d) => a + Number(d.valor ?? 0), 0);
