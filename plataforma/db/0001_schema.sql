@@ -1,24 +1,23 @@
 -- ============================================================
 -- GEA · Plataforma de enajenación de activos — Minera Escondida
 -- Fase 1: proceso de enajenación de chatarra
--- Ejecutar UNA VEZ en el SQL Editor del proyecto Supabase nuevo.
--- Re-ejecutable: borra y recrea todo el esquema de la Fase 1.
+-- Ejecutar en el SQL Editor del proyecto Supabase (se reutiliza el de la
+-- demo: este script ELIMINA el prototipo e instala el esquema oficial).
+-- Re-ejecutable: borra y recrea todo desde cero.
 -- ============================================================
 
--- Guardián: este script es para el proyecto NUEVO de la plataforma oficial.
--- Si detecta tablas de la demo (portal de obsoletos), se detiene sin tocar nada.
-do $$
-begin
-  if exists (select from information_schema.tables
-             where table_schema = 'public' and table_name in ('componentes', 'ofertas', 'compradores')) then
-    raise exception 'Este parece ser el proyecto Supabase de la DEMO (tiene tablas del portal de obsoletos). '
-      'Ejecute este script en el proyecto nuevo y exclusivo de la plataforma oficial.';
-  end if;
-end $$;
-
-drop table if exists auditoria, ep_descuentos, cuadraturas, traslados,
-  despachos, programa, estados_pago, precios, folios, users, sitios,
-  categorias, patios cascade;
+-- Limpieza total: este proyecto reutiliza la base del prototipo demo.
+-- Se eliminan TODAS las tablas del prototipo (incluido el portal de
+-- obsoletos, que la Fase 2 reconstruirá sobre los flujos reales) y las
+-- tablas propias, para instalar el esquema oficial desde cero.
+drop table if exists
+  -- prototipo demo
+  historico_mensual, entregas, adjudicaciones, matriz_criterios, ofertas,
+  componentes, compradores, documentos, pagos_vendor, descuentos,
+  -- plataforma oficial (re-ejecución)
+  auditoria, ep_descuentos, cuadraturas, traslados, despachos, programa,
+  estados_pago, precios, folios, users, sitios, categorias, patios cascade;
+drop function if exists convertir_vencidos();
 
 -- ===================== maestros =====================
 
