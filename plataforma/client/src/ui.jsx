@@ -3,13 +3,22 @@ import { createContext, useContext, useState } from 'react';
 
 export const Chip = ({ tone = 'neutral', children }) => <span className={`chip ${tone}`}>{children}</span>;
 
-export function PageHead({ title, sub, children }) {
+export function PageHead({ eyebrow = 'Fase 1 · Proceso de chatarra', title, sub, children }) {
   return (
     <div className="page-head">
-      <div><h1>{title}</h1>{sub && <p>{sub}</p>}</div>
+      <div>
+        {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+        <h1>{title}</h1>
+        {sub && <p>{sub}</p>}
+      </div>
       {children && <div className="actions">{children}</div>}
     </div>
   );
+}
+
+export function Avatar({ name, className = 'avatar' }) {
+  const ini = (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return <span className={className} aria-hidden="true">{ini}</span>;
 }
 
 export function Field({ label, hint, children }) {
@@ -51,11 +60,18 @@ export function Empty({ title, children }) {
   return <div className="empty"><b>{title}</b>{children}</div>;
 }
 
-export const KPI = ({ label, value, unit, delta }) => (
+export const KPI = ({ label, value, unit, delta, ico }) => (
   <div className="card kpi">
-    <div className="lbl">{label}</div>
-    <div className="val">{value}{unit && <small> {unit}</small>}</div>
-    {delta && <div className="delta">{delta}</div>}
+    {ico && (
+      <span className="ico">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{ico}</svg>
+      </span>
+    )}
+    <div>
+      <div className="lbl">{label}</div>
+      <div className="val">{value}{unit && <small> {unit}</small>}</div>
+      {delta && <div className="delta">{delta}</div>}
+    </div>
   </div>
 );
 

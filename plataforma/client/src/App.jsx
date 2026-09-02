@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, ROL_NOMBRE } from './auth.jsx';
-import { ToastProvider, Logo } from './ui.jsx';
+import { ToastProvider, Logo, Avatar } from './ui.jsx';
 import Login from './pages/Login.jsx';
 import Panel from './pages/Panel.jsx';
 import Programa from './pages/Programa.jsx';
@@ -67,16 +67,23 @@ function Shell({ children }) {
           })}
         </nav>
         <div className="side-user">
-          <b>{user.name}</b>
-          <small>{ROL_NOMBRE[user.role]}</small>
-          <button onClick={logout}>Cerrar sesión</button>
+          <Avatar name={user.name} />
+          <div className="who">
+            <b>{user.name}</b>
+            <small>{ROL_NOMBRE[user.role]}</small>
+          </div>
+          <button onClick={logout} title="Cerrar sesión">Salir</button>
         </div>
       </aside>
       <div className="main">
         <header className="topbar">
           <button className="hamb" onClick={() => setOpen(!open)} aria-label="Menú">☰</button>
-          <span className="crumb">GEA / <b>{TITULOS[loc.pathname] ?? 'Fase 1'}</b></span>
-          <span className="top-user"><b>{user.name}</b> · {ROL_NOMBRE[user.role]}</span>
+          <span className="crumb">GEA <span className="sep">/</span> <b>{TITULOS[loc.pathname] ?? 'Fase 1'}</b></span>
+          <span className="top-user">
+            <span className="top-date">{new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            <Avatar name={user.name} className="avatar" />
+            <span><b>{user.name}</b></span>
+          </span>
         </header>
         <main className="content">{children}</main>
       </div>
