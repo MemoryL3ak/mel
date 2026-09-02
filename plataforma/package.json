@@ -1,0 +1,15 @@
+{
+  "name": "gea-plataforma",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "dev": "concurrently -n api,web -c yellow,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "setup:users": "npm run setup:users --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
