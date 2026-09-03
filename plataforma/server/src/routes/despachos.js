@@ -3,10 +3,19 @@
 //   La Negra → Lampa (vendor: consolida y traslada; Lampa emite el
 //   certificado de disposición final).
 import { Router } from 'express';
+import multer from 'multer';
 import { supa, q, ah, folio, audit, precioVigente, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
 
 const r = Router();
+
+// Evidencia fotográfica: hasta 6 imágenes de 5 MB por guía, en el bucket
+// privado "evidencia" (rutas GD/<id>/...); se sirven con URLs firmadas.
+const subir = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 6, fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, f, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(f.mimetype)),
+});
 const DESP_SEL = '*, patios(codigo, nombre), cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre), estados_pago(folio)';
 const TRAS_SEL = '*, categorias(nombre)';
 
@@ -29,18 +38,39 @@ r.get('/despachos', auth(), ah(async (_req, res) => {
   res.json(rows.map(view));
 }));
 
-r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
-  const { patio_id, categoria_id, kg_origen, fotos } = req.body || {};
+r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.array('fotos', 6), ah(async (req, res) => {
+  const { patio_id, categoria_id, kg_origen } = req.body || {};
   if (!patio_id || !categoria_id || !(Number(kg_origen) > 0)) {
     return res.status(400).json({ error: 'Patio, categoría y peso de báscula son obligatorios' });
   }
+  const archivos = req.files ?? [];
   const guia = await folio('GD');
   const row = await q(supa.from('despachos').insert({
-    guia, patio_id, categoria_id, kg_origen: Number(kg_origen),
-    fotos: Math.max(0, Number(fotos) || 0), creado_por: req.user.name,
+    guia, patio_id: Number(patio_id), categoria_id: Number(categoria_id), kg_origen: Number(kg_origen),
+    fotos: archivos.length, creado_por: req.user.name,
   }).select(DESP_SEL).single());
-  await audit(req.user.name, req.user.role, 'Registró despacho a La Negra', `${guia} · ${kg_origen} kg`);
+
+  for (const [i, f] of archivos.entries()) {
+    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[f.mimetype];
+    const { error } = await supa.storage.from('evidencia')
+      .upload(`GD/${row.id}/${i + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    if (error) console.error('[GEA] evidencia:', error.message);
+  }
+  await audit(req.user.name, req.user.role, 'Registró despacho a La Negra',
+    `${guia} · ${kg_origen} kg · ${archivos.length} foto(s)`);
   res.json(view(row));
+}));
+
+// URLs firmadas (1 hora) de la evidencia de una guía.
+r.get('/despachos/:id/evidencia', auth(), ah(async (req, res) => {
+  const carpeta = `GD/${Number(req.params.id)}`;
+  const { data: lista, error } = await supa.storage.from('evidencia').list(carpeta);
+  if (error) throw new Error(error.message);
+  if (!lista?.length) return res.json({ urls: [] });
+  const { data: firmadas, error: e2 } = await supa.storage.from('evidencia')
+    .createSignedUrls(lista.map((f) => `${carpeta}/${f.name}`), 3600);
+  if (e2) throw new Error(e2.message);
+  res.json({ urls: firmadas.filter((f) => f.signedUrl).map((f) => f.signedUrl) });
 }));
 
 // Recepción y pesaje en La Negra. Diferencia > 2% queda observada para el ITO.

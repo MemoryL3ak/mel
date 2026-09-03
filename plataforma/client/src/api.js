@@ -1,13 +1,14 @@
 // Cliente HTTP: agrega el token de sesión y normaliza errores.
 export async function api(path, { method = 'GET', body } = {}) {
   const token = localStorage.getItem('gea_token');
+  const esForm = body instanceof FormData;
   const res = await fetch('/api' + path, {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      ...(esForm ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: esForm ? body : body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401 && !path.startsWith('/auth/')) {
     localStorage.removeItem('gea_token');

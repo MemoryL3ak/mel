@@ -115,6 +115,17 @@ export default function EstadosPago() {
             </div>
             <div className="card-b">
               <Pasos estado={sel.estado} />
+              {sel.estado === 'facturado' && sel.factura_fecha && (() => {
+                const dias = Math.floor((Date.now() - new Date(sel.factura_fecha + 'T12:00:00')) / 86400000);
+                const restan = 15 - dias;
+                return (
+                  <div style={{ marginTop: 10 }}>
+                    <Chip tone={restan < 0 ? 'bad' : restan <= 3 ? 'warn' : 'info'}>
+                      {restan < 0 ? `Plazo de pago vencido hace ${-restan} día(s)` : `Pago contractual: quedan ${restan} de 15 días`}
+                    </Chip>
+                  </div>
+                );
+              })()}
               {sel.estado === 'con_ajustes' && (
                 <div className="audit-note" style={{ borderColor: 'var(--bad-tx)', color: 'var(--bad-tx)' }}>
                   Devuelto con ajustes: {sel.observacion}

@@ -13,6 +13,7 @@ import cuadratura from './routes/cuadratura.js';
 import estados from './routes/estados.js';
 import panel from './routes/panel.js';
 import auditoria from './routes/auditoria.js';
+import usuarios from './routes/usuarios.js';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -28,6 +29,7 @@ app.use('/api', cuadratura);
 app.use('/api', estados);
 app.use('/api', panel);
 app.use('/api', auditoria);
+app.use('/api', usuarios);
 
 // Cliente compilado (producción / revisión local).
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist');
@@ -41,6 +43,11 @@ app.use((err, _req, res, _next) => {
   console.error('[GEA]', err.message);
   res.status(500).json({ error: err.message || 'Error interno' });
 });
+
+// Bucket privado de evidencia fotográfica (idempotente).
+import { supa } from './supa.js';
+supa.storage.createBucket('evidencia', { public: false, fileSizeLimit: '5MB' })
+  .then(({ error }) => { if (error && !/already exists/i.test(error.message)) console.error('[GEA] bucket evidencia:', error.message); });
 
 app.listen(env.PORT, () => {
   console.log(`GEA · Fase 1 chatarra — servidor en http://localhost:${env.PORT}`);
