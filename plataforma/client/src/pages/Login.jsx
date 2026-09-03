@@ -32,7 +32,7 @@ export default function Login() {
           <div><b>GEA</b><small>Gestión de enajenación de activos</small></div>
         </div>
         <div>
-          <h1>Del patio al pago conciliado, <em>cada kilo trazado</em>.</h1>
+          <h1 className="display">Del patio al pago conciliado, <em>cada kilo trazado</em>.</h1>
           <p className="desc">Trazabilidad completa del material: del retiro en patios al pago conciliado, con evidencia, folios automáticos y auditoría inmutable.</p>
           <span className="fase">Fase 1 · Proceso de chatarra</span>
         </div>

@@ -122,18 +122,22 @@ export default function EstadosPago() {
               )}
 
               <div className="tbl-wrap" style={{ marginTop: 14 }}><table>
-                <thead><tr><th>Categoría</th><th className="num">Guías</th><th className="num">Kg</th><th className="num">Valor</th></tr></thead>
+                <thead><tr><th>Categoría</th><th>Participación</th><th className="num">Guías</th><th className="num">Kg</th><th className="num">Valor</th></tr></thead>
                 <tbody>
-                  {sel.lineas.map((l) => (
-                    <tr key={l.categoria}>
-                      <td>{l.categoria}</td>
-                      <td className="num">{l.guias}</td>
-                      <td className="num">{fmtKg(l.kg)}</td>
-                      <td className="num">{fmtCLP(l.valor)}</td>
-                    </tr>
-                  ))}
+                  {sel.lineas.map((l) => {
+                    const pct = sel.bruto ? Math.round((l.valor / sel.bruto) * 100) : 0;
+                    return (
+                      <tr key={l.categoria}>
+                        <td>{l.categoria}</td>
+                        <td><span className="prop"><span className="bar-track"><span className="bar-fill" style={{ width: `${pct}%`, display: 'block' }} /></span><span className="pct">{pct}%</span></span></td>
+                        <td className="num">{l.guias}</td>
+                        <td className="num">{fmtKg(l.kg)}</td>
+                        <td className="num">{fmtCLP(l.valor)}</td>
+                      </tr>
+                    );
+                  })}
                   <tr style={{ fontWeight: 700 }}>
-                    <td>Bruto ({sel.n_guias} guías)</td><td /><td />
+                    <td>Bruto ({sel.n_guias} guías)</td><td /><td /><td />
                     <td className="num">{fmtCLP(sel.bruto)}</td>
                   </tr>
                 </tbody>

@@ -1,4 +1,5 @@
-// Panel de control: lo urgente primero, según el rol de quien entra.
+// Panel de control: el flujo físico del material del mes (patios → La Negra
+// → Lampa), la serie diaria y lo urgente según el rol de quien entra.
 import { Router } from 'express';
 import { supa, q, ah, hoy, semanaISO, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
@@ -8,7 +9,10 @@ const r = Router();
 r.get('/panel', auth(), ah(async (req, res) => {
   const { anio, semana } = semanaISO();
   const mes = hoy().slice(0, 7);
-  const [transito, observados, trasladosTr, prog, eps, cuad, actividad, despMes] = await Promise.all([
+  const hace14 = new Date(Date.now() - 13 * 86400000);
+  const desde14 = `${hace14.getFullYear()}-${String(hace14.getMonth() + 1).padStart(2, '0')}-${String(hace14.getDate()).padStart(2, '0')}`;
+
+  const [transito, observados, trasladosTr, prog, eps, cuad, actividad, despMes, trasMes, desp14] = await Promise.all([
     q(supa.from('despachos').select('id, guia, fecha').eq('estado', 'en_transito').order('id')),
     q(supa.from('despachos').select('id, guia, obs_recepcion').eq('estado', 'observado').order('id')),
     q(supa.from('traslados').select('id, guia').eq('estado', 'en_transito')),
@@ -16,8 +20,29 @@ r.get('/panel', auth(), ah(async (req, res) => {
     q(supa.from('estados_pago').select('*').order('periodo', { ascending: false }).limit(6)),
     q(supa.from('cuadraturas').select('anio, semana, estado').order('id', { ascending: false }).limit(1)),
     q(supa.from('auditoria').select('*').order('id', { ascending: false }).limit(6)),
-    q(supa.from('despachos').select('kg_destino, valor').gte('fecha', mes + '-01').not('kg_destino', 'is', null)),
+    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').gte('fecha', mes + '-01')),
+    q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio').gte('fecha', mes + '-01')),
+    q(supa.from('despachos').select('fecha, kg_origen').gte('fecha', desde14)),
   ]);
+
+  // Flujo físico del mes: cuánto salió de patios, cuánto validó La Negra,
+  // cuánto quedó dispuesto en Lampa con certificado.
+  const flujo = {
+    kg_patios: despMes.reduce((a, d) => a + Number(d.kg_origen), 0),
+    guias: despMes.length,
+    kg_lanegra: despMes.reduce((a, d) => a + Number(d.kg_destino ?? 0), 0),
+    kg_lampa: trasMes.reduce((a, t) => a + Number(t.kg_lampa ?? 0), 0),
+    certs: trasMes.filter((t) => t.cert_folio).length,
+  };
+
+  // Serie diaria (14 días): kg despachados desde patios.
+  const porDia = {};
+  for (const d of desp14) porDia[d.fecha] = (porDia[d.fecha] || 0) + Number(d.kg_origen);
+  const serie14 = Array.from({ length: 14 }, (_, i) => {
+    const dt = new Date(hace14.getTime() + i * 86400000);
+    const k = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    return { dia: k.slice(8), kg: porDia[k] || 0 };
+  });
 
   const rol = req.user.role;
   const pendientes = [];
@@ -50,8 +75,10 @@ r.get('/panel', auth(), ah(async (req, res) => {
 
   const ejec = prog.filter((p) => p.estado === 'ejecutado');
   res.json({
+    flujo,
+    serie14,
     kpis: {
-      kg_mes: despMes.reduce((a, d) => a + Number(d.kg_destino), 0),
+      kg_mes: flujo.kg_lanegra,
       valor_mes: despMes.reduce((a, d) => a + Number(d.valor ?? 0), 0),
       en_transito: transito.length,
       programa: { ejecutadas: ejec.length, total: prog.length, semana },
