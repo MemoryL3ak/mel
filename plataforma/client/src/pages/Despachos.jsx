@@ -17,7 +17,9 @@ export default function Despachos() {
   const [resolver, setResolver] = useState(null);
   const [nuevoTras, setNuevoTras] = useState(false);
   const [recepTras, setRecepTras] = useState(null);
-  const [form, setForm] = useState({ patio_id: 1, categoria_id: 1, kg_origen: '', fotos: 3 });
+  const [form, setForm] = useState({ patio_id: 1, categoria_id: 1, kg_origen: '', archivos: [] });
+  const [detalle, setDetalle] = useState(null);
+  const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
   const [rForm, setRForm] = useState({ kg_destino: '', categoria_final_id: '', observacion: '' });
   const [tForm, setTForm] = useState({ categoria_id: 1, kg: '' });
   const [kgLampa, setKgLampa] = useState('');
@@ -45,6 +47,30 @@ export default function Despachos() {
       load();
     } catch (e) { toast(e.message, true); }
   };
+
+  async function crearDespacho() {
+    try {
+      const fd = new FormData();
+      fd.append('patio_id', form.patio_id);
+      fd.append('categoria_id', form.categoria_id);
+      fd.append('kg_origen', form.kg_origen);
+      for (const f of form.archivos) fd.append('fotos', f);
+      const d = await api('/despachos', { method: 'POST', body: fd });
+      toast(`Despacho ${d.guia} registrado con ${form.archivos.length} foto(s) de evidencia`);
+      setNuevo(false); setForm({ patio_id: 1, categoria_id: 1, kg_origen: '', archivos: [] });
+      load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  function abrirDetalle(d) {
+    setDetalle(d);
+    setEvidencia(null);
+    if (d.fotos > 0) {
+      api(`/despachos/${d.id}/evidencia`).then((r) => setEvidencia(r.urls)).catch(() => setEvidencia([]));
+    } else {
+      setEvidencia([]);
+    }
+  }
 
   const enTransito = rows.filter((d) => d.estado === 'en_transito').length;
   const observados = rows.filter((d) => d.estado === 'observado').length;
@@ -97,6 +123,7 @@ export default function Despachos() {
                 <td><Chip tone={CHIP[d.estado][0]}>{CHIP[d.estado][1]}</Chip></td>
                 <td className="mono">{d.ep_folio || '—'}</td>
                 <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                  <button className="btn sm" onClick={() => abrirDetalle(d)}>Detalle</button>{' '}
                   {d.estado === 'en_transito' && puedeRecep && (
                     <button className="btn sm primary" onClick={() => { setRecep(d); setRForm({ kg_destino: String(d.kg_origen), categoria_final_id: '', observacion: '' }); }}>Recepcionar</button>
                   )}
@@ -178,10 +205,45 @@ export default function Despachos() {
       )}
 
       {/* ---- modales ---- */}
+      <Modal open={!!detalle} title={detalle && `Guía ${detalle.guia}`} onClose={() => setDetalle(null)}
+        footer={<button className="btn" onClick={() => setDetalle(null)}>Cerrar</button>}>
+        {detalle && (
+          <>
+            <div className="grid g2" style={{ gap: 10, marginBottom: 4 }}>
+              <div><small style={{ color: 'var(--muted)' }}>Patio de origen</small><br /><b>{detalle.patio} · {detalle.patio_nombre}</b></div>
+              <div><small style={{ color: 'var(--muted)' }}>Categoría</small><br />
+                <b>{detalle.categoria}</b>{detalle.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {detalle.categoria_final}</span>}</div>
+              <div><small style={{ color: 'var(--muted)' }}>Pesaje MEL</small><br /><b>{fmtKg(detalle.kg_origen)} kg</b></div>
+              <div><small style={{ color: 'var(--muted)' }}>Pesaje La Negra</small><br />
+                <b>{detalle.kg_destino != null ? `${fmtKg(detalle.kg_destino)} kg` : 'pendiente'}</b>
+                {detalle.dif_pct != null && <span style={{ color: Math.abs(detalle.dif_pct) > 2 ? 'var(--bad-tx)' : 'var(--muted)', fontSize: 12 }}> ({detalle.dif_pct.toFixed(2)}%)</span>}</div>
+              <div><small style={{ color: 'var(--muted)' }}>Precio congelado</small><br /><b>{detalle.precio_kg != null ? `$ ${detalle.precio_kg}/kg` : '—'}</b></div>
+              <div><small style={{ color: 'var(--muted)' }}>Valorización</small><br /><b>{fmtCLP(detalle.valor)}</b></div>
+            </div>
+            {detalle.obs_recepcion && <div className="audit-note">Observación: {detalle.obs_recepcion}</div>}
+            <small style={{ display: 'block', color: 'var(--muted)', margin: '14px 0 6px' }}>
+              Evidencia fotográfica ({detalle.fotos})
+            </small>
+            {evidencia == null && <div className="loading" style={{ padding: '18px 0' }}>Cargando evidencia…</div>}
+            {evidencia?.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>Sin fotografías adjuntas.</div>}
+            {evidencia?.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                {evidencia.map((u) => (
+                  <a key={u} href={u} target="_blank" rel="noreferrer">
+                    <img src={u} alt="Evidencia del despacho" style={{ width: '100%', height: 110, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} />
+                  </a>
+                ))}
+              </div>
+            )}
+            {detalle.ep_folio && <div className="audit-note">Incluido en el estado de pago <b>&nbsp;{detalle.ep_folio}</b></div>}
+          </>
+        )}
+      </Modal>
+
       <Modal open={nuevo} title="Registrar despacho MEL → La Negra" onClose={() => setNuevo(false)}
         footer={<>
           <button className="btn" onClick={() => setNuevo(false)}>Cancelar</button>
-          <button className="btn primary" onClick={post('/despachos', { ...form, kg_origen: +form.kg_origen }, 'Despacho registrado con guía foliada', () => { setNuevo(false); setForm({ ...form, kg_origen: '' }); })}>Registrar despacho</button>
+          <button className="btn primary" onClick={crearDespacho}>Registrar despacho</button>
         </>}>
         <Field label="Patio de origen">
           <select value={form.patio_id} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
@@ -196,9 +258,19 @@ export default function Despachos() {
         <Field label="Peso en báscula MEL (kg)">
           <input type="number" min="1" value={form.kg_origen} onChange={(e) => setForm({ ...form, kg_origen: e.target.value })} placeholder="0" />
         </Field>
-        <Field label="Evidencia fotográfica" hint="La guía se folia automáticamente (GD-####) y la carga queda lista para valorizarse al recepcionarse.">
-          <input type="file" multiple accept="image/*" onChange={(e) => setForm({ ...form, fotos: e.target.files.length || 3 })} />
+        <Field label={`Evidencia fotográfica${form.archivos.length ? ` · ${form.archivos.length} seleccionada(s)` : ''}`}
+          hint="Hasta 6 imágenes (JPG/PNG/WebP, máx. 5 MB c/u). La guía se folia automáticamente (GD-####).">
+          <input type="file" multiple accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => setForm({ ...form, archivos: Array.from(e.target.files).slice(0, 6) })} />
         </Field>
+        {form.archivos.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: -6, marginBottom: 10 }}>
+            {form.archivos.map((f) => (
+              <img key={f.name} src={URL.createObjectURL(f)} alt={f.name}
+                style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
+            ))}
+          </div>
+        )}
       </Modal>
 
       <Modal open={!!recep} title={recep && `Recepcionar ${recep.guia} en La Negra`} onClose={() => setRecep(null)}

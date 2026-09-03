@@ -61,9 +61,16 @@ r.get('/panel', auth(), ah(async (req, res) => {
   if (rol === 'coordinador' && epAbierto?.estado === 'en_revision') {
     pendientes.push({ tipo: 'warn', tag: 'Aprobación', destino: 'estados', texto: `${epAbierto.folio} espera su revisión y firma` });
   }
+  // Plazo contractual: factura pagada en menos de 15 días.
+  if (epAbierto?.estado === 'facturado' && epAbierto.factura_fecha && ['vendor', 'coordinador', 'ito'].includes(rol)) {
+    const dias = Math.floor((new Date(hoy()) - new Date(epAbierto.factura_fecha)) / 86400000);
+    const restan = 15 - dias;
+    pendientes.push(restan >= 0
+      ? { tipo: restan <= 3 ? 'warn' : 'info', tag: 'Pago 15 días', destino: 'estados', texto: `${epAbierto.folio} facturado hace ${dias} día(s): quedan ${restan} para el pago` }
+      : { tipo: 'bad', tag: 'Plazo vencido', destino: 'estados', texto: `${epAbierto.folio}: el plazo de pago de 15 días venció hace ${-restan} día(s)` });
+  }
   if (rol === 'vendor') {
     if (epAbierto?.estado === 'firmado') pendientes.push({ tipo: 'warn', tag: 'Factura', destino: 'estados', texto: `${epAbierto.folio} firmado: registre la factura de compra` });
-    if (epAbierto?.estado === 'facturado') pendientes.push({ tipo: 'warn', tag: 'Pago', destino: 'estados', texto: `${epAbierto.folio} facturado: el pago debe registrarse antes de 15 días` });
     if (trasladosTr.length) pendientes.push({ tipo: 'info', tag: 'Lampa', destino: 'despachos', texto: `${trasladosTr.length} traslado(s) en tránsito a Lampa por recepcionar` });
   }
   if (rol === 'coordinador' && epAbierto?.estado === 'pagado') {

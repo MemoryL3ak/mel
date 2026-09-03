@@ -10,6 +10,7 @@ import Valorizacion from './pages/Valorizacion.jsx';
 import Cuadratura from './pages/Cuadratura.jsx';
 import EstadosPago from './pages/EstadosPago.jsx';
 import Auditoria from './pages/Auditoria.jsx';
+import Usuarios from './pages/Usuarios.jsx';
 
 const I = {
   panel: <path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z" />,
@@ -19,6 +20,7 @@ const I = {
   cuadratura: <path d="M4 5h16M4 12h16M4 19h16M8 3v4M16 10v4M10 17v4" />,
   estados: <path d="M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6" />,
   auditoria: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4" />,
+  usuarios: <><circle cx="9" cy="8" r="3.4" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17.5" cy="9.5" r="2.6" /><path d="M16 14.6c2.9.4 5 2.7 5 5.4" /></>,
 };
 const NAV = [
   ['INICIO', [['panel', '/', 'Panel de control']]],
@@ -29,12 +31,15 @@ const NAV = [
     ['cuadratura', '/cuadratura', 'Cuadratura semanal'],
     ['estados', '/estados', 'Estados de pago'],
   ]],
-  ['GESTIÓN', [['auditoria', '/auditoria', 'Auditoría y permisos']]],
+  ['GESTIÓN', [
+    ['auditoria', '/auditoria', 'Auditoría y permisos'],
+    ['usuarios', '/usuarios', 'Cuentas de usuario'],
+  ]],
 ];
 const TITULOS = {
   '/': 'Panel de control', '/programa': 'Programa de limpieza', '/despachos': 'Despachos y recepciones',
   '/valorizacion': 'Valorización y precios', '/cuadratura': 'Cuadratura semanal',
-  '/estados': 'Estados de pago', '/auditoria': 'Auditoría y permisos',
+  '/estados': 'Estados de pago', '/auditoria': 'Auditoría y permisos', '/usuarios': 'Cuentas de usuario',
 };
 
 function Shell({ children }) {
@@ -132,6 +137,7 @@ export default function App() {
             <Route path="/cuadratura" element={<Guard screen="cuadratura"><Cuadratura /></Guard>} />
             <Route path="/estados" element={<Guard screen="estados"><EstadosPago /></Guard>} />
             <Route path="/auditoria" element={<Guard screen="auditoria"><Auditoria /></Guard>} />
+            <Route path="/usuarios" element={<Guard screen="usuarios"><Usuarios /></Guard>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

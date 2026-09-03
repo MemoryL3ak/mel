@@ -6,7 +6,7 @@ export const SCREENS = {
   limpieza:    ['panel', 'programa', 'despachos'],
   vendor:      ['panel', 'despachos', 'estados'],
   ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria'],
-  coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria'],
+  coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria', 'usuarios'],
 };
 export const ROL_NOMBRE = {
   limpieza: 'Empresa de limpieza de patios',
