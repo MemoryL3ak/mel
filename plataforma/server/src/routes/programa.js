@@ -41,6 +41,32 @@ r.post('/programa', auth('limpieza', 'coordinador'), ah(async (req, res) => {
   res.json(row);
 }));
 
+// Copia la planificación de la semana anterior a la semana indicada (vacía).
+// Los lunes se parte de la semana pasada y solo se ajusta lo que cambia.
+r.post('/programa/duplicar', auth('limpieza', 'coordinador'), ah(async (req, res) => {
+  const anio = Number(req.body?.anio), semana = Number(req.body?.semana);
+  if (!anio || !semana) return res.status(400).json({ error: 'Año y semana son obligatorios' });
+  let pAnio = anio, pSem = semana - 1;
+  if (pSem < 1) { pAnio -= 1; pSem = 52; }
+
+  const [destino, origen] = await Promise.all([
+    q(supa.from('programa').select('id').eq('anio', anio).eq('semana', semana).limit(1)),
+    q(supa.from('programa').select('*').eq('anio', pAnio).eq('semana', pSem).neq('estado', 'cancelado')),
+  ]);
+  if (destino.length) return res.status(409).json({ error: `La semana ${semana} ya tiene planificación` });
+  if (!origen.length) return res.status(400).json({ error: `La semana anterior (S${pSem}) no tiene planificación que copiar` });
+
+  const mas7 = (f) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); };
+  const filas = origen.map((o) => ({
+    anio, semana, dia: o.dia, fecha: o.fecha ? mas7(o.fecha) : null,
+    patio_id: o.patio_id, categoria_id: o.categoria_id,
+    ton_estimadas: o.ton_estimadas, creado_por: req.user.name,
+  }));
+  const rows = await q(supa.from('programa').insert(filas).select(SEL));
+  await audit(req.user.name, req.user.role, 'Copió el programa de la semana anterior', `S${pSem} → S${semana} · ${rows.length} actividades`);
+  res.json(rows);
+}));
+
 r.post('/programa/:id/ejecutar', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const ton = Number(req.body?.ton_reales);
   if (!(ton > 0)) return res.status(400).json({ error: 'Ingrese el tonelaje real retirado' });

@@ -40,6 +40,13 @@ export default function Programa() {
     load({ anio, semana });
   };
 
+  async function duplicar() {
+    try {
+      const r = await api('/programa/duplicar', { method: 'POST', body: { anio: sel.anio, semana: sel.semana } });
+      toast(`${r.length} actividades copiadas de la semana anterior`);
+      load(sel);
+    } catch (e) { toast(e.message, true); }
+  }
   async function crear() {
     try {
       await api('/programa', { method: 'POST', body: { ...form, anio: sel.anio, semana: sel.semana, ton_estimadas: +form.ton_estimadas } });
@@ -70,6 +77,9 @@ export default function Programa() {
     <div>
       <PageHead title="Programa de limpieza de patios"
         sub="Planificación semanal de despachos por tipo de material, enviada por la empresa de limpieza, con seguimiento de cumplimiento.">
+        {puedePlanificar && data.rows.length === 0 && (
+          <button className="btn" onClick={duplicar}>⧉ Copiar semana anterior</button>
+        )}
         {puedePlanificar && <button className="btn primary" onClick={() => setNuevo(true)}>+ Planificar actividad</button>}
       </PageHead>
 
