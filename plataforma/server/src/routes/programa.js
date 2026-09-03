@@ -67,6 +67,35 @@ r.post('/programa/duplicar', auth('limpieza', 'coordinador'), ah(async (req, res
   res.json(rows);
 }));
 
+// Carga masiva de la semana: filas ya resueltas por el cliente (vista previa
+// validada). Inserción atómica: o entran todas, o ninguna.
+r.post('/programa/masivo', auth('limpieza', 'coordinador'), ah(async (req, res) => {
+  const anio = Number(req.body?.anio), semana = Number(req.body?.semana);
+  const filas = req.body?.filas;
+  if (!anio || !semana || !Array.isArray(filas) || !filas.length) {
+    return res.status(400).json({ error: 'Semana y filas son obligatorias' });
+  }
+  if (filas.length > 100) return res.status(400).json({ error: 'Máximo 100 actividades por carga' });
+
+  const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const [patios, cats] = await Promise.all([
+    q(supa.from('patios').select('id')),
+    q(supa.from('categorias').select('id')),
+  ]);
+  const pIds = new Set(patios.map((p) => p.id)), cIds = new Set(cats.map((c) => c.id));
+  for (const [i, f] of filas.entries()) {
+    if (!DIAS.includes(f.dia) || !pIds.has(f.patio_id) || !cIds.has(f.categoria_id) || !(Number(f.ton_estimadas) > 0)) {
+      return res.status(400).json({ error: `Fila ${i + 1} inválida: revise día, patio, material y tonelaje` });
+    }
+  }
+  const rows = await q(supa.from('programa').insert(filas.map((f) => ({
+    anio, semana, dia: f.dia, patio_id: f.patio_id, categoria_id: f.categoria_id,
+    ton_estimadas: Number(f.ton_estimadas), creado_por: req.user.name,
+  }))).select(SEL));
+  await audit(req.user.name, req.user.role, 'Carga masiva del programa semanal', `S${semana} · ${rows.length} actividades`);
+  res.json(rows);
+}));
+
 r.post('/programa/:id/ejecutar', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const ton = Number(req.body?.ton_reales);
   if (!(ton > 0)) return res.status(400).json({ error: 'Ingrese el tonelaje real retirado' });

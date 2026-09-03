@@ -9,11 +9,53 @@ const CHIP = {
 };
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
+// Parser de carga masiva: acepta pegado desde Excel (tabulaciones) o CSV
+// con ";" o ",". Columnas: Día | Patio | Material | Toneladas.
+const sinTilde = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+const DIA_MAP = { lun: 'Lun', mar: 'Mar', mie: 'Mié', jue: 'Jue', vie: 'Vie', sab: 'Sáb' };
+
+function parsearMasivo(texto, maestros) {
+  const filas = [];
+  for (const linea of texto.split(/\r?\n/)) {
+    const l = linea.trim();
+    if (!l) continue;
+    const sep = l.includes('\t') ? '\t' : l.includes(';') ? ';' : ',';
+    const c = l.split(sep).map((x) => x.trim());
+    if (/^d[ií]a$/i.test(c[0] || '')) continue; // fila de encabezado
+    const fila = { raw: c };
+    if (c.length < 4) { fila.error = 'Se esperan 4 columnas: Día, Patio, Material, Toneladas'; filas.push(fila); continue; }
+
+    fila.dia = DIA_MAP[sinTilde(c[0]).slice(0, 3)];
+    if (!fila.dia) fila.error = `Día no reconocido: «${c[0]}»`;
+
+    const p = maestros.patios.find((x) => sinTilde(x.codigo) === sinTilde(c[1]) || sinTilde(x.nombre).includes(sinTilde(c[1])));
+    if (p) { fila.patio_id = p.id; fila.patio = p.codigo; }
+    else fila.error ??= `Patio no reconocido: «${c[1]}»`;
+
+    const m = maestros.categorias.find((x) => sinTilde(x.nombre) === sinTilde(c[2]) || sinTilde(x.nombre).includes(sinTilde(c[2])));
+    if (m) { fila.categoria_id = m.id; fila.categoria = m.nombre; }
+    else fila.error ??= `Material no reconocido: «${c[2]}»`;
+
+    const tRaw = c[3];
+    const ton = parseFloat(tRaw.includes(',') ? tRaw.replace(/\./g, '').replace(',', '.') : tRaw);
+    if (ton > 0) fila.ton_estimadas = ton;
+    else fila.error ??= `Tonelaje inválido: «${tRaw}»`;
+
+    filas.push(fila);
+  }
+  return filas;
+}
+
+const PLANTILLA = 'data:text/csv;charset=utf-8,' + encodeURIComponent(
+  'Día;Patio;Material;Toneladas\nLun;HOP01;Fierro pesado;24\nLun;LD01;Fierro liviano / mixto;14\nMar;CLS01;Cables forrados;6\nMié;HOP01;Fierro pesado;22\n');
+
 export default function Programa() {
   const [data, setData] = useState(null);
   const [maestros, setMaestros] = useState(null);
   const [sel, setSel] = useState(null);          // {anio, semana} seleccionada
   const [nuevo, setNuevo] = useState(false);
+  const [masivo, setMasivo] = useState(false);
+  const [texto, setTexto] = useState('');
   const [ejec, setEjec] = useState(null);
   const [repro, setRepro] = useState(null);
   const [form, setForm] = useState({ dia: 'Lun', patio_id: 1, categoria_id: 1, ton_estimadas: '' });
@@ -40,6 +82,17 @@ export default function Programa() {
     load({ anio, semana });
   };
 
+  async function cargarMasivo(filasOk) {
+    try {
+      const r = await api('/programa/masivo', {
+        method: 'POST',
+        body: { anio: sel.anio, semana: sel.semana, filas: filasOk.map(({ dia, patio_id, categoria_id, ton_estimadas }) => ({ dia, patio_id, categoria_id, ton_estimadas })) },
+      });
+      toast(`${r.length} actividades cargadas en la semana ${sel.semana}`);
+      setMasivo(false); setTexto('');
+      load(sel);
+    } catch (e) { toast(e.message, true); }
+  }
   async function duplicar() {
     try {
       const r = await api('/programa/duplicar', { method: 'POST', body: { anio: sel.anio, semana: sel.semana } });
@@ -80,6 +133,7 @@ export default function Programa() {
         {puedePlanificar && data.rows.length === 0 && (
           <button className="btn" onClick={duplicar}>⧉ Copiar semana anterior</button>
         )}
+        {puedePlanificar && <button className="btn" onClick={() => setMasivo(true)}>⇪ Carga masiva</button>}
         {puedePlanificar && <button className="btn primary" onClick={() => setNuevo(true)}>+ Planificar actividad</button>}
       </PageHead>
 
@@ -123,6 +177,62 @@ export default function Programa() {
         </table></div>
         {data.rows.length === 0 && <Empty title="Semana sin planificación">La empresa de limpieza aún no envía el programa de esta semana.</Empty>}
       </div>
+
+      {masivo && (() => {
+        const filas = texto.trim() && maestros ? parsearMasivo(texto, maestros) : [];
+        const validas = filas.filter((f) => !f.error);
+        const errores = filas.length - validas.length;
+        return (
+          <Modal open title={`Carga masiva · semana ${sel?.semana}`} onClose={() => setMasivo(false)}
+            footer={<>
+              <a className="btn" href={PLANTILLA} download="programa-semanal.csv" style={{ marginRight: 'auto', textDecoration: 'none' }}>⇩ Plantilla CSV</a>
+              <button className="btn" onClick={() => setMasivo(false)}>Cancelar</button>
+              <button className="btn primary" disabled={!validas.length || errores > 0}
+                onClick={() => cargarMasivo(validas)}>
+                Cargar {validas.length || ''} actividad{validas.length === 1 ? '' : 'es'}
+              </button>
+            </>}>
+            <Field label="Archivo CSV" hint="O pegue directamente desde Excel en el cuadro de abajo (columnas: Día, Patio, Material, Toneladas).">
+              <input type="file" accept=".csv,.txt" onChange={(e) => {
+                const f = e.target.files[0];
+                if (!f) return;
+                const fr = new FileReader();
+                fr.onload = () => setTexto(String(fr.result));
+                fr.readAsText(f);
+              }} />
+            </Field>
+            <Field label="O pegar desde Excel">
+              <textarea rows="5" value={texto} onChange={(e) => setTexto(e.target.value)}
+                placeholder={'Lun\tHOP01\tFierro pesado\t24\nMar\tLD01\tFierro liviano\t14'} />
+            </Field>
+            {filas.length > 0 && (
+              <>
+                <div style={{ fontSize: 12.5, margin: '4px 0 8px', color: errores ? 'var(--bad-tx)' : 'var(--ok-tx)', fontWeight: 600 }}>
+                  {errores
+                    ? `${errores} fila(s) con problema — corrija para poder cargar`
+                    : `${validas.length} actividad(es) lista(s) para cargar`}
+                </div>
+                <div className="tbl-wrap" style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--line-2)', borderRadius: 8 }}>
+                  <table>
+                    <thead><tr><th>Día</th><th>Patio</th><th>Material</th><th className="num">Ton</th><th>Estado</th></tr></thead>
+                    <tbody>
+                      {filas.map((f, i) => (
+                        <tr key={i}>
+                          <td className="mono">{f.dia ?? f.raw[0]}</td>
+                          <td>{f.patio ?? f.raw[1]}</td>
+                          <td>{f.categoria ?? f.raw[2]}</td>
+                          <td className="num">{f.ton_estimadas ?? f.raw[3]}</td>
+                          <td>{f.error ? <Chip tone="bad">{f.error}</Chip> : <Chip tone="ok">OK</Chip>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </Modal>
+        );
+      })()}
 
       <Modal open={nuevo} title={`Planificar actividad · semana ${sel?.semana}`} onClose={() => setNuevo(false)}
         footer={<>
