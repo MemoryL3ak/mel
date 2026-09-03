@@ -59,6 +59,22 @@ export default function Despachos() {
         {puedeTras && <button className="btn" onClick={() => setNuevoTras(true)}>+ Traslado a Lampa</button>}
       </PageHead>
 
+      {(() => {
+        const mesActual = new Date().toISOString().slice(0, 7);
+        const dMes = rows.filter((d) => d.fecha?.startsWith(mesActual));
+        const tMes = traslados.filter((t) => t.fecha?.startsWith(mesActual));
+        return (
+          <div className="flow-mini" aria-label="Resumen del flujo del mes">
+            <span className="fm"><span className="k">Patios · mes</span><span className="v display">{fmtKg(dMes.reduce((a, d) => a + d.kg_origen, 0))} <small>kg</small></span></span>
+            <span className="fm-sep">→</span>
+            <span className="fm"><span className="k">La Negra</span><span className="v display">{fmtKg(dMes.reduce((a, d) => a + (d.kg_destino ?? 0), 0))} <small>kg</small></span></span>
+            <span className="fm-sep">→</span>
+            <span className="fm"><span className="k">Lampa</span><span className="v display">{fmtKg(tMes.reduce((a, t) => a + (t.kg_lampa ?? 0), 0))} <small>kg</small></span></span>
+            <span className="fm" style={{ marginLeft: 'auto' }}><span className="k">Certificados</span><span className="v display">{tMes.filter((t) => t.cert_folio).length}</span></span>
+          </div>
+        );
+      })()}
+
       <Tabs active={tab} onChange={setTab} tabs={[
         ['d1', 'MEL → La Negra', enTransito + observados],
         ['d2', 'Recepciones La Negra'],
