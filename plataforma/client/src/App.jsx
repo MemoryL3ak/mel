@@ -40,13 +40,19 @@ const TITULOS = {
 function Shell({ children }) {
   const { user, logout, can } = useAuth();
   const [open, setOpen] = useState(false);
+  const [rail, setRail] = useState(() => localStorage.getItem('gea_nav') === '1');
   const loc = useLocation();
+  const toggleRail = () => {
+    const v = !rail;
+    setRail(v);
+    localStorage.setItem('gea_nav', v ? '1' : '0');
+  };
   return (
-    <div className={`shell ${open ? 'nav-open' : ''}`}>
+    <div className={`shell ${open ? 'nav-open' : ''} ${rail ? 'nav-rail' : ''}`}>
       <aside className="sidebar">
         <div className="side-brand">
           <Logo />
-          <div><b>GEA</b><small>Minera Escondida</small></div>
+          <div className="btxt"><b>GEA</b><small>Minera Escondida</small></div>
         </div>
         <nav className="nav">
           {NAV.map(([sec, items]) => {
@@ -56,10 +62,10 @@ function Shell({ children }) {
               <div key={sec}>
                 <div className="nav-sec">{sec}</div>
                 {visibles.map(([id, to, label]) => (
-                  <NavLink key={id} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                  <NavLink key={id} to={to} title={label} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                     onClick={() => setOpen(false)}>
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{I[id]}</svg>
-                    {label}
+                    <span className="ntxt">{label}</span>
                   </NavLink>
                 ))}
               </div>
@@ -78,6 +84,13 @@ function Shell({ children }) {
       <div className="main">
         <header className="topbar">
           <button className="hamb" onClick={() => setOpen(!open)} aria-label="Menú">☰</button>
+          <button className="nav-toggle" onClick={toggleRail} title={rail ? 'Expandir menú' : 'Contraer menú'}
+            aria-label={rail ? 'Expandir menú' : 'Contraer menú'}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M9.5 4v16" />
+              {rail ? <path d="M14 9.5l2.5 2.5L14 14.5" /> : <path d="M17 9.5L14.5 12l2.5 2.5" />}
+            </svg>
+          </button>
           <span className="crumb">GEA <span className="sep">/</span> <b>{TITULOS[loc.pathname] ?? 'Fase 1'}</b></span>
           <span className="top-user">
             <span className="top-date">{new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
