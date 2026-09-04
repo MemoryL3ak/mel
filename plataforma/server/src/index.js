@@ -18,6 +18,23 @@ import usuarios from './routes/usuarios.js';
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
+// CORS: solo cuando el frontend vive en otro dominio (Vercel). Sin cookies —
+// la sesión viaja en el header Authorization — así que basta reflejar el origen.
+if (env.CORS_ORIGIN.length) {
+  app.use((req, res, next) => {
+    const origen = req.headers.origin;
+    if (origen && env.CORS_ORIGIN.includes(origen)) {
+      res.setHeader('Access-Control-Allow-Origin', origen);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Max-Age', '86400');
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+}
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 1 }));
 app.post('/api/auth/login', ah(login));
 app.get('/api/auth/me', auth(), (req, res) => res.json({ user: req.user }));
