@@ -23,4 +23,7 @@ export const env = {
   SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
   JWT_SECRET: process.env.JWT_SECRET,
   PORT: Number(process.env.PORT || 4100),
+  // Orígenes permitidos para CORS cuando el cliente se sirve desde otro dominio
+  // (frontend en Vercel). Lista separada por comas; vacío = solo mismo origen.
+  CORS_ORIGIN: (process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean),
 };

@@ -1,8 +1,12 @@
 // Cliente HTTP: agrega el token de sesión y normaliza errores.
+// En desarrollo la API vive en el mismo origen (proxy de Vite); en producción
+// con frontend y backend separados, VITE_API_URL apunta al backend (…/api).
+const BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
+
 export async function api(path, { method = 'GET', body } = {}) {
   const token = localStorage.getItem('gea_token');
   const esForm = body instanceof FormData;
-  const res = await fetch('/api' + path, {
+  const res = await fetch(BASE + path, {
     method,
     headers: {
       ...(esForm ? {} : { 'Content-Type': 'application/json' }),
