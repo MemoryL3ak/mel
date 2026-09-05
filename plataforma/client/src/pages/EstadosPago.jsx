@@ -29,7 +29,7 @@ function Pasos({ estado }) {
 export default function EstadosPago() {
   const [eps, setEps] = useState(null);
   const [sel, setSel] = useState(null);
-  const [modal, setModal] = useState(null);   // generar | descuento | ajustar | factura | pago | conciliar
+  const [modal, setModal] = useState(null);   // generar | ajustar | factura | pago | conciliar
   const [f, setF] = useState({});
   const { user } = useAuth();
   const toast = useToast();
@@ -91,10 +91,7 @@ export default function EstadosPago() {
               <h3>{sel.folio} · {sel.periodo}</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {esIto && ['generado', 'con_ajustes'].includes(sel.estado) && (
-                  <>
-                    <button className="btn sm" onClick={() => { setF({}); setModal('descuento'); }}>+ Descuento</button>
-                    <button className="btn sm primary" onClick={accion(`/eps/${sel.id}/enviar`, {}, 'EP enviado a revisión del Coordinador')}>Enviar a revisión</button>
-                  </>
+                  <button className="btn sm primary" onClick={accion(`/eps/${sel.id}/enviar`, {}, 'EP enviado a revisión del Coordinador')}>Enviar a revisión</button>
                 )}
                 {esCoord && sel.estado === 'en_revision' && (
                   <>
@@ -136,7 +133,7 @@ export default function EstadosPago() {
                 <thead><tr><th>Categoría</th><th>Participación</th><th className="num">Guías</th><th className="num">Kg</th><th className="num">Valor</th></tr></thead>
                 <tbody>
                   {sel.lineas.map((l) => {
-                    const pct = sel.bruto ? Math.round((l.valor / sel.bruto) * 100) : 0;
+                    const pct = sel.total ? Math.round((l.valor / sel.total) * 100) : 0;
                     return (
                       <tr key={l.categoria}>
                         <td>{l.categoria}</td>
@@ -148,37 +145,11 @@ export default function EstadosPago() {
                     );
                   })}
                   <tr style={{ fontWeight: 700 }}>
-                    <td>Bruto ({sel.n_guias} guías)</td><td /><td /><td />
-                    <td className="num">{fmtCLP(sel.bruto)}</td>
+                    <td>Total a pagar ({sel.n_guias} guías)</td><td /><td /><td />
+                    <td className="num">{fmtCLP(sel.total)}</td>
                   </tr>
                 </tbody>
               </table></div>
-
-              {(sel.descuentos_lineas ?? []).length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  {sel.descuentos_lineas.map((d) => (
-                    <div className="pend" key={d.id}>
-                      <Chip tone="bad">Descuento</Chip>
-                      <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small></span>
-                      <span className="go" style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmtCLP(d.monto)}</span>
-                      {esIto && ['generado', 'con_ajustes'].includes(sel.estado) && (
-                        <button className="btn sm danger" onClick={async () => {
-                          try {
-                            await api(`/eps/${sel.id}/descuentos/${d.id}`, { method: 'DELETE' });
-                            toast('Descuento eliminado');
-                            load(sel.id);
-                          } catch (e) { toast(e.message, true); }
-                        }}>Quitar</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 26, marginTop: 14, fontSize: 14 }}>
-                <span style={{ color: 'var(--ink-2)' }}>Descuentos <b style={{ color: 'var(--bad-tx)' }}>-{fmtCLP(sel.descuentos)}</b></span>
-                <span>Total a pagar <b style={{ fontSize: 17 }}>{fmtCLP(sel.total)}</b></span>
-              </div>
 
               {(sel.factura_numero || sel.pago_monto != null) && (
                 <div className="audit-note">
@@ -203,15 +174,6 @@ export default function EstadosPago() {
         <Field label="Período (AAAA-MM)" hint="Toma todos los despachos recepcionados del período que aún no pertenecen a un EP.">
           <input value={f.periodo || ''} onChange={(e) => setF({ ...f, periodo: e.target.value })} placeholder="2026-09" />
         </Field>
-      </Modal>
-
-      <Modal open={modal === 'descuento'} title={`Registrar descuento · ${sel?.folio}`} onClose={() => setModal(null)}
-        footer={<>
-          <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
-          <button className="btn primary" onClick={accion(`/eps/${sel?.id}/descuentos`, { glosa: f.glosa, monto: +f.monto }, 'Descuento registrado')}>Registrar</button>
-        </>}>
-        <Field label="Glosa"><input value={f.glosa || ''} onChange={(e) => setF({ ...f, glosa: e.target.value })} placeholder="Ej.: merma guía GD-1007" /></Field>
-        <Field label="Monto (CLP)"><input type="number" min="1" value={f.monto || ''} onChange={(e) => setF({ ...f, monto: e.target.value })} /></Field>
       </Modal>
 
       <Modal open={modal === 'ajustar'} title={`Devolver con ajustes · ${sel?.folio}`} onClose={() => setModal(null)}
