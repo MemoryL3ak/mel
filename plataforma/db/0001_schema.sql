@@ -116,7 +116,6 @@ create table estados_pago (
   folio          text not null unique,   -- EP-YYYY-MM
   periodo        text not null unique,   -- YYYY-MM
   bruto          numeric(14,0) not null default 0,
-  descuentos     numeric(14,0) not null default 0,
   total          numeric(14,0) not null default 0,
   estado         text not null default 'generado'
                  check (estado in ('generado','en_revision','con_ajustes','firmado','facturado','pagado','conciliado')),
@@ -130,14 +129,6 @@ create table estados_pago (
   firmado_el     timestamptz,
   generado_por   text,
   generado_el    timestamptz not null default now()
-);
-
-create table ep_descuentos (
-  id         bigint generated always as identity primary key,
-  ep_id      bigint not null references estados_pago(id) on delete cascade,
-  glosa      text not null,
-  monto      numeric(14,0) not null check (monto > 0),
-  creado_por text
 );
 
 -- ===================== despachos MEL → La Negra =====================
@@ -237,7 +228,6 @@ alter table despachos     enable row level security;
 alter table traslados     enable row level security;
 alter table cuadraturas   enable row level security;
 alter table estados_pago  enable row level security;
-alter table ep_descuentos enable row level security;
 alter table auditoria     enable row level security;
 
 -- Maestros: lectura para cualquier rol interno.
@@ -267,8 +257,6 @@ create policy eps_write on estados_pago for update
   using (app_role() in ('vendor','ito','coordinador'));
 create policy eps_insert on estados_pago for insert
   with check (app_role() in ('ito','coordinador'));
-create policy ep_desc_rw on ep_descuentos for all
-  using (app_role() in ('ito','coordinador'));
 
 -- Auditoría: se agrega, jamás se modifica; solo la gestión la lee.
 create policy auditoria_insert on auditoria for insert

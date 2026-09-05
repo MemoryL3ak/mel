@@ -11,12 +11,9 @@ import { auth } from '../auth.js';
 const r = Router();
 
 async function detalleEP(ep) {
-  const [desp, descs] = await Promise.all([
-    q(supa.from('despachos')
-      .select('kg_destino, valor, precio_kg, categoria_id, categoria_final_id, cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre)')
-      .eq('ep_id', ep.id)),
-    q(supa.from('ep_descuentos').select('*').eq('ep_id', ep.id).order('id')),
-  ]);
+  const desp = await q(supa.from('despachos')
+    .select('kg_destino, valor, precio_kg, categoria_id, categoria_final_id, cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre)')
+    .eq('ep_id', ep.id));
   const porCat = {};
   for (const d of desp) {
     const k = d.catf?.nombre ?? d.cat?.nombre ?? '—';
@@ -25,12 +22,12 @@ async function detalleEP(ep) {
     porCat[k].kg += Number(d.kg_destino ?? 0);
     porCat[k].valor += Number(d.valor ?? 0);
   }
-  return { lineas: Object.values(porCat).sort((a, b) => b.valor - a.valor), descuentos_lineas: descs, n_guias: desp.length };
+  return { lineas: Object.values(porCat).sort((a, b) => b.valor - a.valor), n_guias: desp.length };
 }
 
-const pub = (ep) => ({
+const pub = ({ descuentos: _omitir, ...ep }) => ({
   ...ep,
-  bruto: Number(ep.bruto), descuentos: Number(ep.descuentos), total: Number(ep.total),
+  bruto: Number(ep.bruto), total: Number(ep.total),
   pago_monto: ep.pago_monto == null ? null : Number(ep.pago_monto),
   firmado_el: ep.firmado_el && fmtFecha(ep.firmado_el),
   generado_el: ep.generado_el && fmtFecha(ep.generado_el),
@@ -59,45 +56,12 @@ r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
 
   const bruto = desp.reduce((a, d) => a + Number(d.valor ?? 0), 0);
   const ep = await q(supa.from('estados_pago').insert({
-    folio: `EP-${periodo}`, periodo, bruto, descuentos: 0, total: bruto,
+    folio: `EP-${periodo}`, periodo, bruto, total: bruto,
     generado_por: req.user.name,
   }).select().single());
   await q(supa.from('despachos').update({ ep_id: ep.id }).in('id', desp.map((d) => d.id)).select('id'));
   await audit(req.user.name, req.user.role, 'Generó estado de pago de cierre de mes', `${ep.folio} · ${desp.length} guías`);
   res.json({ ...pub(ep), ...(await detalleEP(ep)) });
-}));
-
-async function recalcular(epId) {
-  const [ep, descs] = await Promise.all([
-    q(supa.from('estados_pago').select('*').eq('id', epId).single()),
-    q(supa.from('ep_descuentos').select('monto').eq('ep_id', epId)),
-  ]);
-  const totalDesc = descs.reduce((a, d) => a + Number(d.monto), 0);
-  return q(supa.from('estados_pago')
-    .update({ descuentos: totalDesc, total: Number(ep.bruto) - totalDesc })
-    .eq('id', epId).select().single());
-}
-
-const editable = (ep) => ['generado', 'con_ajustes'].includes(ep.estado);
-
-r.post('/eps/:id/descuentos', auth('ito', 'coordinador'), ah(async (req, res) => {
-  const { glosa, monto } = req.body || {};
-  if (!glosa || !(Number(monto) > 0)) return res.status(400).json({ error: 'Glosa y monto válido son obligatorios' });
-  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).single());
-  if (!editable(ep)) return res.status(409).json({ error: 'El EP ya no admite cambios de descuentos' });
-  await q(supa.from('ep_descuentos').insert({ ep_id: ep.id, glosa, monto: Number(monto), creado_por: req.user.name }).select());
-  const upd = await recalcular(ep.id);
-  await audit(req.user.name, req.user.role, 'Registró descuento en EP', `${ep.folio} · ${glosa} · $${monto}`);
-  res.json({ ...pub(upd), ...(await detalleEP(upd)) });
-}));
-
-r.delete('/eps/:id/descuentos/:descId', auth('ito', 'coordinador'), ah(async (req, res) => {
-  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).single());
-  if (!editable(ep)) return res.status(409).json({ error: 'El EP ya no admite cambios de descuentos' });
-  await q(supa.from('ep_descuentos').delete().eq('id', req.params.descId).eq('ep_id', ep.id).select());
-  const upd = await recalcular(ep.id);
-  await audit(req.user.name, req.user.role, 'Eliminó descuento de EP', ep.folio);
-  res.json({ ...pub(upd), ...(await detalleEP(upd)) });
 }));
 
 // Transiciones del ciclo. Cada una valida el estado de origen.
