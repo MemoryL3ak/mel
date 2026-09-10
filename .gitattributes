@@ -1,0 +1,7 @@
+# Estadísticas de lenguaje en GitHub: los documentos (manuales y guías con
+# imágenes incrustadas) y el prototipo de venta no cuentan como código.
+docs/** linguist-documentation
+plataforma/docs/** linguist-documentation
+prototipo/** linguist-vendored
+client/** linguist-vendored
+server/** linguist-vendored
