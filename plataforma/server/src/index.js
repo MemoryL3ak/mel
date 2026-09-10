@@ -1,5 +1,7 @@
 // GEA · Plataforma de enajenación de activos — servidor Fase 1 (chatarra).
 import express from 'express';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -16,7 +18,22 @@ import auditoria from './routes/auditoria.js';
 import usuarios from './routes/usuarios.js';
 
 const app = express();
+// Detrás del proxy de la plataforma de hosting: el primer X-Forwarded-For es la IP real.
+app.set('trust proxy', 1);
+// Cabeceras de seguridad. CSP desactivada: en producción el cliente vive en otro
+// dominio y este servidor solo responde JSON; la CSP rompería el modo local un-puerto.
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '2mb' }));
+
+// Freno a fuerza bruta en el login: cuentan solo los intentos fallidos por IP.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos fallidos. Espere 15 minutos y vuelva a intentar.' },
+});
 
 // CORS: solo cuando el frontend vive en otro dominio (Vercel). Sin cookies —
 // la sesión viaja en el header Authorization — así que basta reflejar el origen.
@@ -36,7 +53,7 @@ if (env.CORS_ORIGIN.length) {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 1 }));
-app.post('/api/auth/login', ah(login));
+app.post('/api/auth/login', loginLimiter, ah(login));
 app.get('/api/auth/me', auth(), (req, res) => res.json({ user: req.user }));
 
 app.use('/api', maestros);

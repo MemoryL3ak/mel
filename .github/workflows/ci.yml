@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  servidor:
+    name: API — auditoría y sintaxis
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: plataforma/server }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: plataforma/server/package-lock.json }
+      - run: npm ci
+      - name: Dependencias sin vulnerabilidades conocidas
+        run: npm audit --audit-level=moderate
+      - name: Sintaxis de todos los módulos
+        run: find src scripts test -name '*.js' -o -name '*.mjs' | xargs -n1 node --check
+
+  cliente:
+    name: Cliente — auditoría y build
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: plataforma/client }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: plataforma/client/package-lock.json }
+      - run: npm ci
+      - name: Dependencias sin vulnerabilidades conocidas
+        run: npm audit --audit-level=moderate
+      - name: Build de producción
+        run: npm run build
