@@ -46,8 +46,15 @@ function parsearMasivo(texto, maestros) {
   return filas;
 }
 
+// La plantilla lleva BOM para que Excel en Windows muestre bien las tildes,
+// y días con nombre completo (el parser acepta también las abreviaturas).
 const PLANTILLA = 'data:text/csv;charset=utf-8,' + encodeURIComponent(
-  'Día;Patio;Material;Toneladas\nLun;HOP01;Fierro pesado;24\nLun;LD01;Fierro liviano / mixto;14\nMar;CLS01;Cables forrados;6\nMié;HOP01;Fierro pesado;22\n');
+  '\uFEFF' +
+  'Día;Patio;Material;Toneladas\n' +
+  'Lunes;HOP01;Fierro pesado;24\n' +
+  'Lunes;LD01;Fierro liviano / mixto;14\n' +
+  'Martes;CLS01;Cables forrados;6\n' +
+  'Miércoles;HOP01;Fierro pesado;22\n');
 
 export default function Programa() {
   const [data, setData] = useState(null);
@@ -185,7 +192,7 @@ export default function Programa() {
         return (
           <Modal open title={`Carga masiva · semana ${sel?.semana}`} onClose={() => setMasivo(false)}
             footer={<>
-              <a className="btn" href={PLANTILLA} download="programa-semanal.csv" style={{ marginRight: 'auto', textDecoration: 'none' }}>⇩ Plantilla CSV</a>
+              <a className="btn" href={PLANTILLA} download="Programa semanal (plantilla).csv" style={{ marginRight: 'auto', textDecoration: 'none' }}>⇩ Plantilla CSV</a>
               <button className="btn" onClick={() => setMasivo(false)}>Cancelar</button>
               <button className="btn primary" disabled={!validas.length || errores > 0}
                 onClick={() => cargarMasivo(validas)}>
@@ -214,7 +221,7 @@ export default function Programa() {
                 </div>
                 <div className="tbl-wrap" style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--line-2)', borderRadius: 8 }}>
                   <table>
-                    <thead><tr><th>Día</th><th>Patio</th><th>Material</th><th className="num">Ton</th><th>Estado</th></tr></thead>
+                    <thead><tr><th>Día</th><th>Patio</th><th>Material</th><th className="num">Toneladas</th><th>Estado</th></tr></thead>
                     <tbody>
                       {filas.map((f, i) => (
                         <tr key={i}>
