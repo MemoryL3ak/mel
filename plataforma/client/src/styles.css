@@ -49,6 +49,16 @@ input,select,textarea{
 input:hover,select:hover,textarea:hover{border-color:#D7CCBC}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--copper);box-shadow:0 0 0 3px var(--copper-glow)}
 input::placeholder,textarea::placeholder{color:#B5AB9D}
+/* Selector de archivo con el mismo lenguaje visual de los botones del sistema */
+input[type="file"]{padding:8px 10px;color:var(--muted);font-size:12.5px;cursor:pointer}
+input[type="file"]::file-selector-button{
+  font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);
+  padding:6px 13px;margin-right:12px;cursor:pointer;
+  transition:border-color .13s,color .13s,background .13s;
+  box-shadow:0 1px 2px rgba(33,27,21,.05);
+}
+input[type="file"]::file-selector-button:hover{border-color:var(--copper-line);color:var(--copper-deep);background:var(--surface-2)}
 a{color:var(--copper-deep)}
 ::selection{background:var(--copper-tint)}
 :focus-visible{outline:2px solid var(--copper);outline-offset:2px;border-radius:4px}
