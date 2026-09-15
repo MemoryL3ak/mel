@@ -14,6 +14,13 @@ factura → pago < 15 días → conciliación).
    - `db/0001_schema.sql` (tablas, folios, RLS)
    - `db/0002_seed.sql` (patios, categorías, sitios, precios iniciales)
 
+   El seed carga las vigencias de precio escalonadas respecto del día de la
+   carga, para que el semáforo de la pantalla de Valorización se vea con sus
+   tres estados: dos categorías vencidas, dos por vencer y dos vigentes. En una
+   base ya cargada, `db/demo-precios.sql` (o `npm run demo:precios -- --confirmar`
+   desde `server/`) deja ese mismo estado. Antes del go-live hay que reemplazar
+   estos precios por los reales del contrato.
+
 2. **Configurar el servidor**
    ```
    cd server

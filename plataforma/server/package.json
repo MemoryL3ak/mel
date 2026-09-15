@@ -13,7 +13,8 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "test": "node test/e2e.mjs",
-    "setup:users": "node scripts/setup-users.js"
+    "setup:users": "node scripts/setup-users.js",
+    "demo:precios": "node scripts/demo-precios.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

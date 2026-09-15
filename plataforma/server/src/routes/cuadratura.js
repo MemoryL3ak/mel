@@ -23,13 +23,19 @@ function rangoSemana(anio, semana) {
 
 async function calcular(anio, semana) {
   const { desde, hasta } = rangoSemana(anio, semana);
-  const [cats, desp, tras] = await Promise.all([
+  const [cats, precios, desp, tras] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
-    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_origen, kg_destino, valor, estado')
+    q(supa.from('precios').select('categoria_id, precio_kg, vigente_desde').order('vigente_desde', { ascending: false })),
+    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_origen, kg_destino, valor, precio_kg, fecha, estado')
       .gte('fecha', desde).lte('fecha', hasta)),
     q(supa.from('traslados').select('categoria_id, kg, kg_lampa, estado')
       .gte('fecha', desde).lte('fecha', hasta)),
   ]);
+  // Lo que MEL despachó y La Negra aún no recepciona no tiene precio congelado.
+  // Para poder cuadrar montos igual que kilos, esas guías se valorizan con el
+  // precio que regía a su fecha; la fila avisa cuántas van estimadas así.
+  const precioRef = (catId, fecha) =>
+    Number(precios.find((p) => p.categoria_id === catId && p.vigente_desde <= fecha)?.precio_kg ?? 0);
   const detalle = cats.map((c) => {
     // Las guías despachadas se cuentan por la categoría declarada en origen y
     // las recepcionadas por la categoría final: si hubo reclasificación, la
@@ -41,6 +47,9 @@ async function calcular(anio, semana) {
     const kgLN = dLN.reduce((a, d) => a + Number(d.kg_destino), 0);
     const kgLPd = tLP.reduce((a, t) => a + Number(t.kg), 0);
     const kgLPr = tLP.reduce((a, t) => a + Number(t.kg_lampa ?? 0), 0);
+    const montoMel = dMel.reduce((a, d) => a + Number(d.kg_origen)
+      * (d.precio_kg != null ? Number(d.precio_kg) : precioRef(d.categoria_id, d.fecha)), 0);
+    const montoLN = dLN.reduce((a, d) => a + Number(d.valor ?? 0), 0);
     return {
       categoria: c.nombre,
       guias_mel: dMel.length,
@@ -49,7 +58,12 @@ async function calcular(anio, semana) {
       kg_mel: kgMel, kg_lanegra: kgLN, kg_lampa_desp: kgLPd, kg_lampa_rec: kgLPr,
       dif_kg: Math.round((kgLN - kgMel) * 10) / 10,
       dif_pct: kgMel ? Math.round(((kgLN - kgMel) / kgMel) * 10000) / 100 : null,
-      monto: dLN.reduce((a, d) => a + Number(d.valor ?? 0), 0),
+      monto_mel: Math.round(montoMel),
+      monto_lanegra: Math.round(montoLN),
+      dif_monto: Math.round(montoLN - montoMel),
+      // Guías del lado MEL valorizadas con precio de referencia, no congelado.
+      montos_estimados: dMel.filter((d) => d.precio_kg == null).length,
+      monto: Math.round(montoLN),   // compatibilidad con cierres anteriores
       pendientes_transito: dMel.filter((d) => d.estado === 'en_transito').length,
       observados: dMel.filter((d) => d.estado === 'observado').length,
     };
