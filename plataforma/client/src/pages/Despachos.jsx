@@ -145,15 +145,15 @@ export default function Despachos() {
       })()}
 
       <Tabs active={tab} onChange={setTab} tabs={[
-        ['d1', 'MEL → La Negra', enTransito + observados],
-        ['d2', 'Recepciones La Negra'],
+        ['d1', 'Guías de despacho', enTransito + observados],
+        ['d2', 'Recepción en La Negra', enTransito],
         ['d3', 'La Negra → Lampa', trasTransito],
         ['d4', 'Certificados disposición final'],
       ]} />
 
       {tab === 'd1' && (
         <div className="card"><div className="tbl-wrap"><table>
-          <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th></th></tr></thead>
+          <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th className="acc"></th></tr></thead>
           <tbody>
             {rows.map((d) => (
               <tr key={d.id}>
@@ -173,7 +173,7 @@ export default function Despachos() {
                 </td>
                 <td><Chip tone={CHIP[d.estado][0]}>{CHIP[d.estado][1]}</Chip></td>
                 <td className="mono">{d.ep_folio || '—'}</td>
-                <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                <td className="num acc" style={{ whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => abrirDetalle(d)}>Detalle</button>{' '}
                   {d.estado === 'en_transito' && puedeRecep && (
                     <button className="btn sm primary" onClick={() => {
@@ -195,27 +195,73 @@ export default function Despachos() {
         </div>
       )}
 
-      {tab === 'd2' && (
-        <div className="card"><div className="tbl-wrap"><table>
-          <thead><tr><th>Guía</th><th>Recepción</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Diferencia</th><th>Clasificación</th><th>Validación</th><th>Observación</th></tr></thead>
-          <tbody>
-            {rows.filter((d) => d.kg_destino != null).map((d) => (
-              <tr key={d.id}>
-                <td className="mono">{d.guia}</td>
-                <td>{d.recepcionado_el}</td>
-                <td className="num">{fmtKg(d.kg_origen)}</td>
-                <td className="num">{fmtKg(d.kg_destino)}</td>
-                <td className="num" style={Math.abs(d.dif_pct) > 2 ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>{d.dif_pct?.toFixed(2)} %</td>
-                <td>{d.categoria_final ? <Chip tone="warn">Reclasificado · {d.categoria_final}</Chip> : d.categoria}</td>
-                <td><Chip tone={d.estado === 'observado' ? 'warn' : 'ok'}>{d.estado === 'observado' ? 'Observada' : 'Validada'}</Chip></td>
-                <td style={{ color: 'var(--ink-2)', maxWidth: 240 }}>{d.obs_recepcion || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-          {rows.filter((d) => d.kg_destino != null).length === 0 && <Empty title="Sin recepciones">Cuando el vendor recepcione en La Negra, el pesaje validado aparecerá aquí.</Empty>}
-        </div>
-      )}
+      {tab === 'd2' && (() => {
+        const porValidar = rows.filter((d) => d.estado === 'en_transito');
+        const validadas = rows.filter((d) => d.kg_destino != null);
+        return (
+          <>
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-h">
+                <h3>Guías por validar</h3>
+                <small>{porValidar.length ? `${porValidar.length} camión(es) por pesar en La Negra` : 'nada pendiente'}</small>
+              </div>
+              {porValidar.length === 0 ? (
+                <Empty title="No hay guías esperando recepción">
+                  Cuando MEL despache material, cada guía aparecerá aquí para que registre el peso de su báscula.
+                </Empty>
+              ) : (
+                <div className="tbl-wrap"><table>
+                  <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg declarados por MEL</th><th className="num acc">Pesaje</th></tr></thead>
+                  <tbody>
+                    {porValidar.map((d) => (
+                      <tr key={d.id}>
+                        <td>
+                          <span className="mono">{d.guia}</span>
+                          {d.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {d.guia_mel}</small></>}
+                        </td>
+                        <td className="mono">{d.fecha}</td>
+                        <td>{d.patio}</td>
+                        <td>{d.categoria}</td>
+                        <td className="num">{fmtKg(d.kg_origen)}</td>
+                        <td className="num acc">
+                          {puedeRecep ? (
+                            <button className="btn sm primary" onClick={() => {
+                              setRecep(d);
+                              setRForm({ kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [] });
+                            }}>Registrar pesaje</button>
+                          ) : <Chip tone="info">En tránsito</Chip>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table></div>
+              )}
+            </div>
+
+            <div className="card">
+              <div className="card-h"><h3>Recepciones validadas</h3><small>registro de los pesajes ya declarados</small></div>
+              <div className="tbl-wrap"><table>
+                <thead><tr><th>Guía</th><th>Recepción</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Diferencia</th><th>Clasificación</th><th>Validación</th><th>Observación</th></tr></thead>
+                <tbody>
+                  {validadas.map((d) => (
+                    <tr key={d.id}>
+                      <td className="mono">{d.guia}</td>
+                      <td>{d.recepcionado_el}</td>
+                      <td className="num">{fmtKg(d.kg_origen)}</td>
+                      <td className="num">{fmtKg(d.kg_destino)}</td>
+                      <td className="num" style={Math.abs(d.dif_pct) > 2 ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>{d.dif_pct?.toFixed(2)} %</td>
+                      <td>{d.categoria_final ? <Chip tone="warn">Reclasificado · {d.categoria_final}</Chip> : d.categoria}</td>
+                      <td><Chip tone={d.estado === 'observado' ? 'warn' : 'ok'}>{d.estado === 'observado' ? 'Observada' : 'Validada'}</Chip></td>
+                      <td style={{ color: 'var(--ink-2)', maxWidth: 240 }}>{d.obs_recepcion || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+              {validadas.length === 0 && <Empty title="Sin recepciones">Los pesajes validados en La Negra aparecerán aquí con su diferencia.</Empty>}
+            </div>
+          </>
+        );
+      })()}
 
       {tab === 'd3' && (
         <div className="card"><div className="tbl-wrap"><table>
