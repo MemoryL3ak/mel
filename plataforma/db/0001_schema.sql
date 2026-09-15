@@ -16,7 +16,7 @@ drop table if exists
   componentes, compradores, documentos, pagos_vendor, descuentos,
   -- plataforma oficial (re-ejecución)
   auditoria, ep_descuentos, cuadraturas, traslados, despachos, programa,
-  estados_pago, precios, folios, users, sitios, categorias, patios cascade;
+  estados_pago, precios, folios, users, sitios, categorias, patios, contrato cascade;
 drop function if exists convertir_vencidos();
 
 -- ===================== maestros =====================
@@ -114,9 +114,17 @@ create index programa_semana_idx on programa (anio, semana);
 create table estados_pago (
   id             bigint generated always as identity primary key,
   folio          text not null unique,   -- EP-YYYY-MM
-  periodo        text not null unique,   -- YYYY-MM
+  periodo        text not null unique,   -- YYYY-MM del corte
+  numero         int,                    -- EP N° correlativo del contrato
+  revision       int not null default 0, -- sube con cada devolución con ajustes
+  desde          date,                   -- período real (día de corte del contrato)
+  hasta          date,
+  presentado_el  date,
   bruto          numeric(14,0) not null default 0,
+  descuentos     numeric(14,0) not null default 0,
   total          numeric(14,0) not null default 0,
+  anticipo       numeric(14,0) not null default 0,
+  no_afecto_iva  numeric(14,0) not null default 0,
   estado         text not null default 'generado'
                  check (estado in ('generado','en_revision','con_ajustes','firmado','facturado','pagado','conciliado')),
   observacion    text,                   -- obligatoria al devolver con ajustes
@@ -131,11 +139,37 @@ create table estados_pago (
   generado_el    timestamptz not null default now()
 );
 
+create table ep_descuentos (
+  id         bigint generated always as identity primary key,
+  ep_id      bigint not null references estados_pago(id) on delete cascade,
+  glosa      text not null,
+  monto      numeric(14,0) not null check (monto > 0),
+  creado_por text
+);
+
+-- Encabezado y firmas del formulario de estado de pago del contrato.
+create table contrato (
+  id                int primary key default 1 check (id = 1),
+  numero            text,
+  gerencia          text,
+  glosa             text,
+  mandante          text,
+  contratista       text,
+  firma_mandante    text,
+  firma_contratista text,
+  monto_original    numeric(14,0) not null default 0,
+  modificaciones    numeric(14,0) not null default 0,
+  iva_pct           numeric(5,2)  not null default 19,
+  dia_corte         int not null default 20 check (dia_corte between 1 and 28),
+  meses_vigencia_precio int not null default 3
+);
+
 -- ===================== despachos MEL → La Negra =====================
 
 create table despachos (
   id                 bigint generated always as identity primary key,
   guia               text not null unique,        -- GD-#### (folio automático)
+  guia_mel           text,                        -- N° de la guía de despacho de MEL
   fecha              date not null default current_date,
   patio_id           bigint not null references patios(id),
   categoria_id       bigint not null references categorias(id),
@@ -228,6 +262,8 @@ alter table despachos     enable row level security;
 alter table traslados     enable row level security;
 alter table cuadraturas   enable row level security;
 alter table estados_pago  enable row level security;
+alter table ep_descuentos enable row level security;
+alter table contrato      enable row level security;
 alter table auditoria     enable row level security;
 
 -- Maestros: lectura para cualquier rol interno.
@@ -257,6 +293,12 @@ create policy eps_write on estados_pago for update
   using (app_role() in ('vendor','ito','coordinador'));
 create policy eps_insert on estados_pago for insert
   with check (app_role() in ('ito','coordinador'));
+create policy ep_desc_rw on ep_descuentos for all
+  using (app_role() in ('ito','coordinador'));
+create policy contrato_read on contrato for select
+  using (app_role() in ('limpieza','vendor','ito','coordinador'));
+create policy contrato_write on contrato for all
+  using (app_role() = 'coordinador');
 
 -- Auditoría: se agrega, jamás se modifica; solo la gestión la lee.
 create policy auditoria_insert on auditoria for insert

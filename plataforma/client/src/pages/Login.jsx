@@ -36,7 +36,7 @@ export default function Login() {
           <p className="desc">Trazabilidad completa del material: del retiro en patios al pago conciliado, con evidencia, folios automáticos y auditoría inmutable.</p>
           <span className="fase">Fase 1 · Proceso de chatarra</span>
         </div>
-        <div className="foot">Minera Escondida Limitada · Antofagasta, Chile</div>
+        <div className="foot">Minera Escondida Limitada · Grupo Lampa</div>
       </section>
       <section className="login-form">
         <form className="login-card" onSubmit={entrar}>

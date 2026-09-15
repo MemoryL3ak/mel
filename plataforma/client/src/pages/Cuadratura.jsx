@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, fmtKg } from '../api.js';
+import { api, fmtCLP, fmtKg } from '../api.js';
 import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 
 export default function Cuadratura() {
@@ -37,7 +37,7 @@ export default function Cuadratura() {
   return (
     <div>
       <PageHead title="Cuadratura semanal de movimientos"
-        sub="Cruce de los kilos de la semana entre las guías MEL, las recepciones en La Negra y los traslados a Lampa, por categoría. El cierre guarda un registro inmutable.">
+        sub="Cruce de la semana por categoría en sus tres dimensiones: cantidad de guías de despacho, kilos y monto valorizado. El cierre guarda un registro inmutable.">
         {!data.cerrada && data.detalle.length > 0 && (
           <button className="btn primary" onClick={() => setCerrar(true)}>Cerrar cuadratura S{data.semana}</button>
         )}
@@ -58,28 +58,90 @@ export default function Cuadratura() {
               {data.cerrada.estado === 'cuadrada' ? 'Cuadrada' : 'Con diferencias'}</Chip></>}
           </small>
         </div>
-        <div className="tbl-wrap"><table>
-          <thead><tr><th>Categoría</th><th className="num">Kg guías MEL</th><th className="num">Kg La Negra</th><th className="num">Dif. recepción</th><th className="num">Kg desp. Lampa</th><th className="num">Kg rec. Lampa</th><th className="num">En tránsito</th><th className="num">Observados</th></tr></thead>
-          <tbody>
-            {(data.cerrada?.detalle ?? data.detalle).map((x) => (
-              <tr key={x.categoria}>
-                <td><b>{x.categoria}</b></td>
-                <td className="num">{fmtKg(x.kg_mel)}</td>
-                <td className="num">{fmtKg(x.kg_lanegra)}</td>
-                <td className="num" style={x.dif_pct != null && Math.abs(x.dif_pct) > 2 ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
-                  {x.dif_pct != null ? `${x.dif_pct.toFixed(2)} %` : '—'}
-                </td>
-                <td className="num">{fmtKg(x.kg_lampa_desp)}</td>
-                <td className="num">{fmtKg(x.kg_lampa_rec)}</td>
-                <td className="num">{x.pendientes_transito || '—'}</td>
-                <td className="num" style={x.observados ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>{x.observados || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
+        {(() => {
+          const filas = data.cerrada?.detalle ?? data.detalle;
+          const sum = (k) => filas.reduce((a, x) => a + Number(x[k] ?? 0), 0);
+          const num = (v, fmt = (n) => n) => (v == null ? '—' : fmt(v));
+          return (
+            <div className="tbl-wrap"><table className="grp">
+              <thead>
+                <tr>
+                  <th rowSpan="2">Categoría</th>
+                  <th colSpan="3" className="gh">Guías de despacho</th>
+                  <th colSpan="4" className="gh">Kilos</th>
+                  <th rowSpan="2" className="num">Monto valorizado</th>
+                  <th rowSpan="2" className="num">Observadas</th>
+                </tr>
+                <tr>
+                  <th className="num">MEL</th><th className="num">La Negra</th><th className="num">Dif.</th>
+                  <th className="num">MEL</th><th className="num">La Negra</th><th className="num">Dif. kg</th><th className="num">Dif. %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filas.map((x) => {
+                  const fueraTol = x.dif_pct != null && Math.abs(x.dif_pct) > 2;
+                  return (
+                    <tr key={x.categoria}>
+                      <td><b>{x.categoria}</b></td>
+                      <td className="num">{num(x.guias_mel)}</td>
+                      <td className="num">{num(x.guias_recepcionadas)}</td>
+                      <td className="num" style={x.dif_guias ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>
+                        {x.dif_guias == null ? '—' : x.dif_guias === 0 ? '0' : (x.dif_guias > 0 ? `+${x.dif_guias}` : x.dif_guias)}
+                      </td>
+                      <td className="num">{fmtKg(x.kg_mel)}</td>
+                      <td className="num">{fmtKg(x.kg_lanegra)}</td>
+                      <td className="num">{num(x.dif_kg, fmtKg)}</td>
+                      <td className="num" style={fueraTol ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
+                        {x.dif_pct != null ? `${x.dif_pct.toFixed(2)} %` : '—'}
+                      </td>
+                      <td className="num">{num(x.monto, fmtCLP)}</td>
+                      <td className="num" style={x.observados ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>{x.observados || '—'}</td>
+                    </tr>
+                  );
+                })}
+                {filas.length > 0 && (
+                  <tr className="tot">
+                    <td>Total semana</td>
+                    <td className="num">{sum('guias_mel')}</td>
+                    <td className="num">{sum('guias_recepcionadas')}</td>
+                    <td className="num">{sum('guias_recepcionadas') - sum('guias_mel') || '0'}</td>
+                    <td className="num">{fmtKg(sum('kg_mel'))}</td>
+                    <td className="num">{fmtKg(sum('kg_lanegra'))}</td>
+                    <td className="num">{fmtKg(sum('kg_lanegra') - sum('kg_mel'))}</td>
+                    <td className="num">
+                      {sum('kg_mel') ? `${(((sum('kg_lanegra') - sum('kg_mel')) / sum('kg_mel')) * 100).toFixed(2)} %` : '—'}
+                    </td>
+                    <td className="num">{fmtCLP(sum('monto'))}</td>
+                    <td className="num">{sum('observados') || '—'}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table></div>
+          );
+        })()}
         {data.detalle.length === 0 && !data.cerrada && <Empty title="Semana sin movimientos">No hay despachos ni traslados registrados en este rango.</Empty>}
         {data.cerrada?.observacion && <div className="card-b audit-note">Observación del cierre: {data.cerrada.observacion} — {data.cerrada.generada_por}</div>}
       </div>
+
+      {(data.cerrada?.detalle ?? data.detalle).some((x) => x.kg_lampa_desp || x.kg_lampa_rec) && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-h"><h3>Traslados La Negra → Lampa</h3><small>cierre de la cadena de disposición final</small></div>
+          <div className="tbl-wrap"><table>
+            <thead><tr><th>Categoría</th><th className="num">Kg despachados</th><th className="num">Kg recibidos en Lampa</th><th className="num">Dif. kg</th><th className="num">En tránsito</th></tr></thead>
+            <tbody>
+              {(data.cerrada?.detalle ?? data.detalle).filter((x) => x.kg_lampa_desp || x.kg_lampa_rec).map((x) => (
+                <tr key={x.categoria}>
+                  <td><b>{x.categoria}</b></td>
+                  <td className="num">{fmtKg(x.kg_lampa_desp)}</td>
+                  <td className="num">{fmtKg(x.kg_lampa_rec)}</td>
+                  <td className="num">{fmtKg(x.kg_lampa_rec - x.kg_lampa_desp)}</td>
+                  <td className="num">{x.pendientes_transito || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-h"><h3>Cierres históricos</h3><small>últimas 12 semanas cerradas</small></div>

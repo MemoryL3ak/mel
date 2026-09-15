@@ -14,6 +14,13 @@ insert into sitios (codigo, nombre) values
   ('LN', 'La Negra'),
   ('LP', 'Lampa');
 
+-- Encabezado y firmas del estado de pago. Confirmar con MEL antes del go-live.
+insert into contrato (id, numero, gerencia, glosa, mandante, contratista,
+                      firma_mandante, firma_contratista)
+values (1, '9100078390', 'GERENCIA W&L', 'ADJUDICACIÓN LICITACIÓN DE CHATARRA',
+        'MINERA ESCONDIDA LIMITADA', 'SOCIEDAD DE PROCESAMIENTO IND. S.A.',
+        'Cristian Barra T.', 'Rafael Ahumada');
+
 insert into categorias (nombre) values
   ('Fierro pesado'),
   ('Fierro liviano / mixto'),

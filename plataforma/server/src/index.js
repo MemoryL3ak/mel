@@ -78,6 +78,10 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || 'Error interno' });
 });
 
+// Migraciones aplicadas: se comprueba al arrancar (ver src/esquema.js).
+import { detectarEsquema } from './esquema.js';
+detectarEsquema().catch((e) => console.error('[GEA] esquema:', e.message));
+
 // Bucket privado de evidencia fotográfica (idempotente).
 import { supa } from './supa.js';
 supa.storage.createBucket('evidencia', { public: false, fileSizeLimit: '5MB' })

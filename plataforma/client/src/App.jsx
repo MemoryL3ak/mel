@@ -57,7 +57,7 @@ function Shell({ children }) {
       <aside className="sidebar">
         <div className="side-brand">
           <Logo />
-          <div className="btxt"><b>GEA</b><small>Minera Escondida</small></div>
+          <div className="btxt"><b>GEA</b><small>Escondida · Grupo Lampa</small></div>
         </div>
         <nav className="nav">
           {NAV.map(([sec, items]) => {
