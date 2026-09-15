@@ -412,6 +412,12 @@ table.grp th.gsep,table.grp td.gsep{border-left:2px solid var(--line)}
 table.grp td{font-variant-numeric:tabular-nums}
 /* La diferencia es la respuesta de cada grupo: se lee antes que sus sumandos. */
 table.grp td.dif{font-weight:600;color:var(--ink)}
+/* Aviso de que la fila se abre: una fila clicable sin señal no se descubre. */
+.abrir{
+  display:block;margin-top:2px;font-size:11px;font-weight:600;color:var(--copper);
+  opacity:.55;transition:opacity .13s;white-space:nowrap;
+}
+tbody tr:hover .abrir{opacity:1}
 tbody tr.tot td{
   border-top:2px solid var(--line);background:var(--surface-2);
   font-weight:700;color:var(--ink);
@@ -454,6 +460,7 @@ tbody tr.tot:hover{background:var(--surface-2)}
   width:min(560px,100%);max-height:90dvh;display:flex;flex-direction:column;
   animation:pop .18s cubic-bezier(.2,.9,.3,1.2);
 }
+.modal.ancho{width:min(960px,100%)}
 @keyframes fade{from{opacity:0}}
 @keyframes pop{from{opacity:0;transform:scale(.96) translateY(8px)}}
 .modal-h{display:flex;align-items:center;justify-content:space-between;padding:17px 22px;border-bottom:1px solid var(--line-2)}

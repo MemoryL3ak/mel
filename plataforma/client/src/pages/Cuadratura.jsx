@@ -6,6 +6,7 @@ export default function Cuadratura() {
   const [data, setData] = useState(null);
   const [cerrar, setCerrar] = useState(false);
   const [cat, setCat] = useState('todas');   // filtro de categoría de la tabla
+  const [fila, setFila] = useState(null);    // fila abierta en el detalle guía a guía
   const [obs, setObs] = useState('');
   const toast = useToast();
 
@@ -38,7 +39,7 @@ export default function Cuadratura() {
   return (
     <div>
       <PageHead title="Cuadratura semanal de movimientos"
-        sub="Cruce de la semana por categoría en sus tres dimensiones: cantidad de guías de despacho, kilos y monto valorizado. El cierre guarda un registro inmutable.">
+        sub="Cruce de la semana por categoría en sus tres dimensiones: cantidad de guías de despacho, kilos y monto valorizado. Haga clic en una categoría para ver guía a guía de dónde nace su diferencia. El cierre guarda un registro inmutable.">
         {!data.cerrada && data.detalle.length > 0 && (
           <button className="btn primary" onClick={() => setCerrar(true)}>Cerrar cuadratura S{data.semana}</button>
         )}
@@ -99,9 +100,15 @@ export default function Cuadratura() {
               <tbody>
                 {filas.map((x) => {
                   const fueraTol = x.dif_pct != null && Math.abs(x.dif_pct) > 2;
+                  const abrible = (x.guias ?? []).length > 0;
                   return (
-                    <tr key={x.categoria}>
-                      <td><b>{x.categoria}</b></td>
+                    <tr key={x.categoria} style={abrible ? { cursor: 'pointer' } : undefined}
+                      onClick={abrible ? () => setFila(x) : undefined}
+                      title={abrible ? 'Ver las guías que componen esta fila' : undefined}>
+                      <td>
+                        <b>{x.categoria}</b>
+                        {abrible && <span className="abrir" aria-hidden="true">Ver guías ›</span>}
+                      </td>
                       <td className="num gsep">{num(x.guias_mel)}</td>
                       <td className="num">{num(x.guias_recepcionadas)}</td>
                       <td className="num dif" style={x.dif_guias ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>
@@ -158,6 +165,7 @@ export default function Cuadratura() {
               const faltan = [
                 filas.every((x) => x.guias_mel == null) && 'la cantidad de guías',
                 filas.every((x) => x.monto_mel == null) && 'el cruce de montos',
+                filas.every((x) => !(x.guias ?? []).length) && 'el detalle guía a guía',
               ].filter(Boolean);
               if (!faltan.length) return null;
               return (
@@ -213,6 +221,73 @@ export default function Cuadratura() {
         </table></div>
         {data.historico.length === 0 && <Empty title="Sin cierres aún">La primera cuadratura cerrada quedará registrada aquí.</Empty>}
       </div>
+
+      <Modal ancho open={!!fila} title={fila && `${fila.categoria} · semana ${data.semana}`} onClose={() => setFila(null)}
+        footer={<button className="btn" onClick={() => setFila(null)}>Cerrar</button>}>
+        {fila && (() => {
+          // Por qué una guía aporta a un solo lado de la fila: o se reclasificó
+          // al recepcionar, o todavía no llega a La Negra.
+          const porQue = (g) => {
+            if (g.lado === 'ambos') return null;
+            if (g.lado === 'mel') {
+              return g.categoria_final
+                ? `Se despachó como ${fila.categoria} y se recibió como ${g.categoria_final}: los kilos de destino suman en esa otra categoría.`
+                : 'Todavía no se recepciona en La Negra: por eso no hay kilos de destino.';
+            }
+            return `Se despachó como ${g.categoria_origen}: los kilos de origen suman en esa otra categoría.`;
+          };
+          return (
+            <>
+              <div className="cotejo">
+                <span><small>Guías</small>
+                  <b className="mono">{fila.guias_mel ?? '—'} → {fila.guias_recepcionadas ?? '—'}</b></span>
+                <span><small>Kilos</small>
+                  <b className="mono">{fmtKg(fila.kg_mel)} → {fmtKg(fila.kg_lanegra)}</b></span>
+                <span><small>Diferencia</small>
+                  <b className="mono" style={Math.abs(fila.dif_pct ?? 0) > 2 ? { color: 'var(--bad-tx)' } : undefined}>
+                    {fila.dif_pct != null ? `${fila.dif_pct.toFixed(2)} %` : '—'}
+                    {fila.dif_monto != null && <> · {fmtCLP(fila.dif_monto)}</>}
+                  </b></span>
+              </div>
+              <div className="tbl-wrap"><table>
+                <thead><tr>
+                  <th>Guía</th><th>Fecha</th>
+                  <th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Dif.</th>
+                  <th className="num">Monto MEL</th><th className="num">Monto La Negra</th>
+                </tr></thead>
+                <tbody>
+                  {fila.guias.map((g) => (
+                    <tr key={g.guia + g.lado}>
+                      <td>
+                        <span className="mono">{g.guia}</span>
+                        {g.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {g.guia_mel}</small></>}
+                      </td>
+                      <td className="mono">{g.fecha}</td>
+                      <td className="num">{g.kg_origen != null ? fmtKg(g.kg_origen) : '—'}</td>
+                      <td className="num">{g.kg_destino != null ? fmtKg(g.kg_destino) : '—'}</td>
+                      <td className="num" style={Math.abs(g.dif_pct ?? 0) > 2 ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
+                        {g.dif_kg != null ? `${fmtKg(g.dif_kg)} (${g.dif_pct.toFixed(2)} %)` : '—'}
+                      </td>
+                      <td className="num">
+                        {g.monto_mel != null ? fmtCLP(g.monto_mel) : '—'}
+                        {g.monto_mel != null && g.precio_estimado && (
+                          <sup style={{ color: 'var(--warn-tx)', marginLeft: 3 }}>est.</sup>
+                        )}
+                      </td>
+                      <td className="num">{g.monto_lanegra != null ? fmtCLP(g.monto_lanegra) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+              {fila.guias.filter((g) => porQue(g)).map((g) => (
+                <div className="audit-note" key={g.guia + g.lado}>
+                  <b className="mono">{g.guia}</b> — {porQue(g)}
+                </div>
+              ))}
+            </>
+          );
+        })()}
+      </Modal>
 
       <Modal open={cerrar} title={`Cerrar cuadratura · semana ${data.semana}`} onClose={() => setCerrar(false)}
         footer={<>

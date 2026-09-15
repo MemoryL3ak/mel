@@ -85,11 +85,13 @@ export function Tabs({ tabs, active, onChange }) {
   );
 }
 
-export function Modal({ open, title, onClose, footer, children }) {
+// `ancho` para los modales que muestran una tabla: a 560 px las columnas se
+// cortan y quedan fuera de vista, que es justo lo que hay que evitar.
+export function Modal({ open, title, onClose, footer, children, ancho }) {
   if (!open) return null;
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal${ancho ? ' ancho' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-h"><h3>{title}</h3><button onClick={onClose} aria-label="Cerrar">×</button></div>
         <div className="modal-b">{children}</div>
         {footer && <div className="modal-f">{footer}</div>}
