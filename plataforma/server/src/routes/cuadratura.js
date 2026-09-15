@@ -25,12 +25,15 @@ async function calcular(anio, semana) {
   const { desde, hasta } = rangoSemana(anio, semana);
   const [cats, desp, tras] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
-    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_origen, kg_destino, estado')
+    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_origen, kg_destino, valor, estado')
       .gte('fecha', desde).lte('fecha', hasta)),
     q(supa.from('traslados').select('categoria_id, kg, kg_lampa, estado')
       .gte('fecha', desde).lte('fecha', hasta)),
   ]);
   const detalle = cats.map((c) => {
+    // Las guías despachadas se cuentan por la categoría declarada en origen y
+    // las recepcionadas por la categoría final: si hubo reclasificación, la
+    // diferencia entre ambas columnas es justamente lo que hay que explicar.
     const dMel = desp.filter((d) => d.categoria_id === c.id);
     const dLN = desp.filter((d) => (d.categoria_final_id ?? d.categoria_id) === c.id && d.kg_destino != null);
     const tLP = tras.filter((t) => t.categoria_id === c.id);
@@ -40,8 +43,13 @@ async function calcular(anio, semana) {
     const kgLPr = tLP.reduce((a, t) => a + Number(t.kg_lampa ?? 0), 0);
     return {
       categoria: c.nombre,
+      guias_mel: dMel.length,
+      guias_recepcionadas: dLN.length,
+      dif_guias: dLN.length - dMel.length,
       kg_mel: kgMel, kg_lanegra: kgLN, kg_lampa_desp: kgLPd, kg_lampa_rec: kgLPr,
+      dif_kg: Math.round((kgLN - kgMel) * 10) / 10,
       dif_pct: kgMel ? Math.round(((kgLN - kgMel) / kgMel) * 10000) / 100 : null,
+      monto: dLN.reduce((a, d) => a + Number(d.valor ?? 0), 0),
       pendientes_transito: dMel.filter((d) => d.estado === 'en_transito').length,
       observados: dMel.filter((d) => d.estado === 'observado').length,
     };

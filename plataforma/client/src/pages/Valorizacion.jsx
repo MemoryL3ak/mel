@@ -26,27 +26,56 @@ export default function Valorizacion() {
   return (
     <div>
       <PageHead title="Valorización y precios"
-        sub="Tabla de precios del contrato por categoría. Cada despacho congela el precio vigente al momento de su recepción: los cambios no alteran guías ya valorizadas." />
+        sub={`Tabla de precios del contrato por categoría, con vigencia de ${data.meses_vigencia ?? 3} meses. Cada despacho congela el precio vigente al momento de su recepción: los cambios no alteran guías ya valorizadas.`} />
+
+      {(() => {
+        const vencidos = data.categorias.filter((c) => c.estado_precio === 'vencido');
+        const porVencer = data.categorias.filter((c) => c.estado_precio === 'por_vencer');
+        if (!vencidos.length && !porVencer.length) return null;
+        return (
+          <div className={`aviso ${vencidos.length ? 'bad' : 'warn'}`}>
+            <b>{vencidos.length ? 'Precios con vigencia vencida' : 'Precios próximos a vencer'}</b>
+            {vencidos.length > 0 && (
+              <p>Vencieron: <b>{vencidos.map((c) => c.nombre).join(', ')}</b>. Las recepciones siguen
+                valorizándose con el último precio registrado hasta que se acuerde uno nuevo con el contrato.</p>
+            )}
+            {porVencer.length > 0 && (
+              <p>Vencen dentro de 15 días: {porVencer.map((c) => `${c.nombre} (${c.dias_para_vencer} d)`).join(' · ')}.</p>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-h"><h3>Precios vigentes del contrato</h3><small>$/kg por categoría</small></div>
         <div className="tbl-wrap"><table>
-          <thead><tr><th>Categoría</th><th className="num">Precio vigente</th><th>Desde</th><th className="num">Kg recepcionados YTD</th><th className="num">Valorizado YTD</th><th></th></tr></thead>
+          <thead><tr><th>Categoría</th><th className="num">Precio vigente</th><th>Desde</th><th>Vigencia</th><th className="num">Kg recepcionados YTD</th><th className="num">Valorizado YTD</th><th></th></tr></thead>
           <tbody>
-            {data.categorias.map((c) => (
-              <tr key={c.id}>
-                <td><b>{c.nombre}</b></td>
-                <td className="num mono">{c.precio_kg != null ? `$ ${Number(c.precio_kg).toLocaleString('es-CL')}` : '—'}</td>
-                <td>{c.vigente_desde || '—'}</td>
-                <td className="num">{fmtKg(c.kg_ytd)}</td>
-                <td className="num">{fmtCLP(c.valor_ytd)}</td>
-                <td className="num">
-                  {user.role === 'coordinador' && (
-                    <button className="btn sm" onClick={() => { setNuevo(c); setPrecio(String(c.precio_kg ?? '')); }}>Nueva vigencia</button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {data.categorias.map((c) => {
+              const tono = { vencido: 'bad', por_vencer: 'warn', vigente: 'ok', sin_precio: 'neutral' }[c.estado_precio] ?? 'neutral';
+              const texto = {
+                vencido: `Vencido hace ${Math.abs(c.dias_para_vencer)} d`,
+                por_vencer: `Vence en ${c.dias_para_vencer} d`,
+                vigente: `Hasta ${c.vence_el}`,
+                sin_precio: 'Sin precio',
+              }[c.estado_precio] ?? '—';
+              return (
+                <tr key={c.id}>
+                  <td><b>{c.nombre}</b></td>
+                  <td className="num mono">{c.precio_kg != null ? `$ ${Number(c.precio_kg).toLocaleString('es-CL')}` : '—'}</td>
+                  <td className="mono">{c.vigente_desde || '—'}</td>
+                  <td><Chip tone={tono}>{texto}</Chip></td>
+                  <td className="num">{fmtKg(c.kg_ytd)}</td>
+                  <td className="num">{fmtCLP(c.valor_ytd)}</td>
+                  <td className="num">
+                    {user.role === 'coordinador' && (
+                      <button className={`btn sm ${c.estado_precio === 'vencido' ? 'primary' : ''}`}
+                        onClick={() => { setNuevo(c); setPrecio(String(c.precio_kg ?? '')); }}>Nueva vigencia</button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table></div>
       </div>

@@ -25,7 +25,15 @@ export default function Despachos() {
   const [resolver, setResolver] = useState(null);
   const [nuevoTras, setNuevoTras] = useState(false);
   const [recepTras, setRecepTras] = useState(null);
-  const [form, setForm] = useState({ patio_id: 1, categoria_id: 1, kg_origen: '', unidad: unidadGuardada(), ev: {} });
+  const hoyISO = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const formVacio = () => ({
+    patio_id: 1, categoria_id: 1, kg_origen: '', unidad: unidadGuardada(),
+    guia_mel: '', fecha: hoyISO(), ev: {},
+  });
+  const [form, setForm] = useState(formVacio);
   const [detalle, setDetalle] = useState(null);
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
   const [rForm, setRForm] = useState({ kg_destino: '', unidad: 'kg', categoria_final_id: '', observacion: '' });
@@ -64,6 +72,8 @@ export default function Despachos() {
       fd.append('patio_id', form.patio_id);
       fd.append('categoria_id', form.categoria_id);
       fd.append('kg_origen', kg);
+      fd.append('guia_mel', form.guia_mel.trim());
+      fd.append('fecha', form.fecha);
       let n = 0;
       for (const [tipo, archivos] of Object.entries(form.ev)) {
         for (const f of archivos) { fd.append(tipo, f); n++; }
@@ -71,7 +81,7 @@ export default function Despachos() {
       const d = await api('/despachos', { method: 'POST', body: fd });
       toast(`Despacho ${d.guia} registrado con ${n} respaldo(s) adjunto(s)`);
       setNuevo(false);
-      setForm({ patio_id: 1, categoria_id: 1, kg_origen: '', unidad: unidadGuardada(), ev: {} });
+      setForm(formVacio());
       load();
     } catch (e) { toast(e.message, true); }
   }
@@ -128,7 +138,11 @@ export default function Despachos() {
           <tbody>
             {rows.map((d) => (
               <tr key={d.id}>
-                <td className="mono">{d.guia}</td><td className="mono">{d.fecha}</td><td>{d.patio}</td>
+                <td>
+                  <span className="mono">{d.guia}</span>
+                  {d.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {d.guia_mel}</small></>}
+                </td>
+                <td className="mono">{d.fecha}</td><td>{d.patio}</td>
                 <td>{d.categoria}{d.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {d.categoria_final}</span>}</td>
                 <td className="num">{fmtKg(d.kg_origen)}</td>
                 <td className="num">{d.kg_destino != null ? fmtKg(d.kg_destino) : '—'}</td>
@@ -232,6 +246,9 @@ export default function Despachos() {
         {detalle && (
           <>
             <div className="grid g2" style={{ gap: 10, marginBottom: 4 }}>
+              <div><small style={{ color: 'var(--muted)' }}>Guía de despacho MEL</small><br />
+                <b className="mono">{detalle.guia_mel ? `N° ${detalle.guia_mel}` : 'sin número registrado'}</b></div>
+              <div><small style={{ color: 'var(--muted)' }}>Fecha del despacho</small><br /><b className="mono">{detalle.fecha}</b></div>
               <div><small style={{ color: 'var(--muted)' }}>Patio de origen</small><br /><b>{detalle.patio} · {detalle.patio_nombre}</b></div>
               <div><small style={{ color: 'var(--muted)' }}>Categoría</small><br />
                 <b>{detalle.categoria}</b>{detalle.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {detalle.categoria_final}</span>}</div>
@@ -274,6 +291,15 @@ export default function Despachos() {
           <button className="btn" onClick={() => setNuevo(false)}>Cancelar</button>
           <button className="btn primary" onClick={crearDespacho}>Registrar despacho</button>
         </>}>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="N° de guía de despacho MEL"
+            hint="El número del documento en papel. Se digita: la plataforma no lo lee de la foto.">
+            <input value={form.guia_mel} onChange={(e) => setForm({ ...form, guia_mel: e.target.value })} placeholder="458921" />
+          </Field>
+          <Field label="Fecha del despacho" hint="Se propone hoy; corríjala si la guía es de otro día.">
+            <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />
+          </Field>
+        </div>
         <Field label="Patio de origen">
           <select value={form.patio_id} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
             {maestros?.patios.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}

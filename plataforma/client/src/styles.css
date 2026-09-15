@@ -307,6 +307,75 @@ td.mono, td .mono{color:var(--copper-deep)}
 tbody tr{transition:background .1s}
 tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--surface-2)}
+/* =============== DOCUMENTO DEL ESTADO DE PAGO ===============
+   Reproduce el formulario del contrato; los recuadros amarillos del
+   original son los campos que alimenta la plataforma. */
+.doc-ep{
+  background:#fff;color:#111;border:2px solid #111;padding:0 0 14px;
+  font-family:'Segoe UI',system-ui,sans-serif;font-size:11.5px;line-height:1.35;
+  max-width:660px;margin:0 auto;
+}
+.doc-ep .dato{background:#FFFBCC;border:1px solid #D9CE7A;padding:0 7px;display:inline-block;min-width:74px;text-align:center}
+.d-pres{text-align:right;padding:6px 10px;border-bottom:2px solid #111;font-weight:600}
+.d-head{padding:9px 10px 11px;border-bottom:2px solid #111;text-align:center}
+.d-marca{font-size:21px;font-weight:800;color:#E35205;letter-spacing:.01em;text-align:left;margin-bottom:6px}
+.d-marca span{color:#111;font-weight:400;margin:0 5px}
+.d-ger{font-weight:800}
+.d-contrato{background:#F2C8C8;font-weight:700;padding:1px 0;margin:2px 0}
+.d-tit{font-weight:700}
+.d-tit.b{margin-top:2px}
+.d-ep{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:5px;flex-wrap:wrap}
+.doc-ep table.d-tbl{width:100%;border-collapse:collapse;margin-top:10px}
+.doc-ep .d-tbl td{border:0;padding:2.5px 10px;font-size:11.5px;vertical-align:middle}
+.doc-ep .d-sec{font-weight:700;text-decoration:underline;padding-top:8px}
+.doc-ep .d-sec small{font-weight:400;text-decoration:none}
+.doc-ep td.sg{padding-left:22px;color:#1F3A93}
+.doc-ep td.mo{width:66px;text-align:left;color:#1F3A93}
+.doc-ep td.vl{text-align:right;width:160px;font-variant-numeric:tabular-nums;color:#1F3A93}
+.doc-ep td.vl.dato{background:#FFFBCC;border:1px solid #D9CE7A}
+.doc-ep td.vl.tasa{color:#C0392B;border:1px solid #D9CE7A;background:#FFFBCC}
+.doc-ep td.pq{font-size:10.5px}
+.doc-ep tr.f td{background:#DFF3DF;border:1px solid #8FBF8F;font-weight:700;color:#111}
+.d-firmas{display:grid;grid-template-columns:1fr 1fr;gap:26px;padding:22px 14px 0;margin-top:14px;border-top:2px solid #111}
+.d-firmas small{color:#444;font-size:10.5px}
+.d-firmas b{display:block;margin-bottom:38px;font-size:11.5px}
+.d-firmas .linea{border-top:1px solid #111;margin-bottom:3px}
+.d-firmas .nom{margin-top:9px;font-size:11px}
+@media print{
+  body *{visibility:hidden}
+  .doc-ep, .doc-ep *{visibility:visible}
+  .doc-ep{position:absolute;left:0;top:0;width:100%;max-width:none;border-width:1px}
+  .overlay{position:static;background:none;padding:0}
+  .modal{box-shadow:none;max-height:none;border:0}
+  .modal-h,.modal-f{display:none !important}
+}
+/* Totales del estado de pago */
+.ep-tot{
+  display:flex;justify-content:flex-end;align-items:baseline;gap:22px;flex-wrap:wrap;
+  margin-top:14px;padding-top:13px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2);
+}
+.ep-tot b{color:var(--ink);font-variant-numeric:tabular-nums;margin-left:5px}
+.ep-tot .gr b{font-size:17px;color:var(--copper-deep)}
+/* Aviso destacado sobre una pantalla (vigencias vencidas, plazos, etc.) */
+.aviso{
+  border:1px solid var(--warn-line);background:var(--warn-bg);color:var(--warn-tx);
+  border-radius:var(--radius);padding:13px 17px;margin-bottom:16px;font-size:13px;
+}
+.aviso.bad{border-color:var(--bad-line);background:var(--bad-bg);color:var(--bad-tx)}
+.aviso b{font-weight:700}
+.aviso p{margin:5px 0 0;line-height:1.5}
+/* Tabla de encabezados agrupados (cuadratura: guías | kilos | monto) */
+table.grp thead th{padding-top:9px;padding-bottom:9px}
+table.grp th.gh{
+  text-align:center;color:var(--copper-deep);background:var(--copper-tint);
+  border-left:1px solid var(--line);border-right:1px solid var(--line);
+}
+table.grp thead tr:first-child th{border-bottom:1px solid var(--line-2)}
+tbody tr.tot td{
+  border-top:2px solid var(--line);background:var(--surface-2);
+  font-weight:700;color:var(--ink);
+}
+tbody tr.tot:hover{background:var(--surface-2)}
 .empty{padding:52px 24px;text-align:center;color:var(--muted)}
 .empty::before{
   content:"";display:block;width:44px;height:44px;margin:0 auto 14px;border-radius:13px;

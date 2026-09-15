@@ -6,6 +6,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { supa, q, ah, folio, audit, precioVigente, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
+import { tiene } from '../esquema.js';
 
 const r = Router();
 
@@ -29,7 +30,7 @@ const DESP_SEL = '*, patios(codigo, nombre), cat:categorias!despachos_categoria_
 const TRAS_SEL = '*, categorias(nombre)';
 
 const view = (d) => ({
-  id: d.id, guia: d.guia, fecha: d.fecha, estado: d.estado, fotos: d.fotos,
+  id: d.id, guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha, estado: d.estado, fotos: d.fotos,
   patio: d.patios?.codigo, patio_nombre: d.patios?.nombre,
   categoria: d.cat?.nombre, categoria_final: d.catf?.nombre ?? null,
   kg_origen: Number(d.kg_origen), kg_destino: d.kg_destino == null ? null : Number(d.kg_destino),
@@ -48,15 +49,22 @@ r.get('/despachos', auth(), ah(async (_req, res) => {
 }));
 
 r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS_EVIDENCIA), ah(async (req, res) => {
-  const { patio_id, categoria_id, kg_origen } = req.body || {};
+  const { patio_id, categoria_id, kg_origen, guia_mel, fecha } = req.body || {};
   if (!patio_id || !categoria_id || !(Number(kg_origen) > 0)) {
     return res.status(400).json({ error: 'Patio, categoría y peso de báscula son obligatorios' });
+  }
+  // La guía de despacho de MEL y su fecha se digitan del documento en papel:
+  // la plataforma no los deduce ni los lee de la fotografía.
+  if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    return res.status(400).json({ error: 'Fecha inválida' });
   }
   const archivos = Object.entries(req.files ?? {})
     .flatMap(([tipo, lista]) => lista.map((f, i) => ({ tipo, n: i + 1, f })));
   const guia = await folio('GD');
   const row = await q(supa.from('despachos').insert({
     guia, patio_id: Number(patio_id), categoria_id: Number(categoria_id), kg_origen: Number(kg_origen),
+    ...(tiene.guia_mel ? { guia_mel: (guia_mel || '').trim() || null } : {}),
+    ...(fecha ? { fecha } : {}),
     fotos: archivos.length, creado_por: req.user.name,
   }).select(DESP_SEL).single());
 
@@ -68,7 +76,7 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
   }
   const resumen = Object.keys(req.files ?? {}).map((t) => EVIDENCIA[t]).join(', ');
   await audit(req.user.name, req.user.role, 'Registró despacho a La Negra',
-    `${guia} · ${kg_origen} kg${resumen ? ' · respaldo: ' + resumen : ''}`);
+    `${guia}${row.guia_mel ? ` (guía MEL ${row.guia_mel})` : ''} · ${kg_origen} kg${resumen ? ' · respaldo: ' + resumen : ''}`);
   res.json(view(row));
 }));
 
