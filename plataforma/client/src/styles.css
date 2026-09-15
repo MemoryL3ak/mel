@@ -136,6 +136,7 @@ a{color:var(--copper-deep)}
 .side-brand{display:flex;align-items:center;gap:13px;padding:22px 24px 18px}
 .side-brand b{font-size:20px;letter-spacing:.1em}
 .side-brand small{display:block;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--graphite-mut);margin-top:2px;white-space:nowrap}
+.side-brand small + small{margin-top:1px}
 .nav{flex:1;overflow-y:auto;padding:6px 13px 20px;position:relative;z-index:1}
 .nav-sec{font-size:9.5px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;color:var(--graphite-mut);padding:18px 13px 7px}
 .nav-item{
