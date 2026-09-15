@@ -26,8 +26,9 @@ async function calcular(anio, semana) {
   const [cats, precios, desp, tras] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
     q(supa.from('precios').select('categoria_id, precio_kg, vigente_desde').order('vigente_desde', { ascending: false })),
-    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_origen, kg_destino, valor, precio_kg, fecha, estado')
-      .gte('fecha', desde).lte('fecha', hasta)),
+    // `*` y no una lista: así el folio de MEL entra cuando la columna existe,
+    // sin romper la consulta mientras la migración esté pendiente.
+    q(supa.from('despachos').select('*').gte('fecha', desde).lte('fecha', hasta)),
     q(supa.from('traslados').select('categoria_id, kg, kg_lampa, estado')
       .gte('fecha', desde).lte('fecha', hasta)),
   ]);
@@ -50,8 +51,36 @@ async function calcular(anio, semana) {
     const montoMel = dMel.reduce((a, d) => a + Number(d.kg_origen)
       * (d.precio_kg != null ? Number(d.precio_kg) : precioRef(d.categoria_id, d.fecha)), 0);
     const montoLN = dLN.reduce((a, d) => a + Number(d.valor ?? 0), 0);
+
+    // Guía por guía: de dónde nace cada diferencia de la fila. Una guía
+    // reclasificada aparece en dos categorías —en una aporta al lado MEL y en
+    // la otra al lado La Negra—, y `lado` es lo que lo explica.
+    const nombreCat = (id) => cats.find((x) => x.id === id)?.nombre ?? '—';
+    const guias = [...new Set([...dMel, ...dLN])].map((d) => {
+      const enMel = d.categoria_id === c.id;
+      const enLN = (d.categoria_final_id ?? d.categoria_id) === c.id && d.kg_destino != null;
+      const precio = d.precio_kg != null ? Number(d.precio_kg) : precioRef(d.categoria_id, d.fecha);
+      const kgO = Number(d.kg_origen);
+      const kgD = d.kg_destino == null ? null : Number(d.kg_destino);
+      return {
+        guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha, estado: d.estado,
+        categoria_origen: nombreCat(d.categoria_id),
+        categoria_final: d.categoria_final_id ? nombreCat(d.categoria_final_id) : null,
+        kg_origen: enMel ? kgO : null,
+        kg_destino: enLN ? kgD : null,
+        dif_kg: kgD == null ? null : Math.round((kgD - kgO) * 10) / 10,
+        dif_pct: kgD == null ? null : Math.round(((kgD - kgO) / kgO) * 10000) / 100,
+        precio_kg: precio || null,
+        precio_estimado: d.precio_kg == null,
+        monto_mel: enMel ? Math.round(kgO * precio) : null,
+        monto_lanegra: enLN ? Math.round(Number(d.valor ?? 0)) : null,
+        lado: enMel && enLN ? 'ambos' : enMel ? 'mel' : 'lanegra',
+      };
+    }).sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.guia || '').localeCompare(b.guia || ''));
+
     return {
       categoria: c.nombre,
+      guias,
       guias_mel: dMel.length,
       guias_recepcionadas: dLN.length,
       dif_guias: dLN.length - dMel.length,
