@@ -178,10 +178,18 @@ export default function EstadosPago() {
                 <>
                   <div className="ev-tit" style={{ marginTop: 14 }}>
                     <span>Descuentos del período</span>
-                    {esIto && (editable
-                      ? <button className="btn sm" onClick={() => { setF({}); setModal('descuento'); }}>+ Agregar descuento</button>
-                      : <small>Se agregan mientras el EP está en <b>Generado</b> o <b>Con ajustes</b>; este ya está <b>{CHIP[sel.estado][1].toLowerCase()}</b>.</small>)}
+                    {esIto && editable && (
+                      <button className="btn sm" onClick={() => { setF({}); setModal('descuento'); }}>+ Agregar descuento</button>
+                    )}
                   </div>
+                  {esIto && !editable && (
+                    <div className="audit-note" style={{ marginTop: 0 }}>
+                      Los descuentos se agregan con el botón <b>+ Agregar descuento</b> que aparece en esta
+                      misma sección, y solo mientras el EP está en <b>Generado</b> o <b>Con ajustes</b>.
+                      Este ya está <b>{CHIP[sel.estado][1].toLowerCase()}</b>: un EP firmado, facturado o
+                      pagado no admite descuentos retroactivos.
+                    </div>
+                  )}
                   {(sel.descuentos_lineas ?? []).length === 0 ? (
                     <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                       Sin descuentos en este período: se factura el bruto completo.
