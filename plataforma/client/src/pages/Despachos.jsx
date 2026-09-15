@@ -7,6 +7,14 @@ const CHIP = {
   en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'], observado: ['warn', 'Difer. de peso'],
 };
 
+// Respaldos que pide el proceso al despachar. El nombre del campo viaja al
+// servidor y define cómo queda etiquetada cada foto en la guía.
+const EVIDENCIA = [
+  ['guia', 'Foto de la guía de despacho', 'El documento que viaja con el camión. Es el respaldo que permite cruzar esta guía con la documentación de MEL.'],
+  ['bascula', 'Foto del ticket de báscula', 'El pesaje impreso de la romana en el patio, que respalda los kilos declarados.'],
+  ['carga', 'Foto de la carga', 'Estado del material sobre el camión al salir del patio (opcional).'],
+];
+
 export default function Despachos() {
   const [rows, setRows] = useState(null);
   const [traslados, setTraslados] = useState([]);
@@ -17,7 +25,7 @@ export default function Despachos() {
   const [resolver, setResolver] = useState(null);
   const [nuevoTras, setNuevoTras] = useState(false);
   const [recepTras, setRecepTras] = useState(null);
-  const [form, setForm] = useState({ patio_id: 1, categoria_id: 1, kg_origen: '', archivos: [] });
+  const [form, setForm] = useState({ patio_id: 1, categoria_id: 1, kg_origen: '', ev: {} });
   const [detalle, setDetalle] = useState(null);
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
   const [rForm, setRForm] = useState({ kg_destino: '', categoria_final_id: '', observacion: '' });
@@ -54,10 +62,13 @@ export default function Despachos() {
       fd.append('patio_id', form.patio_id);
       fd.append('categoria_id', form.categoria_id);
       fd.append('kg_origen', form.kg_origen);
-      for (const f of form.archivos) fd.append('fotos', f);
+      let n = 0;
+      for (const [tipo, archivos] of Object.entries(form.ev)) {
+        for (const f of archivos) { fd.append(tipo, f); n++; }
+      }
       const d = await api('/despachos', { method: 'POST', body: fd });
-      toast(`Despacho ${d.guia} registrado con ${form.archivos.length} foto(s) de evidencia`);
-      setNuevo(false); setForm({ patio_id: 1, categoria_id: 1, kg_origen: '', archivos: [] });
+      toast(`Despacho ${d.guia} registrado con ${n} respaldo(s) adjunto(s)`);
+      setNuevo(false); setForm({ patio_id: 1, categoria_id: 1, kg_origen: '', ev: {} });
       load();
     } catch (e) { toast(e.message, true); }
   }
@@ -66,7 +77,7 @@ export default function Despachos() {
     setDetalle(d);
     setEvidencia(null);
     if (d.fotos > 0) {
-      api(`/despachos/${d.id}/evidencia`).then((r) => setEvidencia(r.urls)).catch(() => setEvidencia([]));
+      api(`/despachos/${d.id}/evidencia`).then((r) => setEvidencia(r.archivos)).catch(() => setEvidencia([]));
     } else {
       setEvidencia([]);
     }
@@ -110,7 +121,7 @@ export default function Despachos() {
 
       {tab === 'd1' && (
         <div className="card"><div className="tbl-wrap"><table>
-          <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Evidencia</th><th>Estado</th><th>EP</th><th></th></tr></thead>
+          <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th></th></tr></thead>
           <tbody>
             {rows.map((d) => (
               <tr key={d.id}>
@@ -119,7 +130,11 @@ export default function Despachos() {
                 <td className="num">{fmtKg(d.kg_origen)}</td>
                 <td className="num">{d.kg_destino != null ? fmtKg(d.kg_destino) : '—'}</td>
                 <td className="num">{fmtCLP(d.valor)}</td>
-                <td><div className="thumbs">{Array.from({ length: Math.min(d.fotos, 3) }).map((_, i) => <i key={i} />)}</div></td>
+                <td title={d.fotos ? `${d.fotos} respaldo(s) adjunto(s)` : 'Sin respaldos'}>
+                  {d.fotos
+                    ? <div className="thumbs">{Array.from({ length: Math.min(d.fotos, 3) }).map((_, i) => <i key={i} />)}</div>
+                    : <span style={{ color: 'var(--muted)' }}>—</span>}
+                </td>
                 <td><Chip tone={CHIP[d.estado][0]}>{CHIP[d.estado][1]}</Chip></td>
                 <td className="mono">{d.ep_folio || '—'}</td>
                 <td className="num" style={{ whiteSpace: 'nowrap' }}>
@@ -221,20 +236,27 @@ export default function Despachos() {
               <div><small style={{ color: 'var(--muted)' }}>Valorización</small><br /><b>{fmtCLP(detalle.valor)}</b></div>
             </div>
             {detalle.obs_recepcion && <div className="audit-note">Observación: {detalle.obs_recepcion}</div>}
-            <small style={{ display: 'block', color: 'var(--muted)', margin: '14px 0 6px' }}>
-              Evidencia fotográfica ({detalle.fotos})
-            </small>
-            {evidencia == null && <div className="loading" style={{ padding: '18px 0' }}>Cargando evidencia…</div>}
-            {evidencia?.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>Sin fotografías adjuntas.</div>}
-            {evidencia?.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                {evidencia.map((u) => (
-                  <a key={u} href={u} target="_blank" rel="noreferrer">
-                    <img src={u} alt="Evidencia del despacho" style={{ width: '100%', height: 110, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} />
-                  </a>
-                ))}
-              </div>
+            <div className="ev-tit">Respaldos de la guía</div>
+            {evidencia == null && <div className="loading" style={{ padding: '18px 0' }}>Cargando respaldos…</div>}
+            {evidencia?.length === 0 && (
+              <div style={{ color: 'var(--muted)', fontSize: 13 }}>Esta guía no tiene respaldos adjuntos.</div>
             )}
+            {evidencia?.length > 0 && Object.entries(
+              evidencia.reduce((acc, a) => { (acc[a.etiqueta] ??= []).push(a.url); return acc; }, {})
+            ).map(([etiqueta, urls]) => (
+              <div key={etiqueta} style={{ marginBottom: 12 }}>
+                <small style={{ display: 'block', color: 'var(--ink-2)', fontWeight: 600, marginBottom: 6 }}>{etiqueta}</small>
+                {/* contain, no cover: son documentos y deben verse completos */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 8 }}>
+                  {urls.map((u) => (
+                    <a key={u} href={u} target="_blank" rel="noreferrer" title="Abrir en tamaño completo">
+                      <img src={u} alt={etiqueta}
+                        style={{ width: '100%', height: 130, objectFit: 'contain', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)' }} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
             {detalle.ep_folio && <div className="audit-note">Incluido en el estado de pago <b>&nbsp;{detalle.ep_folio}</b></div>}
           </>
         )}
@@ -258,19 +280,25 @@ export default function Despachos() {
         <Field label="Peso en báscula MEL (kg)">
           <input type="number" min="1" value={form.kg_origen} onChange={(e) => setForm({ ...form, kg_origen: e.target.value })} placeholder="0" />
         </Field>
-        <Field label={`Evidencia fotográfica${form.archivos.length ? ` · ${form.archivos.length} seleccionada(s)` : ''}`}
-          hint="Hasta 6 imágenes (JPG/PNG/WebP, máx. 5 MB c/u). La guía se folia automáticamente (GD-####).">
-          <input type="file" multiple accept="image/jpeg,image/png,image/webp"
-            onChange={(e) => setForm({ ...form, archivos: Array.from(e.target.files).slice(0, 6) })} />
-        </Field>
-        {form.archivos.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: -6, marginBottom: 10 }}>
-            {form.archivos.map((f) => (
-              <img key={f.name} src={URL.createObjectURL(f)} alt={f.name}
-                style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
-            ))}
-          </div>
-        )}
+        <div className="ev-tit">Respaldos de la guía <small>JPG, PNG o WebP · máx. 5 MB · hasta 2 fotos por respaldo</small></div>
+        {EVIDENCIA.map(([tipo, etiqueta, ayuda]) => {
+          const puestas = form.ev[tipo] ?? [];
+          return (
+            <Field key={tipo} label={`${etiqueta}${puestas.length ? ` · ${puestas.length}` : ''}`} hint={ayuda}>
+              <input type="file" multiple accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => setForm({ ...form, ev: { ...form.ev, [tipo]: Array.from(e.target.files).slice(0, 2) } })} />
+              {puestas.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                  {puestas.map((f) => (
+                    <img key={f.name} src={URL.createObjectURL(f)} alt={f.name}
+                      style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
+                  ))}
+                </div>
+              )}
+            </Field>
+          );
+        })}
+        <small style={{ color: 'var(--muted)' }}>La guía se folia automáticamente (GD-####) al registrar.</small>
       </Modal>
 
       <Modal open={!!recep} title={recep && `Recepcionar ${recep.guia} en La Negra`} onClose={() => setRecep(null)}

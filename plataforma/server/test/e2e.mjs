@@ -56,7 +56,9 @@ async function limpiar() {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (creado.despachoId) {
-    await del(`/storage/v1/object/evidencia`, { prefixes: [`GD/${creado.despachoId}/1.png`] });
+    await del(`/storage/v1/object/evidencia`, {
+      prefixes: [`GD/${creado.despachoId}/guia-1.png`, `GD/${creado.despachoId}/bascula-1.png`],
+    });
     await del(`/rest/v1/despachos?id=eq.${creado.despachoId}`);
   }
   if (creado.trasladoId) await del(`/rest/v1/traslados?id=eq.${creado.trasladoId}`);
@@ -113,15 +115,19 @@ try {
   console.log('\nCadena física con evidencia');
   const fd = new FormData();
   fd.set('patio_id', '1'); fd.set('categoria_id', '1'); fd.set('kg_origen', '5000');
-  fd.append('fotos', new Blob([PNG], { type: 'image/png' }), 'ev.png');
+  fd.append('guia', new Blob([PNG], { type: 'image/png' }), 'guia.png');
+  fd.append('bascula', new Blob([PNG], { type: 'image/png' }), 'ticket.png');
   const d = await api('/despachos', { method: 'POST', token: tl, form: fd });
   creado.despachoId = d.data.id;
   ok(d.status === 200 && /^GD-\d+$/.test(d.data.guia) && d.data.estado === 'en_transito', `despacho creado con folio (${d.data.guia})`);
 
   const ev = await api(`/despachos/${d.data.id}/evidencia`, { token: tl });
-  ok(ev.data.urls?.length === 1, 'evidencia listada con URL firmada');
-  const foto = ev.data.urls?.length ? await fetch(ev.data.urls[0]) : { status: 0 };
-  ok(foto.status === 200, 'evidencia descargable (URL firmada válida)');
+  const etiquetas = (ev.data.archivos ?? []).map((a) => a.etiqueta).sort();
+  ok(ev.data.archivos?.length === 2, 'los dos respaldos quedaron adjuntos');
+  ok(etiquetas.join(' | ') === 'Guía de despacho | Ticket de báscula MEL',
+    'cada respaldo vuelve etiquetado por tipo', etiquetas.join(' | '));
+  const foto = ev.data.archivos?.length ? await fetch(ev.data.archivos[0].url) : { status: 0 };
+  ok(foto.status === 200, 'respaldo descargable (URL firmada válida)');
 
   const rec = await api(`/despachos/${d.data.id}/recepcionar`, { method: 'POST', token: tv, body: { kg_destino: 4800 } });
   ok(rec.data.estado === 'observado', 'diferencia de peso 4% → queda observado');
