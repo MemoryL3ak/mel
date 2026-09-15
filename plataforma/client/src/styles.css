@@ -398,13 +398,19 @@ tbody tr:hover td.acc{background:var(--surface-2)}
 .aviso.bad{border-color:var(--bad-line);background:var(--bad-bg);color:var(--bad-tx)}
 .aviso b{font-weight:700}
 .aviso p{margin:5px 0 0;line-height:1.5}
-/* Tabla de encabezados agrupados (cuadratura: guías | kilos | monto) */
+/* Tabla de encabezados agrupados (cuadratura: guías | kilos | monto).
+   El corte entre grupos tiene que bajar por TODO el cuerpo: con la línea
+   solo en el encabezado, cada fila se lee como una hilera de números
+   sueltos y no se distingue dónde termina un grupo y empieza el otro. */
 table.grp thead th{padding-top:9px;padding-bottom:9px}
-table.grp th.gh{
-  text-align:center;color:var(--copper-deep);background:var(--copper-tint);
-  border-left:1px solid var(--line);border-right:1px solid var(--line);
-}
+table.grp th.gh{text-align:center;color:var(--copper-deep);background:var(--copper-tint)}
 table.grp thead tr:first-child th{border-bottom:1px solid var(--line-2)}
+/* Los sub-encabezados son subordinados: el que nombra la magnitud es el grupo. */
+table.grp thead tr:last-child th{font-size:9.5px;letter-spacing:.07em;color:var(--muted)}
+table.grp th.gsep,table.grp td.gsep{border-left:2px solid var(--line)}
+table.grp td{font-variant-numeric:tabular-nums}
+/* La diferencia es la respuesta de cada grupo: se lee antes que sus sumandos. */
+table.grp td.dif{font-weight:600;color:var(--ink)}
 tbody tr.tot td{
   border-top:2px solid var(--line);background:var(--surface-2);
   font-weight:700;color:var(--ink);

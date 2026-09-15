@@ -67,14 +67,14 @@ export default function Cuadratura() {
               <thead>
                 <tr>
                   <th rowSpan="2">Categoría</th>
-                  <th colSpan="3" className="gh">Guías de despacho</th>
-                  <th colSpan="4" className="gh">Kilos</th>
-                  <th rowSpan="2" className="num">Monto valorizado</th>
-                  <th rowSpan="2" className="num">Observadas</th>
+                  <th colSpan="3" className="gh gsep">Guías de despacho</th>
+                  <th colSpan="4" className="gh gsep">Kilos</th>
+                  <th rowSpan="2" className="num gsep">Monto valorizado</th>
+                  <th rowSpan="2" className="num gsep">Observadas</th>
                 </tr>
                 <tr>
-                  <th className="num">MEL</th><th className="num">La Negra</th><th className="num">Dif.</th>
-                  <th className="num">MEL</th><th className="num">La Negra</th><th className="num">Dif. kg</th><th className="num">Dif. %</th>
+                  <th className="num gsep">MEL</th><th className="num">La Negra</th><th className="num">Dif.</th>
+                  <th className="num gsep">MEL</th><th className="num">La Negra</th><th className="num">Dif. kg</th><th className="num">Dif. %</th>
                 </tr>
               </thead>
               <tbody>
@@ -83,36 +83,36 @@ export default function Cuadratura() {
                   return (
                     <tr key={x.categoria}>
                       <td><b>{x.categoria}</b></td>
-                      <td className="num">{num(x.guias_mel)}</td>
+                      <td className="num gsep">{num(x.guias_mel)}</td>
                       <td className="num">{num(x.guias_recepcionadas)}</td>
-                      <td className="num" style={x.dif_guias ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>
+                      <td className="num dif" style={x.dif_guias ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>
                         {x.dif_guias == null ? '—' : x.dif_guias === 0 ? '0' : (x.dif_guias > 0 ? `+${x.dif_guias}` : x.dif_guias)}
                       </td>
-                      <td className="num">{fmtKg(x.kg_mel)}</td>
+                      <td className="num gsep">{fmtKg(x.kg_mel)}</td>
                       <td className="num">{fmtKg(x.kg_lanegra)}</td>
-                      <td className="num">{num(x.dif_kg, fmtKg)}</td>
-                      <td className="num" style={fueraTol ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
+                      <td className="num dif">{num(x.dif_kg, fmtKg)}</td>
+                      <td className="num dif" style={fueraTol ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
                         {x.dif_pct != null ? `${x.dif_pct.toFixed(2)} %` : '—'}
                       </td>
-                      <td className="num">{num(x.monto, fmtCLP)}</td>
-                      <td className="num" style={x.observados ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>{x.observados || '—'}</td>
+                      <td className="num gsep">{num(x.monto, fmtCLP)}</td>
+                      <td className="num gsep" style={x.observados ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>{x.observados || '—'}</td>
                     </tr>
                   );
                 })}
                 {filas.length > 0 && (
                   <tr className="tot">
                     <td>Total semana</td>
-                    <td className="num">{sum('guias_mel')}</td>
+                    <td className="num gsep">{sum('guias_mel')}</td>
                     <td className="num">{sum('guias_recepcionadas')}</td>
-                    <td className="num">{sum('guias_recepcionadas') - sum('guias_mel') || '0'}</td>
-                    <td className="num">{fmtKg(sum('kg_mel'))}</td>
+                    <td className="num dif">{sum('guias_recepcionadas') - sum('guias_mel') || '0'}</td>
+                    <td className="num gsep">{fmtKg(sum('kg_mel'))}</td>
                     <td className="num">{fmtKg(sum('kg_lanegra'))}</td>
-                    <td className="num">{fmtKg(sum('kg_lanegra') - sum('kg_mel'))}</td>
-                    <td className="num">
+                    <td className="num dif">{fmtKg(sum('kg_lanegra') - sum('kg_mel'))}</td>
+                    <td className="num dif">
                       {sum('kg_mel') ? `${(((sum('kg_lanegra') - sum('kg_mel')) / sum('kg_mel')) * 100).toFixed(2)} %` : '—'}
                     </td>
-                    <td className="num">{fmtCLP(sum('monto'))}</td>
-                    <td className="num">{sum('observados') || '—'}</td>
+                    <td className="num gsep">{fmtCLP(sum('monto'))}</td>
+                    <td className="num gsep">{sum('observados') || '—'}</td>
                   </tr>
                 )}
               </tbody>
