@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, desdeKg, unidadGuardada, useToast } from '../ui.jsx';
+import { CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
 
 const CHIP = {
   en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'], observado: ['warn', 'Difer. de peso'],
@@ -36,7 +36,7 @@ export default function Despachos() {
   const [form, setForm] = useState(formVacio);
   const [detalle, setDetalle] = useState(null);
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
-  const [rForm, setRForm] = useState({ kg_destino: '', unidad: 'kg', categoria_final_id: '', observacion: '' });
+  const [rForm, setRForm] = useState({ kg_destino: '', unidad: 'kg', categoria_final_id: '', observacion: '', foto: [] });
   const [tForm, setTForm] = useState({ categoria_id: 1, kg: '', unidad: unidadGuardada() });
   const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
   const [obs, setObs] = useState('');
@@ -82,6 +82,25 @@ export default function Despachos() {
       toast(`Despacho ${d.guia} registrado con ${n} respaldo(s) adjunto(s)`);
       setNuevo(false);
       setForm(formVacio());
+      load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // La recepción viaja como formulario para poder adjuntar el ticket de báscula.
+  async function recepcionar() {
+    const kg = aKg(rForm.kg_destino, rForm.unidad);
+    if (!kg) return toast('Ingrese el peso pesado en la báscula de La Negra', true);
+    try {
+      const fd = new FormData();
+      fd.append('kg_destino', kg);
+      if (rForm.categoria_final_id) fd.append('categoria_final_id', rForm.categoria_final_id);
+      if (rForm.observacion) fd.append('observacion', rForm.observacion);
+      for (const f of rForm.foto ?? []) fd.append('recepcion', f);
+      const d = await api(`/despachos/${recep.id}/recepcionar`, { method: 'POST', body: fd });
+      toast(d.estado === 'observado'
+        ? `Recepción registrada con diferencia de ${d.dif_pct}%: queda observada para el ITO`
+        : 'Recepción registrada dentro de la tolerancia');
+      setRecep(null);
       load();
     } catch (e) { toast(e.message, true); }
   }
@@ -159,8 +178,9 @@ export default function Despachos() {
                   {d.estado === 'en_transito' && puedeRecep && (
                     <button className="btn sm primary" onClick={() => {
                       setRecep(d);
-                      const p = desdeKg(d.kg_origen);
-                      setRForm({ kg_destino: p.valor, unidad: p.unidad, categoria_final_id: '', observacion: '' });
+                      // El peso parte VACÍO: la recepción es una declaración
+                      // independiente, no la confirmación de lo que dijo MEL.
+                      setRForm({ kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [] });
                     }}>Recepcionar</button>
                   )}
                   {d.estado === 'observado' && puedeResolver && (
@@ -210,7 +230,7 @@ export default function Despachos() {
                 <td className="mono">{t.cert_folio || '—'}</td>
                 <td className="num">
                   {t.estado === 'en_transito' && puedeTras && (
-                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setLampa(desdeKg(t.kg)); }}>Recepcionar en Lampa</button>
+                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setLampa({ valor: '', unidad: unidadGuardada() }); }}>Recepcionar en Lampa</button>
                   )}
                 </td>
               </tr>
@@ -337,15 +357,42 @@ export default function Despachos() {
       <Modal open={!!recep} title={recep && `Recepcionar ${recep.guia} en La Negra`} onClose={() => setRecep(null)}
         footer={<>
           <button className="btn" onClick={() => setRecep(null)}>Cancelar</button>
-          <button className="btn primary" onClick={post(`/despachos/${recep?.id}/recepcionar`,
-            { kg_destino: aKg(rForm.kg_destino, rForm.unidad), categoria_final_id: rForm.categoria_final_id || undefined, observacion: rForm.observacion || undefined },
-            'Recepción registrada', () => setRecep(null))}>Validar recepción</button>
+          <button className="btn primary" onClick={recepcionar}>Validar recepción</button>
         </>}>
-        <CampoPeso label="Peso validado en báscula La Negra"
-          hint={recep && `Pesaje declarado en origen MEL: ${fmtKg(recep.kg_origen)} kg.`}
-          valor={rForm.kg_destino} unidad={rForm.unidad}
-          onValor={(v) => setRForm({ ...rForm, kg_destino: v })}
-          onUnidad={(u) => setRForm({ ...rForm, unidad: u })} />
+        {recep && (() => {
+          const kg = aKg(rForm.kg_destino, rForm.unidad);
+          const origen = Number(recep.kg_origen);
+          const dif = kg == null ? null : kg - origen;
+          const pct = dif == null ? null : (dif / origen) * 100;
+          const fuera = pct != null && Math.abs(pct) > 2;
+          return (
+            <>
+              <div className="cotejo">
+                <span><small>Declarado por MEL en origen</small><b className="mono">{fmtKg(origen)} kg</b></span>
+                <span className="vs">frente a</span>
+                <span><small>Pesado en La Negra</small>
+                  <b className="mono">{kg == null ? '— pendiente —' : `${fmtKg(kg)} kg`}</b></span>
+              </div>
+              {dif != null && (
+                <div className={`dif-live ${fuera ? 'bad' : 'ok'}`}>
+                  Diferencia: <b>{dif > 0 ? '+' : ''}{fmtKg(dif)} kg ({pct > 0 ? '+' : ''}{pct.toFixed(2)} %)</b>
+                  {fuera
+                    ? ' — supera el 2%: la guía quedará observada para que el ITO la revise.'
+                    : ' — dentro de la tolerancia del 2%.'}
+                </div>
+              )}
+              <CampoPeso label="Peso validado en báscula La Negra"
+                hint="Escriba el peso de su propia romana. El campo parte vacío a propósito: esta es una declaración independiente de la de MEL."
+                valor={rForm.kg_destino} unidad={rForm.unidad}
+                onValor={(v) => setRForm({ ...rForm, kg_destino: v })}
+                onUnidad={(u) => setRForm({ ...rForm, unidad: u })} />
+            </>
+          );
+        })()}
+        <Field label="Foto del ticket de báscula La Negra" hint="Respalda el peso que acaba de declarar. Queda adjunto a la guía.">
+          <input type="file" multiple accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => setRForm({ ...rForm, foto: Array.from(e.target.files).slice(0, 2) })} />
+        </Field>
         <Field label="Reclasificación (solo si el material se reduce)" hint="El precio se congela con la categoría final al momento de esta recepción.">
           <select value={rForm.categoria_final_id} onChange={(e) => setRForm({ ...rForm, categoria_final_id: e.target.value ? +e.target.value : '' })}>
             <option value="">Mantener {recep?.categoria}</option>
@@ -355,7 +402,6 @@ export default function Despachos() {
         <Field label="Observación (opcional)">
           <input value={rForm.observacion} onChange={(e) => setRForm({ ...rForm, observacion: e.target.value })} placeholder="Condición de la carga, mermas, etc." />
         </Field>
-        <small style={{ color: 'var(--muted)' }}>Una diferencia de peso mayor al 2% deja la recepción observada para revisión del ITO.</small>
       </Modal>
 
       <Modal open={!!resolver} title={resolver && `Resolver observación · ${resolver.guia}`} onClose={() => setResolver(null)}

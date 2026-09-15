@@ -19,13 +19,27 @@ export const EVIDENCIA = {
   guia: 'Guía de despacho',
   bascula: 'Ticket de báscula MEL',
   carga: 'Carga en el camión',
+  recepcion: 'Ticket de báscula La Negra',   // lo adjunta el vendor al recepcionar
 };
 const subir = multer({
   storage: multer.memoryStorage(),
   limits: { files: 6, fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, f, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(f.mimetype)),
 });
-const CAMPOS_EVIDENCIA = Object.keys(EVIDENCIA).map((name) => ({ name, maxCount: 2 }));
+// Respaldos que se adjuntan al despachar; el de recepción va en su propio paso.
+const CAMPOS_EVIDENCIA = ['guia', 'bascula', 'carga'].map((name) => ({ name, maxCount: 2 }));
+
+// Sube los archivos de un tipo a la carpeta de la guía y devuelve cuántos entraron.
+async function subirEvidencia(despachoId, tipo, archivos = []) {
+  let n = 0;
+  for (const f of archivos) {
+    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[f.mimetype];
+    const { error } = await supa.storage.from('evidencia')
+      .upload(`GD/${despachoId}/${tipo}-${++n}.${ext}`, f.buffer, { contentType: f.mimetype });
+    if (error) console.error('[GEA] evidencia:', error.message);
+  }
+  return n;
+}
 const DESP_SEL = '*, patios(codigo, nombre), cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre), estados_pago(folio)';
 const TRAS_SEL = '*, categorias(nombre)';
 
@@ -68,11 +82,8 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
     fotos: archivos.length, creado_por: req.user.name,
   }).select(DESP_SEL).single());
 
-  for (const { tipo, n, f } of archivos) {
-    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[f.mimetype];
-    const { error } = await supa.storage.from('evidencia')
-      .upload(`GD/${row.id}/${tipo}-${n}.${ext}`, f.buffer, { contentType: f.mimetype });
-    if (error) console.error('[GEA] evidencia:', error.message);
+  for (const [tipo, lista] of Object.entries(req.files ?? {})) {
+    await subirEvidencia(row.id, tipo, lista);
   }
   const resumen = Object.keys(req.files ?? {}).map((t) => EVIDENCIA[t]).join(', ');
   await audit(req.user.name, req.user.role, 'Registró despacho a La Negra',
@@ -100,28 +111,34 @@ r.get('/despachos/:id/evidencia', auth(), ah(async (req, res) => {
   res.json({ archivos });
 }));
 
-// Recepción y pesaje en La Negra. Diferencia > 2% queda observada para el ITO.
-// El vendor puede reclasificar ("reducir") la carga: el precio se congela con
-// la categoría final al momento de la recepción.
-r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'), ah(async (req, res) => {
+// Recepción y pesaje en La Negra. Es una declaración INDEPENDIENTE: el vendor
+// pesa en su propia báscula y registra ese peso, que puede adjuntar con el
+// ticket de su romana. La plataforma conserva los dos pesajes y compara; una
+// diferencia mayor al 2% deja la guía observada para el ITO.
+// El vendor puede además reclasificar ("reducir") la carga: el precio se
+// congela con la categoría final al momento de la recepción.
+r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
+  subir.fields([{ name: 'recepcion', maxCount: 2 }]), ah(async (req, res) => {
   const kg = Number(req.body?.kg_destino);
   if (!(kg > 0)) return res.status(400).json({ error: 'Ingrese el peso validado en báscula de La Negra' });
 
   const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).single());
   if (d.estado !== 'en_transito') return res.status(409).json({ error: 'El despacho ya fue recepcionado' });
 
-  const catFinal = req.body?.categoria_final_id || d.categoria_id;
+  const catFinal = Number(req.body?.categoria_final_id) || Number(d.categoria_id);
   const precio = await precioVigente(catFinal, d.fecha);
   const dif = Math.abs((kg - Number(d.kg_origen)) / Number(d.kg_origen));
   const observado = dif > 0.02;
+  const fotos = await subirEvidencia(d.id, 'recepcion', req.files?.recepcion);
 
   const row = await q(supa.from('despachos').update({
     kg_destino: kg,
-    categoria_final_id: catFinal === d.categoria_id ? null : catFinal,
+    categoria_final_id: catFinal === Number(d.categoria_id) ? null : catFinal,
     estado: observado ? 'observado' : 'recepcionado',
     obs_recepcion: req.body?.observacion || (observado ? `Diferencia de peso ${(dif * 100).toFixed(2)}%` : null),
     precio_kg: precio,
     valor: Math.round(kg * precio),
+    fotos: Number(d.fotos ?? 0) + fotos,
     recepcionado_por: req.user.name,
     recepcionado_el: new Date().toISOString(),
   }).eq('id', req.params.id).select(DESP_SEL).single());

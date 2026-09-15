@@ -57,7 +57,8 @@ async function limpiar() {
   });
   if (creado.despachoId) {
     await del(`/storage/v1/object/evidencia`, {
-      prefixes: [`GD/${creado.despachoId}/guia-1.png`, `GD/${creado.despachoId}/bascula-1.png`],
+      prefixes: [`GD/${creado.despachoId}/guia-1.png`, `GD/${creado.despachoId}/bascula-1.png`,
+        `GD/${creado.despachoId}/recepcion-1.png`],
     });
     await del(`/rest/v1/despachos?id=eq.${creado.despachoId}`);
   }
@@ -129,8 +130,15 @@ try {
   const foto = ev.data.archivos?.length ? await fetch(ev.data.archivos[0].url) : { status: 0 };
   ok(foto.status === 200, 'respaldo descargable (URL firmada válida)');
 
-  const rec = await api(`/despachos/${d.data.id}/recepcionar`, { method: 'POST', token: tv, body: { kg_destino: 4800 } });
+  // La recepción es una declaración propia del vendor, con su propio ticket.
+  const fdRec = new FormData();
+  fdRec.set('kg_destino', '4800');
+  fdRec.append('recepcion', new Blob([PNG], { type: 'image/png' }), 'romana-ln.png');
+  const rec = await api(`/despachos/${d.data.id}/recepcionar`, { method: 'POST', token: tv, form: fdRec });
   ok(rec.data.estado === 'observado', 'diferencia de peso 4% → queda observado');
+  const ev2 = await api(`/despachos/${d.data.id}/evidencia`, { token: tv });
+  ok((ev2.data.archivos ?? []).some((a) => a.etiqueta === 'Ticket de báscula La Negra'),
+    'el ticket de báscula de La Negra queda adjunto a la guía');
   const precioCongelado = rec.data.precio_kg;
   ok(precioCongelado > 0 && rec.data.valor === Math.round(4800 * precioCongelado), 'precio congelado y valor calculado');
 

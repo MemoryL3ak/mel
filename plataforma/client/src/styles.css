@@ -349,6 +349,20 @@ tbody tr:hover{background:var(--surface-2)}
   .modal{box-shadow:none;max-height:none;border:0}
   .modal-h,.modal-f{display:none !important}
 }
+/* Cotejo de pesajes en la recepción: lo declarado por MEL frente a lo pesado */
+.cotejo{
+  display:flex;align-items:center;gap:14px;margin-bottom:12px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-s);padding:12px 15px;
+}
+.cotejo span{display:flex;flex-direction:column;gap:3px;flex:1}
+.cotejo small{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.cotejo b{font-size:15px}
+.cotejo .vs{flex:0 0 auto;color:var(--muted);font-size:11.5px}
+.dif-live{
+  margin-bottom:13px;padding:10px 14px;border-radius:var(--radius-s);font-size:12.5px;line-height:1.45;
+  border:1px solid var(--ok-line);background:var(--ok-bg);color:var(--ok-tx);
+}
+.dif-live.bad{border-color:var(--bad-line);background:var(--bad-bg);color:var(--bad-tx)}
 /* Totales del estado de pago */
 .ep-tot{
   display:flex;justify-content:flex-end;align-items:baseline;gap:22px;flex-wrap:wrap;
