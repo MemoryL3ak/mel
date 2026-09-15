@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { supa, q, ah, hoy, semanaISO, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
+import { contrato, venceElPrecio } from '../contrato.js';
 
 const r = Router();
 
@@ -12,7 +13,7 @@ r.get('/panel', auth(), ah(async (req, res) => {
   const hace14 = new Date(Date.now() - 13 * 86400000);
   const desde14 = `${hace14.getFullYear()}-${String(hace14.getMonth() + 1).padStart(2, '0')}-${String(hace14.getDate()).padStart(2, '0')}`;
 
-  const [transito, observados, trasladosTr, prog, eps, cuad, actividad, despMes, trasMes, desp14] = await Promise.all([
+  const [transito, observados, trasladosTr, prog, eps, cuad, actividad, despMes, trasMes, desp14, cats, precios, cfg] = await Promise.all([
     q(supa.from('despachos').select('id, guia, fecha').eq('estado', 'en_transito').order('id')),
     q(supa.from('despachos').select('id, guia, obs_recepcion').eq('estado', 'observado').order('id')),
     q(supa.from('traslados').select('id, guia').eq('estado', 'en_transito')),
@@ -23,6 +24,9 @@ r.get('/panel', auth(), ah(async (req, res) => {
     q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').gte('fecha', mes + '-01')),
     q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio').gte('fecha', mes + '-01')),
     q(supa.from('despachos').select('fecha, kg_origen').gte('fecha', desde14)),
+    q(supa.from('categorias').select('id, nombre').eq('activo', true)),
+    q(supa.from('precios').select('categoria_id, precio_kg, vigente_desde').order('vigente_desde', { ascending: false })),
+    contrato(),
   ]);
 
   // Flujo físico del mes: cuánto salió de patios, cuánto validó La Negra,
@@ -48,14 +52,28 @@ r.get('/panel', auth(), ah(async (req, res) => {
   const pendientes = [];
   const epAbierto = eps.find((e) => ['generado', 'en_revision', 'con_ajustes', 'firmado', 'facturado', 'pagado'].includes(e.estado));
 
+  // El destino incluye la pestaña exacta: el botón "Ir" tiene que dejar a la
+  // persona donde está el botón que resuelve el pendiente, no en la pantalla.
   if (['vendor', 'ito', 'coordinador'].includes(rol) && transito.length) {
-    pendientes.push({ tipo: 'info', tag: 'Recepción', destino: 'despachos', texto: `${transito.length} despacho(s) en tránsito a La Negra por recepcionar` });
+    pendientes.push({ tipo: 'info', tag: 'Recepción', destino: 'despachos?t=d2', texto: `${transito.length} despacho(s) en tránsito a La Negra por recepcionar` });
   }
   if (['ito', 'coordinador'].includes(rol)) {
-    observados.forEach((d) => pendientes.push({ tipo: 'warn', tag: 'Observado', destino: 'despachos', texto: `Guía ${d.guia} con diferencia de peso por resolver` }));
+    observados.forEach((d) => pendientes.push({ tipo: 'warn', tag: 'Observado', destino: 'despachos?t=d1&f=observado', texto: `Guía ${d.guia} con diferencia de peso por resolver` }));
     const ult = cuad[0];
     if (!ult || ult.anio !== anio || ult.semana !== semana) {
       pendientes.push({ tipo: 'info', tag: 'Cuadratura', destino: 'cuadratura', texto: `La cuadratura de la semana ${semana} aún no se cierra` });
+    }
+    // Vigencia de la tabla de precios: avisa antes de que haya que renegociar.
+    const h = hoy();
+    const vencidos = cats.filter((c) => {
+      const vig = precios.find((p) => p.categoria_id === c.id && p.vigente_desde <= h);
+      return vig && venceElPrecio(vig.vigente_desde, cfg.meses_vigencia_precio) < h;
+    });
+    if (vencidos.length) {
+      pendientes.push({
+        tipo: 'bad', tag: 'Precios', destino: 'valorizacion',
+        texto: `${vencidos.length} precio(s) con vigencia vencida: ${vencidos.map((c) => c.nombre).join(', ')}`,
+      });
     }
   }
   if (rol === 'coordinador' && epAbierto?.estado === 'en_revision') {
@@ -71,7 +89,7 @@ r.get('/panel', auth(), ah(async (req, res) => {
   }
   if (rol === 'vendor') {
     if (epAbierto?.estado === 'firmado') pendientes.push({ tipo: 'warn', tag: 'Factura', destino: 'estados', texto: `${epAbierto.folio} firmado: registre la factura de compra` });
-    if (trasladosTr.length) pendientes.push({ tipo: 'info', tag: 'Lampa', destino: 'despachos', texto: `${trasladosTr.length} traslado(s) en tránsito a Lampa por recepcionar` });
+    if (trasladosTr.length) pendientes.push({ tipo: 'info', tag: 'Lampa', destino: 'despachos?t=d3', texto: `${trasladosTr.length} traslado(s) en tránsito a Lampa por recepcionar` });
   }
   if (rol === 'coordinador' && epAbierto?.estado === 'pagado') {
     pendientes.push({ tipo: 'info', tag: 'Conciliación', destino: 'estados', texto: `${epAbierto.folio} pagado: revise la transferencia` });

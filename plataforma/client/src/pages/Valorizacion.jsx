@@ -7,10 +7,15 @@ export default function Valorizacion() {
   const [data, setData] = useState(null);
   const [nuevo, setNuevo] = useState(null);   // categoría seleccionada
   const [precio, setPrecio] = useState('');
+  const [contrato, setContrato] = useState(null);
+  const [editando, setEditando] = useState(null);   // borrador de los datos del contrato
   const { user } = useAuth();
   const toast = useToast();
 
-  const load = () => api('/valorizacion').then(setData).catch((e) => toast(e.message, true));
+  const load = () => {
+    api('/valorizacion').then(setData).catch((e) => toast(e.message, true));
+    api('/contrato').then(setContrato).catch(() => {});
+  };
   useEffect(() => { load(); }, []);
   if (!data) return <div className="loading">Cargando valorización…</div>;
 
@@ -22,6 +27,23 @@ export default function Valorizacion() {
       load();
     } catch (e) { toast(e.message, true); }
   }
+
+  async function guardarContrato() {
+    try {
+      const r = await api('/contrato', { method: 'PATCH', body: editando });
+      setContrato(r);
+      setEditando(null);
+      toast('Datos del contrato actualizados');
+      load();
+    } catch (e) { toast(e.message, true); }
+  }
+  const campoContrato = (clave, etiqueta, extra = {}) => (
+    <Field label={etiqueta} hint={extra.hint}>
+      <input type={extra.type ?? 'text'} value={editando?.[clave] ?? ''}
+        onChange={(e) => setEditando({ ...editando, [clave]: extra.type === 'number' ? e.target.value : e.target.value })}
+        placeholder={extra.placeholder} />
+    </Field>
+  );
 
   return (
     <div>
@@ -111,6 +133,62 @@ export default function Valorizacion() {
           </tbody>
         </table></div>
       </div>
+
+      {contrato && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-h">
+            <h3>Datos del contrato</h3>
+            {user.role !== 'coordinador'
+              ? <small>solo el Coordinador puede modificarlos</small>
+              : contrato.editable
+                ? <button className="btn sm" onClick={() => setEditando({ ...contrato })}>Editar</button>
+                : <small style={{ color: 'var(--warn-tx)' }}>pendiente de aplicar la migración 0003 en la base</small>}
+          </div>
+          <div className="card-b">
+            <div className="grid g2" style={{ gap: 12 }}>
+              {[
+                ['Contrato N°', contrato.numero || '—'],
+                ['Gerencia', contrato.gerencia || '—'],
+                ['Glosa', contrato.glosa || '—'],
+                ['Mandante', contrato.mandante || '—'],
+                ['Contratista', contrato.contratista || '—'],
+                ['Firma mandante', contrato.firma_mandante || '—'],
+                ['Firma contratista', contrato.firma_contratista || '—'],
+                ['Monto original', fmtCLP(contrato.monto_original)],
+                ['Modificaciones', fmtCLP(contrato.modificaciones)],
+                ['IVA', `${Number(contrato.iva_pct)} %`],
+                ['Día de corte del período', `día ${contrato.dia_corte} de cada mes`],
+                ['Vigencia de los precios', `${contrato.meses_vigencia_precio} meses`],
+              ].map(([k, v]) => (
+                <div key={k}><small style={{ color: 'var(--muted)' }}>{k}</small><br /><b>{v}</b></div>
+              ))}
+            </div>
+            <div className="audit-note">
+              Estos datos alimentan el encabezado y las firmas del documento del estado de pago,
+              el cálculo del IVA, el período que abarca cada EP y el plazo de vigencia de los precios.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Modal open={!!editando} title="Datos del contrato" onClose={() => setEditando(null)}
+        footer={<>
+          <button className="btn" onClick={() => setEditando(null)}>Cancelar</button>
+          <button className="btn primary" onClick={guardarContrato}>Guardar</button>
+        </>}>
+        {campoContrato('numero', 'Contrato N°', { placeholder: '9100078390' })}
+        {campoContrato('gerencia', 'Gerencia', { placeholder: 'GERENCIA W&L' })}
+        {campoContrato('glosa', 'Glosa del contrato', { placeholder: 'ADJUDICACIÓN LICITACIÓN DE CHATARRA' })}
+        {campoContrato('mandante', 'Mandante')}
+        {campoContrato('contratista', 'Contratista')}
+        {campoContrato('firma_mandante', 'Quién firma por el mandante')}
+        {campoContrato('firma_contratista', 'Quién firma por el contratista')}
+        {campoContrato('monto_original', 'Monto original del contrato (CLP)', { type: 'number' })}
+        {campoContrato('modificaciones', 'Modificaciones (CLP)', { type: 'number' })}
+        {campoContrato('iva_pct', 'IVA (%)', { type: 'number' })}
+        {campoContrato('dia_corte', 'Día de corte del período', { type: 'number', hint: 'El EP va del día siguiente al corte del mes anterior hasta este día.' })}
+        {campoContrato('meses_vigencia_precio', 'Vigencia de los precios (meses)', { type: 'number', hint: 'Pasado ese plazo la plataforma avisa que hay que renegociar.' })}
+      </Modal>
 
       <Modal open={!!nuevo} title={nuevo && `Nueva vigencia · ${nuevo.nombre}`} onClose={() => setNuevo(null)}
         footer={<>
