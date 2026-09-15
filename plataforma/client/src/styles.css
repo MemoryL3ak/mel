@@ -349,6 +349,14 @@ tbody tr:hover{background:var(--surface-2)}
   .modal{box-shadow:none;max-height:none;border:0}
   .modal-h,.modal-f{display:none !important}
 }
+/* Columna de acciones siempre a la vista, aunque la tabla se desplace */
+td.acc, th.acc{
+  position:sticky;right:0;z-index:1;
+  box-shadow:-9px 0 11px -9px rgba(33,27,21,.22);
+}
+td.acc{background:var(--surface)}
+th.acc{background:var(--surface-2)}
+tbody tr:hover td.acc{background:var(--surface-2)}
 /* Cotejo de pesajes en la recepción: lo declarado por MEL frente a lo pesado */
 .cotejo{
   display:flex;align-items:center;gap:14px;margin-bottom:12px;
