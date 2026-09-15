@@ -104,7 +104,7 @@ export default function EstadosPago() {
                 {esIto && editable && (
                   <>
                     <button className="btn sm" onClick={() => { setF({ presentado_el: sel.presentado_el ?? '', no_afecto_iva: sel.no_afecto_iva, anticipo: sel.anticipo }); setModal('encabezado'); }}>Encabezado</button>
-                    <button className="btn sm" onClick={() => { setF({}); setModal('descuento'); }}>+ Descuento</button>
+                    {/* El botón de descuentos vive junto a la sección que afecta, no aquí. */}
                     <button className="btn sm primary" onClick={accion(`/eps/${sel.id}/enviar`, {}, 'EP enviado a revisión del Coordinador')}>Enviar a revisión</button>
                   </>
                 )}
@@ -170,9 +170,23 @@ export default function EstadosPago() {
                 </tbody>
               </table></div>
 
-              {(sel.descuentos_lineas ?? []).length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  {sel.descuentos_lineas.map((d) => (
+              {/* Los descuentos solo se pueden tocar mientras el EP está en
+                  Generado o Con ajustes. Antes el botón simplemente desaparecía
+                  y no quedaba forma de saber dónde se ingresaban: la sección
+                  está siempre a la vista y dice en qué estado se editan. */}
+              {(esIto || (sel.descuentos_lineas ?? []).length > 0) && (
+                <>
+                  <div className="ev-tit" style={{ marginTop: 14 }}>
+                    <span>Descuentos del período</span>
+                    {esIto && (editable
+                      ? <button className="btn sm" onClick={() => { setF({}); setModal('descuento'); }}>+ Agregar descuento</button>
+                      : <small>Se agregan mientras el EP está en <b>Generado</b> o <b>Con ajustes</b>; este ya está <b>{CHIP[sel.estado][1].toLowerCase()}</b>.</small>)}
+                  </div>
+                  {(sel.descuentos_lineas ?? []).length === 0 ? (
+                    <div style={{ color: 'var(--muted)', fontSize: 13 }}>
+                      Sin descuentos en este período: se factura el bruto completo.
+                    </div>
+                  ) : sel.descuentos_lineas.map((d) => (
                     <div className="pend" key={d.id}>
                       <Chip tone="bad">Descuento</Chip>
                       <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small></span>
@@ -188,7 +202,7 @@ export default function EstadosPago() {
                       )}
                     </div>
                   ))}
-                </div>
+                </>
               )}
 
               <div className="ep-tot">
