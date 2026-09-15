@@ -66,6 +66,18 @@ input[type="file"]::file-selector-button:hover{border-color:var(--copper-line);c
   padding-top:12px;margin-bottom:10px;border-top:1px solid var(--line-2);
 }
 .ev-tit small{font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted)}
+/* Pesaje: input + selector de unidad kg/t */
+.peso{display:flex;gap:8px;align-items:stretch}
+.peso input{flex:1}
+.peso-u{display:flex;border:1px solid var(--line);border-radius:var(--radius-s);overflow:hidden;background:var(--surface-2)}
+.peso-u button{
+  min-width:44px;padding:0 13px;border:0;background:transparent;
+  font-size:12.5px;font-weight:700;color:var(--muted);transition:background .13s,color .13s;
+}
+.peso-u button:hover{color:var(--copper-deep)}
+.peso-u button.on{background:linear-gradient(180deg,var(--copper-hi),var(--copper));color:#fff}
+.peso-eq{margin-top:7px;font-size:12px;color:var(--ink-2)}
+.peso-eq b{font-family:var(--mono);font-size:.95em;white-space:nowrap}
 a{color:var(--copper-deep)}
 ::selection{background:var(--copper-tint)}
 :focus-visible{outline:2px solid var(--copper);outline-offset:2px;border-radius:4px}

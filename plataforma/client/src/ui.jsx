@@ -31,6 +31,48 @@ export function Field({ label, hint, children }) {
   );
 }
 
+/* ---- peso con unidad ---- */
+// La plataforma guarda SIEMPRE kilos, pero las básculas se leen tanto en kg
+// como en toneladas. El campo deja elegir la unidad y muestra la equivalencia
+// para que nunca haya duda de la cifra que va a quedar registrada.
+const UNIDAD_PREF = 'gea_unidad_peso';
+export const unidadGuardada = () => (localStorage.getItem(UNIDAD_PREF) === 't' ? 't' : 'kg');
+export const aKg = (valor, unidad) => {
+  const n = parseFloat(String(valor ?? '').replace(',', '.'));
+  if (!(n > 0)) return null;
+  return Math.round((unidad === 't' ? n * 1000 : n) * 10) / 10;
+};
+// Kilos de la base → texto en la unidad que prefiere quien está operando.
+export const desdeKg = (kg) => {
+  const unidad = unidadGuardada();
+  return { valor: String(unidad === 't' ? Number(kg) / 1000 : Number(kg)), unidad };
+};
+
+export function CampoPeso({ label, hint, valor, unidad, onValor, onUnidad }) {
+  const kg = aKg(valor, unidad);
+  const cambiar = (u) => { localStorage.setItem(UNIDAD_PREF, u); onUnidad(u); };
+  return (
+    <Field label={label} hint={hint}>
+      <div className="peso">
+        <input type="number" min="0" step={unidad === 't' ? '0.01' : '1'} value={valor}
+          onChange={(e) => onValor(e.target.value)} placeholder="0" />
+        <div className="peso-u" role="group" aria-label="Unidad del pesaje">
+          {['kg', 't'].map((u) => (
+            <button key={u} type="button" className={u === unidad ? 'on' : ''}
+              aria-pressed={u === unidad} onClick={() => cambiar(u)}>{u}</button>
+          ))}
+        </div>
+      </div>
+      {kg != null && (
+        <div className="peso-eq">
+          Se registrará <b>{kg.toLocaleString('es-CL', { maximumFractionDigits: 1 })} kg</b>
+          {unidad === 'kg' && kg >= 1000 && <> · equivale a {(kg / 1000).toLocaleString('es-CL', { maximumFractionDigits: 2 })} t</>}
+        </div>
+      )}
+    </Field>
+  );
+}
+
 export function Tabs({ tabs, active, onChange }) {
   return (
     <div className="tabs">

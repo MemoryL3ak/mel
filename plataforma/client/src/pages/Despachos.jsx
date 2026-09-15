@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Chip, Empty, Field, Modal, PageHead, Tabs, useToast } from '../ui.jsx';
+import { CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, desdeKg, unidadGuardada, useToast } from '../ui.jsx';
 
 const CHIP = {
   en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'], observado: ['warn', 'Difer. de peso'],
@@ -25,12 +25,12 @@ export default function Despachos() {
   const [resolver, setResolver] = useState(null);
   const [nuevoTras, setNuevoTras] = useState(false);
   const [recepTras, setRecepTras] = useState(null);
-  const [form, setForm] = useState({ patio_id: 1, categoria_id: 1, kg_origen: '', ev: {} });
+  const [form, setForm] = useState({ patio_id: 1, categoria_id: 1, kg_origen: '', unidad: unidadGuardada(), ev: {} });
   const [detalle, setDetalle] = useState(null);
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
-  const [rForm, setRForm] = useState({ kg_destino: '', categoria_final_id: '', observacion: '' });
-  const [tForm, setTForm] = useState({ categoria_id: 1, kg: '' });
-  const [kgLampa, setKgLampa] = useState('');
+  const [rForm, setRForm] = useState({ kg_destino: '', unidad: 'kg', categoria_final_id: '', observacion: '' });
+  const [tForm, setTForm] = useState({ categoria_id: 1, kg: '', unidad: unidadGuardada() });
+  const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
   const [obs, setObs] = useState('');
   const { user } = useAuth();
   const toast = useToast();
@@ -57,18 +57,21 @@ export default function Despachos() {
   };
 
   async function crearDespacho() {
+    const kg = aKg(form.kg_origen, form.unidad);
+    if (!kg) return toast('Ingrese el peso registrado en la báscula', true);
     try {
       const fd = new FormData();
       fd.append('patio_id', form.patio_id);
       fd.append('categoria_id', form.categoria_id);
-      fd.append('kg_origen', form.kg_origen);
+      fd.append('kg_origen', kg);
       let n = 0;
       for (const [tipo, archivos] of Object.entries(form.ev)) {
         for (const f of archivos) { fd.append(tipo, f); n++; }
       }
       const d = await api('/despachos', { method: 'POST', body: fd });
       toast(`Despacho ${d.guia} registrado con ${n} respaldo(s) adjunto(s)`);
-      setNuevo(false); setForm({ patio_id: 1, categoria_id: 1, kg_origen: '', ev: {} });
+      setNuevo(false);
+      setForm({ patio_id: 1, categoria_id: 1, kg_origen: '', unidad: unidadGuardada(), ev: {} });
       load();
     } catch (e) { toast(e.message, true); }
   }
@@ -140,7 +143,11 @@ export default function Despachos() {
                 <td className="num" style={{ whiteSpace: 'nowrap' }}>
                   <button className="btn sm" onClick={() => abrirDetalle(d)}>Detalle</button>{' '}
                   {d.estado === 'en_transito' && puedeRecep && (
-                    <button className="btn sm primary" onClick={() => { setRecep(d); setRForm({ kg_destino: String(d.kg_origen), categoria_final_id: '', observacion: '' }); }}>Recepcionar</button>
+                    <button className="btn sm primary" onClick={() => {
+                      setRecep(d);
+                      const p = desdeKg(d.kg_origen);
+                      setRForm({ kg_destino: p.valor, unidad: p.unidad, categoria_final_id: '', observacion: '' });
+                    }}>Recepcionar</button>
                   )}
                   {d.estado === 'observado' && puedeResolver && (
                     <button className="btn sm" onClick={() => { setResolver(d); setObs(''); }}>Resolver</button>
@@ -189,7 +196,7 @@ export default function Despachos() {
                 <td className="mono">{t.cert_folio || '—'}</td>
                 <td className="num">
                   {t.estado === 'en_transito' && puedeTras && (
-                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setKgLampa(String(t.kg)); }}>Recepcionar en Lampa</button>
+                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setLampa(desdeKg(t.kg)); }}>Recepcionar en Lampa</button>
                   )}
                 </td>
               </tr>
@@ -277,9 +284,9 @@ export default function Despachos() {
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{c.precio_kg ? ` · $${c.precio_kg}/kg` : ''}</option>)}
           </select>
         </Field>
-        <Field label="Peso en báscula MEL (kg)">
-          <input type="number" min="1" value={form.kg_origen} onChange={(e) => setForm({ ...form, kg_origen: e.target.value })} placeholder="0" />
-        </Field>
+        <CampoPeso label="Peso en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
+          onValor={(v) => setForm({ ...form, kg_origen: v })}
+          onUnidad={(u) => setForm({ ...form, unidad: u })} />
         <div className="ev-tit">Respaldos de la guía <small>JPG, PNG o WebP · máx. 5 MB · hasta 2 fotos por respaldo</small></div>
         {EVIDENCIA.map(([tipo, etiqueta, ayuda]) => {
           const puestas = form.ev[tipo] ?? [];
@@ -305,12 +312,14 @@ export default function Despachos() {
         footer={<>
           <button className="btn" onClick={() => setRecep(null)}>Cancelar</button>
           <button className="btn primary" onClick={post(`/despachos/${recep?.id}/recepcionar`,
-            { kg_destino: +rForm.kg_destino, categoria_final_id: rForm.categoria_final_id || undefined, observacion: rForm.observacion || undefined },
+            { kg_destino: aKg(rForm.kg_destino, rForm.unidad), categoria_final_id: rForm.categoria_final_id || undefined, observacion: rForm.observacion || undefined },
             'Recepción registrada', () => setRecep(null))}>Validar recepción</button>
         </>}>
-        <Field label={`Peso validado en báscula La Negra (origen MEL: ${recep && fmtKg(recep.kg_origen)} kg)`}>
-          <input type="number" min="1" value={rForm.kg_destino} onChange={(e) => setRForm({ ...rForm, kg_destino: e.target.value })} />
-        </Field>
+        <CampoPeso label="Peso validado en báscula La Negra"
+          hint={recep && `Pesaje declarado en origen MEL: ${fmtKg(recep.kg_origen)} kg.`}
+          valor={rForm.kg_destino} unidad={rForm.unidad}
+          onValor={(v) => setRForm({ ...rForm, kg_destino: v })}
+          onUnidad={(u) => setRForm({ ...rForm, unidad: u })} />
         <Field label="Reclasificación (solo si el material se reduce)" hint="El precio se congela con la categoría final al momento de esta recepción.">
           <select value={rForm.categoria_final_id} onChange={(e) => setRForm({ ...rForm, categoria_final_id: e.target.value ? +e.target.value : '' })}>
             <option value="">Mantener {recep?.categoria}</option>
@@ -337,27 +346,33 @@ export default function Despachos() {
       <Modal open={nuevoTras} title="Despachar traslado La Negra → Lampa" onClose={() => setNuevoTras(false)}
         footer={<>
           <button className="btn" onClick={() => setNuevoTras(false)}>Cancelar</button>
-          <button className="btn primary" onClick={post('/traslados', { ...tForm, kg: +tForm.kg }, 'Traslado despachado con guía foliada', () => { setNuevoTras(false); setTForm({ ...tForm, kg: '' }); })}>Despachar</button>
+          <button className="btn primary" onClick={post('/traslados',
+            { categoria_id: tForm.categoria_id, kg: aKg(tForm.kg, tForm.unidad) },
+            'Traslado despachado con guía foliada', () => { setNuevoTras(false); setTForm({ ...tForm, kg: '' }); })}>Despachar</button>
         </>}>
         <Field label="Categoría de material">
           <select value={tForm.categoria_id} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
         </Field>
-        <Field label="Kilos despachados desde La Negra" hint="La guía se folia automáticamente (GT-####).">
-          <input type="number" min="1" value={tForm.kg} onChange={(e) => setTForm({ ...tForm, kg: e.target.value })} placeholder="0" />
-        </Field>
+        <CampoPeso label="Peso despachado desde La Negra" hint="La guía se folia automáticamente (GT-####)."
+          valor={tForm.kg} unidad={tForm.unidad}
+          onValor={(v) => setTForm({ ...tForm, kg: v })}
+          onUnidad={(u) => setTForm({ ...tForm, unidad: u })} />
       </Modal>
 
       <Modal open={!!recepTras} title={recepTras && `Recepcionar ${recepTras.guia} en Lampa`} onClose={() => setRecepTras(null)}
         footer={<>
           <button className="btn" onClick={() => setRecepTras(null)}>Cancelar</button>
-          <button className="btn primary" onClick={post(`/traslados/${recepTras?.id}/recepcionar`, { kg_lampa: +kgLampa }, 'Recepción en Lampa registrada; certificado emitido', () => setRecepTras(null))}>Recepcionar y emitir CDF</button>
+          <button className="btn primary" onClick={post(`/traslados/${recepTras?.id}/recepcionar`,
+            { kg_lampa: aKg(lampa.valor, lampa.unidad) },
+            'Recepción en Lampa registrada; certificado emitido', () => setRecepTras(null))}>Recepcionar y emitir CDF</button>
         </>}>
-        <Field label={`Peso validado en báscula Lampa (despachado: ${recepTras && fmtKg(recepTras.kg)} kg)`}
-          hint="Al validar se emite automáticamente el certificado de disposición final foliado (CDF-####).">
-          <input type="number" min="1" value={kgLampa} onChange={(e) => setKgLampa(e.target.value)} />
-        </Field>
+        <CampoPeso label="Peso validado en báscula Lampa"
+          hint={`Despachado desde La Negra: ${recepTras && fmtKg(recepTras.kg)} kg. Al validar se emite el certificado de disposición final foliado (CDF-####).`}
+          valor={lampa.valor} unidad={lampa.unidad}
+          onValor={(v) => setLampa({ ...lampa, valor: v })}
+          onUnidad={(u) => setLampa({ ...lampa, unidad: u })} />
       </Modal>
     </div>
   );
