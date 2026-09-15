@@ -173,7 +173,9 @@ export default function Programa() {
                 <td className="num" style={{ whiteSpace: 'nowrap' }}>
                   {p.estado === 'programado' && puedeEjecutar && (
                     <>
-                      <button className="btn sm primary" onClick={() => { setEjec(p); setTonReal(String(p.ton_estimadas)); }}>Ejecutar</button>{' '}
+                      {/* El tonelaje real parte vacío: si se precarga con el
+                          estimado, el cumplimiento sale siempre 100%. */}
+                      <button className="btn sm primary" onClick={() => { setEjec(p); setTonReal(''); }}>Ejecutar</button>{' '}
                       {puedePlanificar && <button className="btn sm" onClick={() => setRepro(p)}>Reprogramar</button>}
                     </>
                   )}
@@ -272,8 +274,30 @@ export default function Programa() {
           <button className="btn" onClick={() => setEjec(null)}>Cancelar</button>
           <button className="btn primary" onClick={ejecutar}>Registrar</button>
         </>}>
-        <Field label={`Tonelaje real retirado (estimado: ${ejec && fmtTon(ejec.ton_estimadas)})`}>
-          <input type="number" min="0.1" step="0.1" value={tonReal} onChange={(e) => setTonReal(e.target.value)} />
+        {ejec && (() => {
+          const real = parseFloat(String(tonReal).replace(',', '.'));
+          const est = Number(ejec.ton_estimadas);
+          const dif = real > 0 ? real - est : null;
+          const pct = dif == null ? null : (dif / est) * 100;
+          return (
+            <>
+              <div className="cotejo">
+                <span><small>Planificado</small><b className="mono">{fmtTon(est)}</b></span>
+                <span className="vs">frente a</span>
+                <span><small>Retirado realmente</small>
+                  <b className="mono">{real > 0 ? fmtTon(real) : '— pendiente —'}</b></span>
+              </div>
+              {dif != null && (
+                <div className={`dif-live ${Math.abs(pct) > 10 ? 'bad' : 'ok'}`}>
+                  Cumplimiento: <b>{Math.round((real / est) * 100)}%</b> ({dif > 0 ? '+' : ''}{fmtTon(dif)} respecto de lo planificado)
+                </div>
+              )}
+            </>
+          );
+        })()}
+        <Field label="Tonelaje real retirado (t)"
+          hint="Lo efectivamente retirado del patio. El campo parte vacío: de ahí sale el cumplimiento de la semana.">
+          <input type="number" min="0.1" step="0.1" value={tonReal} onChange={(e) => setTonReal(e.target.value)} placeholder="0" />
         </Field>
       </Modal>
 

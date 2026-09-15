@@ -117,8 +117,10 @@ export default function EstadosPago() {
                 {esVendor && sel.estado === 'firmado' && (
                   <button className="btn sm primary" onClick={() => { setF({ fecha: new Date().toISOString().slice(0, 10) }); setModal('factura'); }}>Registrar factura</button>
                 )}
+                {/* El monto del pago parte vacío: un pago parcial no debe
+                    poder registrarse como completo por venir precargado. */}
                 {esVendor && sel.estado === 'facturado' && (
-                  <button className="btn sm primary" onClick={() => { setF({ monto: sel.total_con_iva, fecha: new Date().toISOString().slice(0, 10) }); setModal('pago'); }}>Registrar pago</button>
+                  <button className="btn sm primary" onClick={() => { setF({ monto: '', fecha: new Date().toISOString().slice(0, 10) }); setModal('pago'); }}>Registrar pago</button>
                 )}
                 {esCoord && sel.estado === 'pagado' && (
                   <button className="btn sm primary" onClick={() => { setF({}); setModal('conciliar'); }}>Revisar y conciliar</button>
@@ -310,8 +312,28 @@ export default function EstadosPago() {
           <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
           <button className="btn primary" onClick={accion(`/eps/${sel?.id}/pago`, { monto: +f.monto, fecha: f.fecha, referencia: f.referencia }, 'Pago registrado; queda a revisión del Coordinador')}>Registrar pago</button>
         </>}>
-        <Field label={`Monto transferido (total con IVA: ${sel && fmtCLP(sel.total_con_iva)})`}>
-          <input type="number" min="1" value={f.monto || ''} onChange={(e) => setF({ ...f, monto: e.target.value })} />
+        {sel && (() => {
+          const monto = Number(f.monto);
+          const dif = monto > 0 ? monto - Number(sel.total_con_iva) : null;
+          return (
+            <>
+              <div className="cotejo">
+                <span><small>Total con IVA del EP</small><b className="mono">{fmtCLP(sel.total_con_iva)}</b></span>
+                <span className="vs">frente a</span>
+                <span><small>Transferido</small><b className="mono">{monto > 0 ? fmtCLP(monto) : '— pendiente —'}</b></span>
+              </div>
+              {dif != null && dif !== 0 && (
+                <div className={`dif-live ${dif < 0 ? 'bad' : 'ok'}`}>
+                  Diferencia: <b>{dif > 0 ? '+' : ''}{fmtCLP(dif)}</b>
+                  {dif < 0 ? ' — el pago no cubre el total: el Coordinador exigirá una explicación al conciliar.' : ' — se transfirió más que el total del EP.'}
+                </div>
+              )}
+            </>
+          );
+        })()}
+        <Field label="Monto efectivamente transferido (CLP)"
+          hint="Escriba lo que salió del banco. El campo parte vacío a propósito.">
+          <input type="number" min="1" value={f.monto || ''} onChange={(e) => setF({ ...f, monto: e.target.value })} placeholder="0" />
         </Field>
         <Field label="Fecha de transferencia"><input type="date" value={f.fecha || ''} onChange={(e) => setF({ ...f, fecha: e.target.value })} /></Field>
         <Field label="Referencia (opcional)"><input value={f.referencia || ''} onChange={(e) => setF({ ...f, referencia: e.target.value })} placeholder="N° de operación bancaria" /></Field>

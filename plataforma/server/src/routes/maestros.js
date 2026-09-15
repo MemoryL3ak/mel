@@ -73,7 +73,10 @@ r.post('/precios', auth('coordinador'), ah(async (req, res) => {
   res.json(row);
 }));
 
-r.get('/contrato', auth(), ah(async (_req, res) => res.json(await contrato())));
+// `editable` es false mientras no se aplique la migración que crea la tabla:
+// así la pantalla no ofrece un botón que iba a fallar.
+r.get('/contrato', auth(), ah(async (_req, res) =>
+  res.json({ ...(await contrato()), editable: tiene.contrato })));
 
 r.patch('/contrato', auth('coordinador'), ah(async (req, res) => {
   if (!tiene.contrato) {

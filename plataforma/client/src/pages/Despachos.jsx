@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
@@ -19,7 +20,12 @@ export default function Despachos() {
   const [rows, setRows] = useState(null);
   const [traslados, setTraslados] = useState([]);
   const [maestros, setMaestros] = useState(null);
-  const [tab, setTab] = useState('d1');
+  // El panel enlaza a la pestaña y al filtro exactos (?t=d2, ?f=observado).
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('t') ?? 'd1';
+  const filtro = params.get('f') ?? 'todas';
+  const setTab = (t) => setParams(t === 'd1' ? {} : { t }, { replace: true });
+  const setFiltro = (f) => setParams(f === 'todas' ? { t: 'd1' } : { t: 'd1', f }, { replace: true });
   const [nuevo, setNuevo] = useState(false);
   const [recep, setRecep] = useState(null);
   const [resolver, setResolver] = useState(null);
@@ -151,11 +157,30 @@ export default function Despachos() {
         ['d4', 'Certificados disposición final'],
       ]} />
 
-      {tab === 'd1' && (
-        <div className="card"><div className="tbl-wrap"><table>
+      {tab === 'd1' && (() => {
+        const FILTROS = [
+          ['todas', 'Todas', rows.length],
+          ['en_transito', 'En tránsito', enTransito],
+          ['observado', 'Con diferencia', observados],
+          ['recepcionado', 'Recepcionadas', rows.filter((d) => d.estado === 'recepcionado').length],
+        ];
+        const visibles = filtro === 'todas' ? rows : rows.filter((d) => d.estado === filtro);
+        return (
+        <div className="card">
+          <div className="card-h">
+            <div className="filtros">
+              {FILTROS.map(([id, label, n]) => (
+                <button key={id} className={`fchip ${filtro === id ? 'on' : ''}`} onClick={() => setFiltro(id)}>
+                  {label} <i>{n}</i>
+                </button>
+              ))}
+            </div>
+            <small>{visibles.length} de {rows.length} guía(s)</small>
+          </div>
+          <div className="tbl-wrap"><table>
           <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th className="acc"></th></tr></thead>
           <tbody>
-            {rows.map((d) => (
+            {visibles.map((d) => (
               <tr key={d.id}>
                 <td>
                   <span className="mono">{d.guia}</span>
@@ -191,9 +216,16 @@ export default function Despachos() {
             ))}
           </tbody>
         </table></div>
-          {rows.length === 0 && <Empty title="Sin despachos registrados">El primer despacho desde patios MEL aparecerá aquí con su guía foliada.</Empty>}
+          {visibles.length === 0 && (
+            <Empty title={filtro === 'todas' ? 'Sin despachos registrados' : 'Nada con ese filtro'}>
+              {filtro === 'todas'
+                ? 'El primer despacho desde patios MEL aparecerá aquí con su guía foliada.'
+                : 'Ninguna guía está en ese estado ahora mismo.'}
+            </Empty>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {tab === 'd2' && (() => {
         const porValidar = rows.filter((d) => d.estado === 'en_transito');
