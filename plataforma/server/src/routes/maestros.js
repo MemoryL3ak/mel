@@ -19,16 +19,30 @@ r.get('/maestros', auth(), ah(async (_req, res) => {
     q(supa.from('precios').select('*').order('vigente_desde', { ascending: false })),
     q(supa.from('sitios').select('*').order('id')),
   ]);
-  // precio vigente por categoría (el más reciente no futuro)
+  // Precio vigente por categoría: la vigencia completa, no solo el precio en
+  // pesos. El alta de despachos la usa para mostrar la referencia junto a cada
+  // categoría, y la recepción para poner precio a las dos alternativas del
+  // contrato: con solo precio_kg, ambas pantallas quedaban mudas apenas el
+  // contrato pasó a expresarse en USD por tonelada.
   const h = hoy();
   const vigente = {};
   for (const p of precios) {
-    if (p.vigente_desde <= h && !(p.categoria_id in vigente)) vigente[p.categoria_id] = Number(p.precio_kg);
+    if (p.vigente_desde <= h && !(p.categoria_id in vigente)) vigente[p.categoria_id] = p;
   }
+  const n = (v) => (v == null ? null : Number(v));
   res.json({
     patios,
     sitios,
-    categorias: categorias.map((c) => ({ ...c, precio_kg: vigente[c.id] ?? null })),
+    categorias: categorias.map((c) => {
+      const p = vigente[c.id];
+      return {
+        ...c,
+        precio_kg: n(p?.precio_kg),
+        precio_usd: n(p?.precio_usd),
+        precio_usd_tm: n(p?.precio_usd_tm),
+        precio_usd_tm_madera: n(p?.precio_usd_tm_madera),
+      };
+    }),
     // Qué funciones tienen respaldo en la base ahora mismo: la interfaz no
     // debe ofrecer campos que el servidor va a descartar en silencio.
     funciones: { ...tiene },
