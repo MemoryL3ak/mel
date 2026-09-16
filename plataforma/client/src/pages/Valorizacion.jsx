@@ -153,23 +153,6 @@ export default function Valorizacion() {
                 dólares no se pueden valorizar</b> hasta que exista un valor: regístrelo a mano con el botón de arriba.</p>
               </div>
             )}
-            {data.historial_dolar?.length > 0 && (
-              <>
-                <div className="ev-tit">Historia del tipo de cambio <small>últimos {data.historial_dolar.length} registros</small></div>
-                <div className="tbl-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}><table>
-                  <thead><tr><th>Fecha</th><th className="num">Valor</th><th>Origen</th></tr></thead>
-                  <tbody>
-                    {data.historial_dolar.map((d) => (
-                      <tr key={d.fecha}>
-                        <td className="mono">{d.fecha}</td>
-                        <td className="num mono">$ {Number(d.valor).toLocaleString('es-CL')}</td>
-                        <td style={{ color: 'var(--ink-2)' }}>{d.fuente}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table></div>
-              </>
-            )}
             <div className="audit-note">
               El tipo de cambio se <b>congela con cada recepción</b>: la guía guarda el dólar del día en que
               se recibió, así una variación posterior no revaloriza lo ya declarado.
@@ -275,6 +258,38 @@ export default function Valorizacion() {
           </tbody>
         </table></div>
       </div>
+
+      {/* La historia del dólar vive con las demás historias, no arriba: lo que
+          la cabecera tiene que responder es con qué se valoriza hoy. */}
+      {data.usd && data.historial_dolar?.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-h">
+            <h3>Historial del tipo de cambio</h3>
+            <small>últimos {data.historial_dolar.length} registros · observado, desde mindicador.cl</small>
+          </div>
+          <div className="tbl-wrap" style={{ maxHeight: 260, overflowY: 'auto' }}><table>
+            <thead><tr><th>Fecha</th><th className="num">Valor</th><th className="num">Variación</th><th>Origen</th></tr></thead>
+            <tbody>
+              {data.historial_dolar.map((d, i) => {
+                // El historial viene del más nuevo al más antiguo.
+                const previo = data.historial_dolar[i + 1];
+                const dif = previo ? Number(d.valor) - Number(previo.valor) : null;
+                const pct = dif != null && Number(previo.valor) ? (dif / Number(previo.valor)) * 100 : null;
+                return (
+                  <tr key={d.fecha}>
+                    <td className="mono">{d.fecha}</td>
+                    <td className="num mono">$ {Number(d.valor).toLocaleString('es-CL')}</td>
+                    <td className="num" style={{ color: dif == null ? 'var(--muted)' : dif >= 0 ? 'var(--ok-tx)' : 'var(--bad-tx)' }}>
+                      {dif == null ? '—' : `${dif >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(2)}%`}
+                    </td>
+                    <td style={{ color: 'var(--ink-2)' }}>{d.fuente}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table></div>
+        </div>
+      )}
 
       {contrato && (
         <div className="card" style={{ marginTop: 16 }}>
