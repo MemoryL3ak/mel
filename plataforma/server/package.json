@@ -15,7 +15,8 @@
     "test": "node test/e2e.mjs",
     "setup:users": "node scripts/setup-users.js",
     "demo:precios": "node scripts/demo-precios.js",
-    "dolar:historico": "node scripts/dolar-historico.js"
+    "dolar:historico": "node scripts/dolar-historico.js",
+    "cargar:contrato": "node scripts/cargar-contrato.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

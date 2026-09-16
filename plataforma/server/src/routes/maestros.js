@@ -55,12 +55,18 @@ r.get('/valorizacion', auth('ito', 'coordinador'), ah(async (_req, res) => {
     const vence = vig ? venceElPrecio(vig.vigente_desde, meses) : null;
     const dias = vence ? diasPara(vence) : null;
     const usd = vig?.precio_usd == null ? null : Number(vig.precio_usd);
+    const tm = vig?.precio_usd_tm == null ? null : Number(vig.precio_usd_tm);
+    const tmMad = vig?.precio_usd_tm_madera == null ? null : Number(vig.precio_usd_tm_madera);
+    // USD por kilo equivalente, solo para comparar con vigencias antiguas.
+    const usdKg = tm != null ? tm / 1000 : usd;
     return {
       ...c,
       precio_kg: vig?.precio_kg == null ? null : Number(vig.precio_kg),
       precio_usd: usd,
+      precio_usd_tm: tm,
+      precio_usd_tm_madera: tmMad,
       // Referencia en pesos de hoy, solo informativa: lo que se congela es el USD.
-      precio_clp_hoy: usd != null && dol ? Math.round(usd * dol.valor) : null,
+      precio_clp_hoy: usdKg != null && dol ? Math.round(usdKg * dol.valor) : null,
       vigente_desde: vig?.vigente_desde ?? null,
       vence_el: vence,
       dias_para_vencer: dias,
@@ -71,16 +77,30 @@ r.get('/valorizacion', auth('ito', 'coordinador'), ah(async (_req, res) => {
   });
   res.json({
     categorias: porCat, historial: precios, meses_vigencia: meses,
-    usd: tiene.usd, dolar: dol, historial_dolar: histDolar,
+    usd: tiene.usd, tm: tiene.tm, dolar: dol, historial_dolar: histDolar,
   });
 }));
 
 // Valida una fila de precio; devuelve el error o null.
-function revisarPrecio({ precio_usd, precio_kg, vigente_desde }) {
-  if (!(Number(precio_usd) > 0) && !(Number(precio_kg) > 0)) return 'Precio válido obligatorio';
+function revisarPrecio({ precio_usd_tm, precio_usd, precio_kg, vigente_desde }) {
+  if (!(Number(precio_usd_tm) > 0) && !(Number(precio_usd) > 0) && !(Number(precio_kg) > 0)) {
+    return 'Precio válido obligatorio';
+  }
   if (vigente_desde && !/^\d{4}-\d{2}-\d{2}$/.test(vigente_desde)) return 'Fecha de vigencia inválida';
   return null;
 }
+
+// Columnas de precio de una fila, según lo que la base admita hoy.
+const columnasPrecio = (f) => ({
+  precio_kg: Number(f.precio_kg) > 0 ? Number(f.precio_kg) : null,
+  ...(tiene.usd && Number(f.precio_usd) > 0 ? { precio_usd: Number(f.precio_usd) } : {}),
+  ...(tiene.tm ? {
+    precio_usd_tm: Number(f.precio_usd_tm) > 0 ? Number(f.precio_usd_tm) : null,
+    // Sin Alternativa B declarada, se entiende que rige la misma de A.
+    precio_usd_tm_madera: Number(f.precio_usd_tm_madera) > 0 ? Number(f.precio_usd_tm_madera)
+      : Number(f.precio_usd_tm) > 0 ? Number(f.precio_usd_tm) : null,
+  } : {}),
+});
 
 // Nueva vigencia de precio (solo Coordinador): no edita, agrega historia.
 r.post('/precios', auth('coordinador'), ah(async (req, res) => {
@@ -91,12 +111,13 @@ r.post('/precios', auth('coordinador'), ah(async (req, res) => {
 
   const row = await q(supa.from('precios').insert({
     categoria_id,
-    precio_kg: Number(precio_kg) > 0 ? Number(precio_kg) : null,
-    ...(tiene.usd && Number(precio_usd) > 0 ? { precio_usd: Number(precio_usd) } : {}),
+    ...columnasPrecio(req.body || {}),
     vigente_desde: vigente_desde || hoy(), creado_por: req.user.name,
   }).select().single());
+  const { precio_usd_tm } = req.body || {};
   await audit(req.user.name, req.user.role, 'Actualizó precio de contrato',
-    `categoría ${categoria_id} → ${Number(precio_usd) > 0 ? `USD ${precio_usd}` : `$${precio_kg}`}/kg`);
+    `categoría ${categoria_id} → ${Number(precio_usd_tm) > 0 ? `USD ${precio_usd_tm}/TM`
+      : Number(precio_usd) > 0 ? `USD ${precio_usd}/kg` : `$${precio_kg}/kg`}`);
   res.json(row);
 }));
 
@@ -119,8 +140,7 @@ r.post('/precios/masivo', auth('coordinador'), ah(async (req, res) => {
     if (mal) errores.push(`Fila ${n}: ${mal}`);
     return {
       categoria_id: catId,
-      precio_kg: Number(f.precio_kg) > 0 ? Number(f.precio_kg) : null,
-      ...(tiene.usd && Number(f.precio_usd) > 0 ? { precio_usd: Number(f.precio_usd) } : {}),
+      ...columnasPrecio(f),
       vigente_desde: f.vigente_desde || hoy(),
       creado_por: req.user.name,
     };

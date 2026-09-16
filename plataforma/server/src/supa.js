@@ -51,8 +51,10 @@ export async function audit(usuario, rol, accion, objeto = null) {
 // Precio vigente por categoría a una fecha dada. Devuelve la fila completa
 // porque el contrato convive con dos monedas: las vigencias nuevas son en
 // USD/kg y las antiguas, en pesos, se conservan tal cual fueron facturadas.
-export async function precioVigente(categoriaId, fecha = hoy(), conUsd = false) {
-  const cols = conUsd ? 'precio_kg,precio_usd,vigente_desde' : 'precio_kg,vigente_desde';
+export async function precioVigente(categoriaId, fecha = hoy(), conUsd = false, conTm = false) {
+  const cols = ['precio_kg', 'vigente_desde',
+    ...(conUsd ? ['precio_usd'] : []),
+    ...(conTm ? ['precio_usd_tm', 'precio_usd_tm_madera'] : [])].join(',');
   const rows = await q(
     supa.from('precios').select(cols)
       .eq('categoria_id', categoriaId).lte('vigente_desde', fecha)
@@ -60,9 +62,12 @@ export async function precioVigente(categoriaId, fecha = hoy(), conUsd = false) 
   );
   if (!rows.length) throw new Error('No hay precio vigente para la categoría');
   const p = rows[0];
+  const n = (v) => (v == null ? null : Number(v));
   return {
-    precio_kg: p.precio_kg == null ? null : Number(p.precio_kg),
-    precio_usd: p.precio_usd == null ? null : Number(p.precio_usd),
+    precio_kg: n(p.precio_kg),
+    precio_usd: n(p.precio_usd),
+    precio_usd_tm: n(p.precio_usd_tm),
+    precio_usd_tm_madera: n(p.precio_usd_tm_madera),
     vigente_desde: p.vigente_desde,
   };
 }

@@ -4,32 +4,52 @@ import { useAuth } from '../auth.jsx';
 import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 
 // Carga masiva de vigencias: acepta pegado desde Excel (tabulaciones) o CSV
-// con ";" o ",". Columnas: Categoría | Precio USD/kg | Vigente desde.
+// con ";" o ",". Columnas: Categoría | Alt. A | Alt. B | Vigente desde.
+// La alternativa B y la fecha son opcionales: sin B rige el precio de A, y sin
+// fecha rige desde hoy.
 const sinTilde = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
-function parsearPrecios(texto, categorias) {
+// "7.558,38" y "7558.38" son el mismo número escrito a la chilena y a la
+// inglesa. Excel exporta una u otra según la configuración del equipo.
+const aNumero = (raw) => {
+  const t = String(raw ?? '').replace(/USD/gi, '').replace(/\s/g, '');
+  if (!t) return NaN;
+  return parseFloat(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
+};
+const esFecha = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v ?? '');
+
+function parsearPrecios(texto, categorias, porTonelada) {
   const filas = [];
   for (const linea of texto.split(/\r?\n/)) {
     const l = linea.trim();
     if (!l) continue;
     const sep = l.includes('\t') ? '\t' : l.includes(';') ? ';' : ',';
     const c = l.split(sep).map((x) => x.trim());
-    if (/^categor/i.test(c[0] || '')) continue;                 // fila de encabezado
+    if (/^(categor|material)/i.test(c[0] || '')) continue;       // fila de encabezado
     const fila = { raw: c };
-    if (c.length < 2) { fila.error = 'Se esperan al menos 2 columnas: Categoría y Precio USD/kg'; filas.push(fila); continue; }
+    if (c.length < 2) { fila.error = 'Se esperan al menos 2 columnas: Categoría y precio'; filas.push(fila); continue; }
 
     const cat = categorias.find((x) => sinTilde(x.nombre) === sinTilde(c[0]) || sinTilde(x.nombre).includes(sinTilde(c[0])));
     if (cat) { fila.categoria_id = cat.id; fila.categoria = cat.nombre; }
     else fila.error = `Categoría no reconocida: «${c[0]}»`;
 
-    const raw = c[1] ?? '';
-    const p = parseFloat(raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw);
-    if (p > 0) fila.precio_usd = p;
-    else fila.error ??= `Precio inválido: «${raw}»`;
+    const p = aNumero(c[1]);
+    if (p > 0) fila[porTonelada ? 'precio_usd_tm' : 'precio_usd'] = p;
+    else fila.error ??= `Precio inválido: «${c[1] ?? ''}»`;
 
-    if (c[2]) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(c[2])) fila.vigente_desde = c[2];
-      else fila.error ??= `Fecha inválida: «${c[2]}» (use AAAA-MM-DD)`;
+    // Con el contrato por tonelada, la tercera columna es la alternativa B.
+    // Si en esa posición viene una fecha, se entiende que no se declaró B.
+    let iFecha = 2;
+    if (porTonelada && c[2] && !esFecha(c[2])) {
+      const b = aNumero(c[2]);
+      if (b > 0) fila.precio_usd_tm_madera = b;
+      else fila.error ??= `Alternativa B inválida: «${c[2]}»`;
+      iFecha = 3;
+    }
+    const f = c[iFecha];
+    if (f) {
+      if (esFecha(f)) fila.vigente_desde = f;
+      else fila.error ??= `Fecha inválida: «${f}» (use AAAA-MM-DD)`;
     }
     filas.push(fila);
   }
@@ -37,17 +57,21 @@ function parsearPrecios(texto, categorias) {
 }
 
 // BOM al inicio para que Excel en Windows muestre bien las tildes.
-const PLANTILLA = 'data:text/csv;charset=utf-8,' + encodeURIComponent(
-  '﻿' +
-  'Categoría;Precio USD/kg;Vigente desde\n' +
-  'Fierro pesado;0,1950;2026-09-16\n' +
-  'Fierro liviano / mixto;0,1260;2026-09-16\n' +
-  'Acero inoxidable;0,6850;2026-09-16\n');
+const plantilla = (porTonelada) => 'data:text/csv;charset=utf-8,' + encodeURIComponent(
+  '﻿' + (porTonelada
+    ? 'Material;Alt. A sin madera USD/TM;Alt. B con madera USD/TM;Vigente desde\n' +
+      'Excedente de Fierro chatarra Pesada;177,26;166,21;2026-06-30\n' +
+      'Excedente de Bronce;7.558,38;6.382,61;2026-06-30\n' +
+      'Motores Eléctricos;660,67;660,67;2026-06-30\n'
+    : 'Categoría;Precio USD/kg;Vigente desde\n' +
+      'Fierro pesado;0,1950;2026-09-16\n' +
+      'Acero inoxidable;0,6850;2026-09-16\n'));
 
 export default function Valorizacion() {
   const [data, setData] = useState(null);
   const [nuevo, setNuevo] = useState(null);   // categoría seleccionada
-  const [precio, setPrecio] = useState('');
+  const [precio, setPrecio] = useState('');      // Alternativa A (o precio único)
+  const [precioB, setPrecioB] = useState('');     // Alternativa B, con madera
   const [desde, setDesde] = useState('');
   const [contrato, setContrato] = useState(null);
   const [editando, setEditando] = useState(null);   // borrador de los datos del contrato
@@ -67,12 +91,14 @@ export default function Valorizacion() {
   async function actualizar() {
     if (!(Number(precio) > 0)) return toast('Ingrese un precio mayor que cero', true);
     try {
-      // Con la valorización en dólares el precio nuevo siempre es USD/kg; las
-      // vigencias antiguas en pesos se conservan tal como fueron facturadas.
-      const campo = data.usd ? { precio_usd: Number(precio) } : { precio_kg: Number(precio) };
+      // El contrato va en USD por tonelada, con dos alternativas. Si no se
+      // declara la B, el servidor entiende que rige la misma de A.
+      const campo = data.tm
+        ? { precio_usd_tm: Number(precio), ...(Number(precioB) > 0 ? { precio_usd_tm_madera: Number(precioB) } : {}) }
+        : data.usd ? { precio_usd: Number(precio) } : { precio_kg: Number(precio) };
       await api('/precios', { method: 'POST', body: { categoria_id: nuevo.id, ...campo, vigente_desde: desde || undefined } });
       toast(`Nuevo precio vigente para ${nuevo.nombre}`);
-      setNuevo(null); setPrecio(''); setDesde('');
+      setNuevo(null); setPrecio(''); setPrecioB(''); setDesde('');
       load();
     } catch (e) { toast(e.message, true); }
   }
@@ -81,7 +107,8 @@ export default function Valorizacion() {
     try {
       const r = await api('/precios/masivo', {
         method: 'POST',
-        body: { filas: filas.map((f) => ({ categoria_id: f.categoria_id, precio_usd: f.precio_usd, vigente_desde: f.vigente_desde })) },
+        body: { filas: filas.map((f) => ({ categoria_id: f.categoria_id, precio_usd: f.precio_usd,
+          precio_usd_tm: f.precio_usd_tm, precio_usd_tm_madera: f.precio_usd_tm_madera, vigente_desde: f.vigente_desde })) },
       });
       toast(`${r.cargadas} vigencia(s) cargadas`);
       setMasivo(false); setTexto('');
@@ -118,8 +145,8 @@ export default function Valorizacion() {
   return (
     <div>
       <PageHead title="Valorización y precios"
-        sub={`Tabla de precios del contrato por categoría${data.usd ? ', en dólares por kilo' : ''}, con vigencia de ${data.meses_vigencia ?? 3} meses. Cada despacho congela el precio y el tipo de cambio al momento de su recepción: los cambios posteriores no alteran guías ya valorizadas.`}>
-        {user.role === 'coordinador' && data.usd && (
+        sub={`Tabla de precios del contrato por categoría${data.tm ? ', en dólares por tonelada métrica' : data.usd ? ', en dólares por kilo' : ''}, con vigencia de ${data.meses_vigencia ?? 3} meses. Cada despacho congela el precio y el tipo de cambio al momento de su recepción: los cambios posteriores no alteran guías ya valorizadas.`}>
+        {user.role === 'coordinador' && (data.usd || data.tm) && (
           <button className="btn" onClick={() => { setMasivo(true); setTexto(''); }}>⇪ Carga masiva</button>
         )}
       </PageHead>
@@ -180,10 +207,14 @@ export default function Valorizacion() {
       })()}
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-h"><h3>Precios vigentes del contrato</h3><small>$/kg por categoría</small></div>
+        <div className="card-h"><h3>Precios vigentes del contrato</h3>
+          <small>{data.tm ? 'USD por tonelada métrica · dos alternativas' : '$/kg por categoría'}</small></div>
         <div className="tbl-wrap"><table>
-          <thead><tr><th>Categoría</th><th className="num">{data.usd ? 'Precio USD/kg' : 'Precio vigente'}</th>
-            {data.usd && <th className="num">Referencia en pesos</th>}
+          <thead><tr><th>Categoría</th>
+            {data.tm
+              ? <><th className="num">Alt. A · sin madera</th><th className="num gsep">Alt. B · con madera</th></>
+              : <th className="num">{data.usd ? 'Precio USD/kg' : 'Precio vigente'}</th>}
+            {(data.usd || data.tm) && <th className="num">Referencia $/kg hoy</th>}
             <th>Desde</th><th>Vigencia</th><th className="num">Kg recepcionados YTD</th><th className="num">Valorizado YTD</th><th></th></tr></thead>
           <tbody>
             {data.categorias.map((c) => {
@@ -197,14 +228,27 @@ export default function Valorizacion() {
               return (
                 <tr key={c.id}>
                   <td><b>{c.nombre}</b></td>
-                  <td className="num mono">
-                    {data.usd
-                      ? (c.precio_usd != null ? `USD ${Number(c.precio_usd).toFixed(4)}`
-                        : c.precio_kg != null ? <span style={{ color: 'var(--muted)' }}>$ {Number(c.precio_kg).toLocaleString('es-CL')} <small>(CLP)</small></span>
-                        : '—')
-                      : (c.precio_kg != null ? `$ ${Number(c.precio_kg).toLocaleString('es-CL')}` : '—')}
-                  </td>
-                  {data.usd && (
+                  {data.tm ? (() => {
+                    const usd = (v) => v == null ? <span style={{ color: 'var(--muted)' }}>—</span>
+                      : `USD ${Number(v).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    // Cuando las dos alternativas coinciden, la B se atenúa: no
+                    // hay decisión que tomar en ese material.
+                    const igual = c.precio_usd_tm != null && c.precio_usd_tm === c.precio_usd_tm_madera;
+                    return (<>
+                      <td className="num mono">{usd(c.precio_usd_tm)}</td>
+                      <td className="num mono gsep" style={igual ? { color: 'var(--muted)' } : undefined}
+                        title={igual ? 'Igual a la alternativa A' : undefined}>{usd(c.precio_usd_tm_madera)}</td>
+                    </>);
+                  })() : (
+                    <td className="num mono">
+                      {data.usd
+                        ? (c.precio_usd != null ? `USD ${Number(c.precio_usd).toFixed(4)}`
+                          : c.precio_kg != null ? <span style={{ color: 'var(--muted)' }}>$ {Number(c.precio_kg).toLocaleString('es-CL')} <small>(CLP)</small></span>
+                          : '—')
+                        : (c.precio_kg != null ? `$ ${Number(c.precio_kg).toLocaleString('es-CL')}` : '—')}
+                    </td>
+                  )}
+                  {(data.usd || data.tm) && (
                     <td className="num mono" style={{ color: 'var(--muted)' }}
                       title="Referencia al dólar de hoy. Lo que se congela en cada guía es el precio en dólares.">
                       {c.precio_clp_hoy != null ? `$ ${c.precio_clp_hoy.toLocaleString('es-CL')}` : '—'}
@@ -217,7 +261,7 @@ export default function Valorizacion() {
                   <td className="num">
                     {user.role === 'coordinador' && (
                       <button className={`btn sm ${c.estado_precio === 'vencido' ? 'primary' : ''}`}
-                        onClick={() => { setNuevo(c); setPrecio(''); setDesde(''); }}>Nueva vigencia</button>
+                        onClick={() => { setNuevo(c); setPrecio(''); setPrecioB(''); setDesde(''); }}>Nueva vigencia</button>
                     )}
                   </td>
                 </tr>
@@ -349,24 +393,32 @@ export default function Valorizacion() {
 
       <Modal open={!!nuevo} title={nuevo && `Nueva vigencia · ${nuevo.nombre}`} onClose={() => setNuevo(null)}
         footer={<>
-          <button className="btn" onClick={() => setNuevo(null)}>Cancelar</button>
+          <button className="btn" onClick={() => { setNuevo(null); setPrecioB(''); }}>Cancelar</button>
           <button className="btn primary" onClick={actualizar}>Registrar precio</button>
         </>}>
         {/* El campo parte vacío a propósito: precargarlo con el precio vigente
             invita a confirmar sin decidir, que es lo que hay que evitar. */}
-        <Field label={data.usd ? 'Nuevo precio (USD/kg)' : 'Nuevo precio ($/kg)'}
-          hint={`Vigente actual: ${nuevo?.precio_usd != null ? `USD ${nuevo.precio_usd}` : nuevo?.precio_kg != null ? `$ ${nuevo.precio_kg}` : 'sin precio'}. ` +
+        <Field label={data.tm ? 'Alternativa A · sin madera (USD/TM)' : data.usd ? 'Nuevo precio (USD/kg)' : 'Nuevo precio ($/kg)'}
+          hint={`Vigente actual: ${nuevo?.precio_usd_tm != null ? `USD ${nuevo.precio_usd_tm}/TM` : nuevo?.precio_usd != null ? `USD ${nuevo.precio_usd}/kg` : nuevo?.precio_kg != null ? `$ ${nuevo.precio_kg}` : 'sin precio'}. ` +
             'El historial anterior se conserva y las guías ya valorizadas no cambian.'}>
-          <input type="number" min="0" step={data.usd ? '0.0001' : '0.01'} value={precio}
+          <input type="number" min="0" step={data.tm ? '0.01' : data.usd ? '0.0001' : '0.01'} value={precio}
             onChange={(e) => setPrecio(e.target.value)} placeholder="0" />
         </Field>
+        {data.tm && (
+          <Field label="Alternativa B · con madera (USD/TM)"
+            hint={`Vigente actual: ${nuevo?.precio_usd_tm_madera != null ? `USD ${nuevo.precio_usd_tm_madera}/TM` : 'sin precio'}. Si se deja vacío, rige el mismo precio de la alternativa A.`}>
+            <input type="number" min="0" step="0.01" value={precioB}
+              onChange={(e) => setPrecioB(e.target.value)} placeholder="igual que A" />
+          </Field>
+        )}
         <Field label="Vigente desde" hint="Si se deja vacío, rige desde hoy.">
           <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
         </Field>
-        {data.usd && Number(precio) > 0 && data.dolar && (
+        {(data.usd || data.tm) && Number(precio) > 0 && data.dolar && (
           <div className="dif-live ok">
             Al dólar de hoy ($ {Number(data.dolar.valor).toLocaleString('es-CL')}) equivale a
-            <b> $ {Math.round(Number(precio) * Number(data.dolar.valor)).toLocaleString('es-CL')}/kg</b>.
+            <b> $ {Math.round(Number(precio) * Number(data.dolar.valor) / (data.tm ? 1000 : 1)).toLocaleString('es-CL')}/kg</b>
+            {data.tm && <> · <b>$ {Math.round(Number(precio) * Number(data.dolar.valor)).toLocaleString('es-CL')}/TM</b></>}.
             Lo que se congela en cada guía es el precio en dólares, no esta referencia.
           </div>
         )}
@@ -374,11 +426,11 @@ export default function Valorizacion() {
 
       <Modal ancho open={masivo} title="Carga masiva de precios" onClose={() => setMasivo(false)}
         footer={(() => {
-          const filas = texto.trim() ? parsearPrecios(texto, data.categorias) : [];
+          const filas = texto.trim() ? parsearPrecios(texto, data.categorias, data.tm) : [];
           const malas = filas.filter((f) => f.error).length;
           return (
             <>
-              <a className="btn" href={PLANTILLA} download="Precios del contrato (plantilla).csv"
+              <a className="btn" href={plantilla(data.tm)} download="Precios del contrato (plantilla).csv"
                 style={{ marginRight: 'auto', textDecoration: 'none' }}>⇩ Plantilla CSV</a>
               <button className="btn" onClick={() => setMasivo(false)}>Cancelar</button>
               <button className="btn primary" disabled={!filas.length || malas > 0}
@@ -389,7 +441,9 @@ export default function Valorizacion() {
           );
         })()}>
         <Field label="Archivo CSV"
-          hint="O pegue directamente desde Excel en el cuadro de abajo. Columnas: Categoría, Precio USD/kg y (opcional) Vigente desde en formato AAAA-MM-DD.">
+          hint={data.tm
+            ? 'O pegue directamente desde Excel. Columnas: Material, Alternativa A en USD/TM, Alternativa B (opcional: sin ella rige la A) y Vigente desde en AAAA-MM-DD (opcional).'
+            : 'O pegue directamente desde Excel en el cuadro de abajo. Columnas: Categoría, Precio USD/kg y (opcional) Vigente desde en formato AAAA-MM-DD.'}>
           <input type="file" accept=".csv,.txt" onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) f.text().then(setTexto);
@@ -397,10 +451,12 @@ export default function Valorizacion() {
         </Field>
         <Field label="Contenido">
           <textarea rows="6" value={texto} onChange={(e) => setTexto(e.target.value)}
-            placeholder={'Fierro pesado;0,1950;2026-09-16\nFierro liviano / mixto;0,1260'} />
+            placeholder={data.tm
+              ? 'Excedente de Bronce;7.558,38;6.382,61;2026-06-30\nMotores Eléctricos;660,67'
+              : 'Fierro pesado;0,1950;2026-09-16\nFierro liviano / mixto;0,1260'} />
         </Field>
         {(() => {
-          const filas = texto.trim() ? parsearPrecios(texto, data.categorias) : [];
+          const filas = texto.trim() ? parsearPrecios(texto, data.categorias, data.tm) : [];
           if (!filas.length) return <Empty title="Sin filas que revisar">Pegue el contenido o cargue el archivo para ver la vista previa.</Empty>;
           const malas = filas.filter((f) => f.error).length;
           return (
@@ -409,12 +465,25 @@ export default function Valorizacion() {
                 <small>{malas ? `${malas} fila(s) con error: la carga no entra hasta corregirlas` : 'todas las filas válidas'}</small>
               </div>
               <div className="tbl-wrap" style={{ maxHeight: 260, overflowY: 'auto' }}><table>
-                <thead><tr><th>Categoría</th><th className="num">USD/kg</th><th>Vigente desde</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Categoría</th>
+                  {data.tm
+                    ? <><th className="num">Alt. A USD/TM</th><th className="num">Alt. B USD/TM</th></>
+                    : <th className="num">USD/kg</th>}
+                  <th>Vigente desde</th><th>Estado</th></tr></thead>
                 <tbody>
                   {filas.map((f, i) => (
                     <tr key={i}>
                       <td>{f.categoria ?? <span style={{ color: 'var(--muted)' }}>{f.raw?.[0] ?? '—'}</span>}</td>
-                      <td className="num mono">{f.precio_usd != null ? f.precio_usd.toFixed(4) : '—'}</td>
+                      {data.tm ? (<>
+                        <td className="num mono">
+                          {f.precio_usd_tm != null ? f.precio_usd_tm.toLocaleString('es-CL', { minimumFractionDigits: 2 }) : '—'}</td>
+                        <td className="num mono" style={f.precio_usd_tm_madera == null ? { color: 'var(--muted)' } : undefined}>
+                          {f.precio_usd_tm_madera != null
+                            ? f.precio_usd_tm_madera.toLocaleString('es-CL', { minimumFractionDigits: 2 })
+                            : 'igual que A'}</td>
+                      </>) : (
+                        <td className="num mono">{f.precio_usd != null ? f.precio_usd.toFixed(4) : '—'}</td>
+                      )}
                       <td className="mono">{f.vigente_desde ?? 'hoy'}</td>
                       <td>{f.error ? <Chip tone="bad">{f.error}</Chip> : <Chip tone="ok">Lista</Chip>}</td>
                     </tr>
