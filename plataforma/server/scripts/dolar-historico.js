@@ -16,7 +16,10 @@
 import { supa, hoy } from '../src/supa.js';
 
 const API = 'https://mindicador.cl/api/dolar';
-const EN_PARALELO = 5;
+// La API se cae bajo concurrencia: con 5 en paralelo falla más de la mitad de
+// las consultas. De a 2, y reintentando las que no contestaron, entra completa.
+const EN_PARALELO = 2;
+const REINTENTOS = 4;
 const TIMEOUT_MS = 10000;
 const dias = Number(process.argv[2]) || 60;
 
@@ -28,16 +31,19 @@ const restarDias = (iso, n) => {
 };
 const finDeSemana = (iso) => [0, 6].includes(new Date(`${iso}T12:00:00Z`).getUTCDay());
 
+// Distingue los dos "no hay valor": que ese día no tenga publicación (feriado,
+// o aún no sale) o que la consulta no haya llegado. Confundirlos dejaría la
+// historia con hoyos que el resumen reportaría como feriados.
 async function valorDe(fecha) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
     const r = await fetch(`${API}/${alFormatoApi(fecha)}`, { signal: ctrl.signal });
-    if (!r.ok) return null;
+    if (!r.ok) return { fecha, alcanzada: false };
     const v = Number((await r.json())?.serie?.[0]?.valor);
-    return Number.isFinite(v) && v > 0 ? { fecha, valor: v } : null;
+    return { fecha, alcanzada: true, valor: Number.isFinite(v) && v > 0 ? v : null };
   } catch {
-    return null;
+    return { fecha, alcanzada: false };
   } finally {
     clearTimeout(t);
   }
@@ -67,17 +73,35 @@ if (!pendientes.length) {
 }
 
 const filas = [];
-let sinPublicacion = 0;
-for (let i = 0; i < pendientes.length; i += EN_PARALELO) {
-  const tanda = await Promise.all(pendientes.slice(i, i + EN_PARALELO).map(valorDe));
-  for (const x of tanda) (x ? filas.push(x) : sinPublicacion++);
-  process.stdout.write(`\r  consultando… ${Math.min(i + EN_PARALELO, pendientes.length)}/${pendientes.length}`);
-}
-console.log();
+const sinPublicacion = new Set();
+let porConsultar = pendientes;
 
+for (let vuelta = 1; vuelta <= REINTENTOS && porConsultar.length; vuelta++) {
+  const fallaron = [];
+  for (let i = 0; i < porConsultar.length; i += EN_PARALELO) {
+    const tanda = await Promise.all(porConsultar.slice(i, i + EN_PARALELO).map(valorDe));
+    for (const x of tanda) {
+      if (!x.alcanzada) fallaron.push(x.fecha);
+      else if (x.valor != null) filas.push({ fecha: x.fecha, valor: x.valor });
+      else sinPublicacion.add(x.fecha);
+    }
+    process.stdout.write(`\r  intento ${vuelta}: ${Math.min(i + EN_PARALELO, porConsultar.length)}/${porConsultar.length}   `);
+  }
+  console.log(`\r  intento ${vuelta}: ${filas.length} obtenido(s) · ${sinPublicacion.size} sin publicación · ${fallaron.length} sin respuesta`);
+  porConsultar = fallaron;
+}
+
+// Que no haya entrado nada es un problema solo si tampoco había nada antes.
+// Si la historia ya está armada y quedó un día suelto sin respuesta, eso no es
+// una falla: el arrastre lo cubre solo.
 if (!filas.length) {
-  console.error('\nNo se obtuvo ninguna publicación. Revise la conexión a mindicador.cl.');
-  process.exit(1);
+  if (!conocidas.size) {
+    console.error('\nNo se obtuvo ninguna publicación. Revise la conexión a mindicador.cl.');
+    process.exit(1);
+  }
+  console.log(`\nNada nuevo. Quedan ${porConsultar.length} día(s) sin respuesta sobre ${conocidas.size} ya guardados;`);
+  console.log('un hueco suelto no afecta: la valorización arrastra la última cotización anterior.');
+  process.exit(0);
 }
 
 const { error } = await supa.from('dolar')
@@ -88,6 +112,11 @@ if (error) {
 }
 
 const ord = [...filas].sort((a, b) => a.fecha.localeCompare(b.fecha));
-console.log(`\n${filas.length} día(s) guardado(s)${sinPublicacion ? ` · ${sinPublicacion} hábil(es) sin publicación (feriados o aún no publicados)` : ''}.`);
+console.log(`\n${filas.length} día(s) guardado(s).`);
 console.log(`  primero: ${ord[0].fecha} → $${ord[0].valor}`);
 console.log(`  último:  ${ord[ord.length - 1].fecha} → $${ord[ord.length - 1].valor}`);
+if (sinPublicacion.size) console.log(`  ${sinPublicacion.size} día(s) hábil(es) sin publicación (feriados o aún no publicados).`);
+if (porConsultar.length) {
+  console.log(`  ${porConsultar.length} día(s) sin respuesta de la API tras ${REINTENTOS} intentos.`);
+  console.log('  Vuelva a correr el comando: solo consultará esos, no los ya guardados.');
+}

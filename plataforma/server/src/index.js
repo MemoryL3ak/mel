@@ -78,14 +78,19 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || 'Error interno' });
 });
 
-// Migraciones aplicadas: se comprueba al arrancar (ver src/esquema.js).
-import { detectarEsquema } from './esquema.js';
-detectarEsquema().catch((e) => console.error('[GEA] esquema:', e.message));
-
-// Bucket privado de evidencia fotográfica (idempotente).
+// Bucket privado de evidencia fotográfica (idempotente). No bloquea el
+// arranque: se crea una vez y su fallo queda en el log.
 import { supa } from './supa.js';
 supa.storage.createBucket('evidencia', { public: false, fileSizeLimit: '5MB' })
   .then(({ error }) => { if (error && !/already exists/i.test(error.message)) console.error('[GEA] bucket evidencia:', error.message); });
+
+// Migraciones aplicadas (ver src/esquema.js). Se comprueba ANTES de aceptar
+// tráfico, y por eso se espera: lanzarlo en paralelo al listen dejaba un
+// segundo en que el servidor respondía como si ninguna migración existiera.
+// Justo después de un despliegue, el primero en entrar cargaba la plataforma
+// sin sus funciones y no las recuperaba hasta recargar la página.
+import { detectarEsquema } from './esquema.js';
+await detectarEsquema().catch((e) => console.error('[GEA] esquema:', e.message));
 
 app.listen(env.PORT, () => {
   console.log(`GEA · Fase 1 chatarra — servidor en http://localhost:${env.PORT}`);
