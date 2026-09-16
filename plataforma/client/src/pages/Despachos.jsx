@@ -64,6 +64,8 @@ export default function Despachos() {
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
   const [anular, setAnular] = useState(null);         // guía que se está anulando
   const [aForm, setAForm] = useState({ motivo: '', reemplazar: false });
+  // Descuento que se agrega desde el detalle de una guía ya recepcionada.
+  const [dForm, setDForm] = useState({ tipo: 'kg', valor: '', glosa: '' });
   const [rForm, setRForm] = useState(recepVacia);
   const [tForm, setTForm] = useState({ categoria_id: 1, kg: '', unidad: unidadGuardada() });
   const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
@@ -154,6 +156,22 @@ export default function Despachos() {
       descuentos: [...rForm.descuentos, { tipo: d.tipo, valor: Number(d.valor), glosa: d.glosa.trim() }],
       nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
     });
+  }
+
+  // Descuento aplicado sobre una guía que ya está recepcionada. El servidor
+  // revaloriza y devuelve la guía completa, así que el detalle se refresca solo.
+  async function agregarDescGuia() {
+    if (!(Number(dForm.valor) > 0) || !dForm.glosa.trim()) return toast('Indique monto y glosa del descuento', true);
+    if (dForm.tipo === 'pct' && Number(dForm.valor) > 100) return toast('El porcentaje no puede superar el 100%', true);
+    if (dForm.tipo === 'clp' && !Number.isInteger(Number(dForm.valor))) return toast('El descuento en pesos debe ser un monto entero', true);
+    try {
+      const r = await api(`/despachos/${detalle.id}/descuentos`, { method: 'POST', body: {
+        tipo: dForm.tipo, valor: Number(dForm.valor), glosa: dForm.glosa.trim() } });
+      setDetalle(r);
+      setDForm({ tipo: 'kg', valor: '', glosa: '' });
+      toast('Descuento aplicado · la guía quedó revalorizada');
+      load();
+    } catch (e) { toast(e.message, true); }
   }
 
   async function anularGuia() {
@@ -457,26 +475,66 @@ export default function Despachos() {
               </>
             )}
 
-            {detalle.descuentos?.length > 0 && (
-              <>
-                <div className="ev-tit">Descuentos aplicados en la recepción</div>
-                {detalle.descuentos.map((d) => (
-                  <div className="pend" key={d.id}>
-                    <Chip tone="bad">{descTexto(d)}</Chip>
-                    <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small></span>
-                    {puedeResolver && !detalle.ep_folio && (
-                      <button className="btn sm danger go" onClick={async () => {
-                        try {
-                          const r = await api(`/despachos/${detalle.id}/descuentos/${d.id}`, { method: 'DELETE' });
-                          toast('Descuento eliminado');
-                          setDetalle(r); load();
-                        } catch (e) { toast(e.message, true); }
-                      }}>Quitar</button>
-                    )}
-                  </div>
-                ))}
-              </>
-            )}
+            {/* La sección va siempre, aunque no haya descuentos: si solo
+                apareciera cuando ya existe alguno, no habría dónde agregar el
+                primero y la función sería invisible. Cuando no se puede, dice
+                por qué. */}
+            {fn.desc_item && detalle.estado !== 'anulado' && (() => {
+              const recibida = ['recepcionado', 'observado'].includes(detalle.estado);
+              const abierta = recibida && !detalle.ep_folio && puedeRecep;
+              return (
+                <>
+                  <div className="ev-tit">Descuentos de la carga <small>humedad, material ajeno, mermas</small></div>
+                  {detalle.descuentos?.length > 0 ? detalle.descuentos.map((d) => (
+                    <div className="pend" key={d.id}>
+                      <Chip tone="bad">{descTexto(d)}</Chip>
+                      <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small></span>
+                      {puedeResolver && abierta && (
+                        <button className="btn sm danger go" onClick={async () => {
+                          try {
+                            const r = await api(`/despachos/${detalle.id}/descuentos/${d.id}`, { method: 'DELETE' });
+                            toast('Descuento eliminado · la guía quedó revalorizada');
+                            setDetalle(r); load();
+                          } catch (e) { toast(e.message, true); }
+                        }}>Quitar</button>
+                      )}
+                    </div>
+                  )) : (
+                    <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
+                      Esta guía no tiene descuentos aplicados.
+                    </div>
+                  )}
+
+                  {abierta ? (
+                    <>
+                      <div className="desc-nuevo">
+                        <select value={dForm.tipo} onChange={(e) => setDForm({ ...dForm, tipo: e.target.value })}>
+                          {TIPO_DESC.map(([id, label, u]) => <option key={id} value={id}>{label} ({u})</option>)}
+                        </select>
+                        <input type="number" min="0" step={dForm.tipo === 'clp' ? '1' : '0.01'} placeholder="0"
+                          value={dForm.valor} onChange={(e) => setDForm({ ...dForm, valor: e.target.value })} />
+                        <input placeholder="Motivo del descuento" value={dForm.glosa}
+                          onChange={(e) => setDForm({ ...dForm, glosa: e.target.value })} />
+                        <button className="btn sm" onClick={agregarDescGuia}>Agregar</button>
+                      </div>
+                      <small style={{ color: 'var(--muted)', display: 'block', marginBottom: 14 }}>
+                        {TIPO_DESC.find(([t]) => t === dForm.tipo)?.[3]} La guía se revaloriza al instante.
+                      </small>
+                    </>
+                  ) : (
+                    <div className="audit-note">
+                      {!recibida
+                        ? <>Los descuentos se aplican <b>al recepcionar en La Negra</b>, o desde aquí una vez
+                          recibida la carga. Esta guía todavía va en tránsito.</>
+                        : detalle.ep_folio
+                        ? <>La guía ya está en el estado de pago <b className="mono">{detalle.ep_folio}</b>: sus
+                          descuentos quedaron congelados con él. Sáquela de ese EP para modificarlos.</>
+                        : <>Solo La Negra, el ITO o el Coordinador pueden aplicar descuentos.</>}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {detalle.estado === 'anulado' && (
               <div className="aviso bad">
