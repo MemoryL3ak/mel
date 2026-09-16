@@ -48,13 +48,21 @@ export async function audit(usuario, rol, accion, objeto = null) {
   } catch { /* la auditoría no debe botar la operación */ }
 }
 
-// Precio vigente por categoría a una fecha dada.
-export async function precioVigente(categoriaId, fecha = hoy()) {
+// Precio vigente por categoría a una fecha dada. Devuelve la fila completa
+// porque el contrato convive con dos monedas: las vigencias nuevas son en
+// USD/kg y las antiguas, en pesos, se conservan tal cual fueron facturadas.
+export async function precioVigente(categoriaId, fecha = hoy(), conUsd = false) {
+  const cols = conUsd ? 'precio_kg,precio_usd,vigente_desde' : 'precio_kg,vigente_desde';
   const rows = await q(
-    supa.from('precios').select('precio_kg')
+    supa.from('precios').select(cols)
       .eq('categoria_id', categoriaId).lte('vigente_desde', fecha)
       .order('vigente_desde', { ascending: false }).limit(1)
   );
   if (!rows.length) throw new Error('No hay precio vigente para la categoría');
-  return Number(rows[0].precio_kg);
+  const p = rows[0];
+  return {
+    precio_kg: p.precio_kg == null ? null : Number(p.precio_kg),
+    precio_usd: p.precio_usd == null ? null : Number(p.precio_usd),
+    vigente_desde: p.vigente_desde,
+  };
 }

@@ -5,8 +5,18 @@ import { useAuth } from '../auth.jsx';
 import { CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
 
 const CHIP = {
-  en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'], observado: ['warn', 'Difer. de peso'],
+  en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'],
+  observado: ['warn', 'Difer. de peso'], anulado: ['bad', 'Anulada'],
 };
+
+// Descuentos que se aplican sobre una recepción. El monto fijo va en dólares
+// porque la valorización del contrato es en USD/kg.
+const TIPO_DESC = [
+  ['kg', 'Kilos', 'kg', 'Se descuentan del peso antes de valorizar.'],
+  ['pct', 'Porcentaje', '%', 'Se descuenta del valor de la carga.'],
+  ['usd', 'Monto', 'USD', 'Monto fijo en dólares, descontado al final.'],
+];
+const descTexto = (d) => `${d.tipo === 'pct' ? `${d.valor} %` : d.tipo === 'usd' ? `USD ${d.valor}` : `${fmtKg(d.valor)} kg`}`;
 
 // Respaldos que pide el proceso al despachar. El nombre del campo viaja al
 // servidor y define cómo queda etiquetada cada foto en la guía.
@@ -38,11 +48,19 @@ export default function Despachos() {
   const formVacio = () => ({
     patio_id: 1, categoria_id: 1, kg_origen: '', unidad: unidadGuardada(),
     guia_mel: '', fecha: hoyISO(), ev: {},
+    transportista: '', transportista_rut: '', patente_tracto: '', patente_rampla: '',
+  });
+  const recepVacia = () => ({
+    kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [],
+    ticket_numero: '', vale_numero: '', tara: '', unidad_tara: unidadGuardada(),
+    descuentos: [], nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
   });
   const [form, setForm] = useState(formVacio);
   const [detalle, setDetalle] = useState(null);
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
-  const [rForm, setRForm] = useState({ kg_destino: '', unidad: 'kg', categoria_final_id: '', observacion: '', foto: [] });
+  const [anular, setAnular] = useState(null);         // guía que se está anulando
+  const [aForm, setAForm] = useState({ motivo: '', reemplazar: false });
+  const [rForm, setRForm] = useState(recepVacia);
   const [tForm, setTForm] = useState({ categoria_id: 1, kg: '', unidad: unidadGuardada() });
   const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
   const [obs, setObs] = useState('');
@@ -56,6 +74,8 @@ export default function Despachos() {
   useEffect(() => { load(); api('/maestros').then(setMaestros).catch(() => {}); }, []);
   if (!rows) return <div className="loading">Cargando despachos…</div>;
 
+  // La interfaz no ofrece lo que el servidor todavía no puede guardar.
+  const fn = maestros?.funciones ?? {};
   const puedeCrear = ['limpieza', 'ito', 'coordinador'].includes(user.role);
   const puedeRecep = ['vendor', 'ito', 'coordinador'].includes(user.role);
   const puedeTras = ['vendor', 'coordinador'].includes(user.role);
@@ -80,6 +100,9 @@ export default function Despachos() {
       fd.append('kg_origen', kg);
       fd.append('guia_mel', form.guia_mel.trim());
       fd.append('fecha', form.fecha);
+      for (const k of ['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla']) {
+        if (form[k]?.trim()) fd.append(k, form[k].trim());
+      }
       let n = 0;
       for (const [tipo, archivos] of Object.entries(form.ev)) {
         for (const f of archivos) { fd.append(tipo, f); n++; }
@@ -101,12 +124,43 @@ export default function Despachos() {
       fd.append('kg_destino', kg);
       if (rForm.categoria_final_id) fd.append('categoria_final_id', rForm.categoria_final_id);
       if (rForm.observacion) fd.append('observacion', rForm.observacion);
+      if (rForm.ticket_numero.trim()) fd.append('ticket_numero', rForm.ticket_numero.trim());
+      if (rForm.vale_numero.trim()) fd.append('vale_numero', rForm.vale_numero.trim());
+      const tara = aKg(rForm.tara, rForm.unidad_tara);
+      if (tara) fd.append('tara_kg', tara);
+      if (rForm.descuentos.length) fd.append('descuentos', JSON.stringify(rForm.descuentos));
       for (const f of rForm.foto ?? []) fd.append('recepcion', f);
       const d = await api(`/despachos/${recep.id}/recepcionar`, { method: 'POST', body: fd });
       toast(d.estado === 'observado'
         ? `Recepción registrada con diferencia de ${d.dif_pct}%: queda observada para el ITO`
         : 'Recepción registrada dentro de la tolerancia');
       setRecep(null);
+      load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // Descuentos que se van armando dentro del modal de recepción, antes de guardar.
+  function agregarDesc() {
+    const d = rForm.nuevoDesc;
+    if (!(Number(d.valor) > 0) || !d.glosa.trim()) return toast('Indique monto y glosa del descuento', true);
+    if (d.tipo === 'pct' && Number(d.valor) > 100) return toast('El porcentaje no puede superar el 100%', true);
+    setRForm({
+      ...rForm,
+      descuentos: [...rForm.descuentos, { tipo: d.tipo, valor: Number(d.valor), glosa: d.glosa.trim() }],
+      nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
+    });
+  }
+
+  async function anularGuia() {
+    if (!aForm.motivo.trim()) return toast('El motivo de la anulación es obligatorio', true);
+    try {
+      const r = await api(`/despachos/${anular.id}/anular`, {
+        method: 'POST', body: { motivo: aForm.motivo.trim(), reemplazar: aForm.reemplazar },
+      });
+      toast(r.reemplazo
+        ? `${anular.guia} anulada y reemplazada por ${r.reemplazo.guia}`
+        : `${anular.guia} anulada`);
+      setAnular(null); setAForm({ motivo: '', reemplazar: false });
       load();
     } catch (e) { toast(e.message, true); }
   }
@@ -158,11 +212,13 @@ export default function Despachos() {
       ]} />
 
       {tab === 'd1' && (() => {
+        const anuladas = rows.filter((d) => d.estado === 'anulado').length;
         const FILTROS = [
           ['todas', 'Todas', rows.length],
           ['en_transito', 'En tránsito', enTransito],
           ['observado', 'Con diferencia', observados],
           ['recepcionado', 'Recepcionadas', rows.filter((d) => d.estado === 'recepcionado').length],
+          ...(anuladas ? [['anulado', 'Anuladas', anuladas]] : []),
         ];
         const visibles = filtro === 'todas' ? rows : rows.filter((d) => d.estado === filtro);
         return (
@@ -181,7 +237,7 @@ export default function Despachos() {
           <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th className="acc"></th></tr></thead>
           <tbody>
             {visibles.map((d) => (
-              <tr key={d.id}>
+              <tr key={d.id} className={d.estado === 'anulado' ? 'anulada' : undefined}>
                 <td>
                   <span className="mono">{d.guia}</span>
                   {d.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {d.guia_mel}</small></>}
@@ -190,7 +246,12 @@ export default function Despachos() {
                 <td>{d.categoria}{d.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {d.categoria_final}</span>}</td>
                 <td className="num">{fmtKg(d.kg_origen)}</td>
                 <td className="num">{d.kg_destino != null ? fmtKg(d.kg_destino) : '—'}</td>
-                <td className="num">{fmtCLP(d.valor)}</td>
+                <td className="num">
+                  {fmtCLP(d.valor)}
+                  {d.descuentos?.length > 0 && (
+                    <><br /><small style={{ color: 'var(--bad-tx)' }}>{d.descuentos.length} descuento(s)</small></>
+                  )}
+                </td>
                 <td title={d.fotos ? `${d.fotos} respaldo(s) adjunto(s)` : 'Sin respaldos'}>
                   {d.fotos
                     ? <div className="thumbs">{Array.from({ length: Math.min(d.fotos, 3) }).map((_, i) => <i key={i} />)}</div>
@@ -205,11 +266,15 @@ export default function Despachos() {
                       setRecep(d);
                       // El peso parte VACÍO: la recepción es una declaración
                       // independiente, no la confirmación de lo que dijo MEL.
-                      setRForm({ kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [] });
+                      setRForm(recepVacia());
                     }}>Recepcionar</button>
                   )}
                   {d.estado === 'observado' && puedeResolver && (
                     <button className="btn sm" onClick={() => { setResolver(d); setObs(''); }}>Resolver</button>
+                  )}{' '}
+                  {/* Una guía no se borra: se anula con motivo y queda en el libro. */}
+                  {fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeResolver && (
+                    <button className="btn sm danger" onClick={() => { setAnular(d); setAForm({ motivo: '', reemplazar: false }); }}>Anular</button>
                   )}
                 </td>
               </tr>
@@ -259,7 +324,7 @@ export default function Despachos() {
                           {puedeRecep ? (
                             <button className="btn sm primary" onClick={() => {
                               setRecep(d);
-                              setRForm({ kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [] });
+                              setRForm(recepVacia());
                             }}>Registrar pesaje</button>
                           ) : <Chip tone="info">En tránsito</Chip>}
                         </td>
@@ -354,9 +419,67 @@ export default function Despachos() {
               <div><small style={{ color: 'var(--muted)' }}>Pesaje La Negra</small><br />
                 <b>{detalle.kg_destino != null ? `${fmtKg(detalle.kg_destino)} kg` : 'pendiente'}</b>
                 {detalle.dif_pct != null && <span style={{ color: Math.abs(detalle.dif_pct) > 2 ? 'var(--bad-tx)' : 'var(--muted)', fontSize: 12 }}> ({detalle.dif_pct.toFixed(2)}%)</span>}</div>
-              <div><small style={{ color: 'var(--muted)' }}>Precio congelado</small><br /><b>{detalle.precio_kg != null ? `$ ${detalle.precio_kg}/kg` : '—'}</b></div>
-              <div><small style={{ color: 'var(--muted)' }}>Valorización</small><br /><b>{fmtCLP(detalle.valor)}</b></div>
+              <div><small style={{ color: 'var(--muted)' }}>Precio congelado</small><br />
+                <b>{detalle.precio_usd != null ? `USD ${detalle.precio_usd}/kg` : detalle.precio_kg != null ? `$ ${detalle.precio_kg}/kg` : '—'}</b>
+                {detalle.dolar != null && <span style={{ color: 'var(--muted)', fontSize: 12 }}> · dólar $ {detalle.dolar}</span>}</div>
+              <div><small style={{ color: 'var(--muted)' }}>Valorización</small><br /><b>{fmtCLP(detalle.valor)}</b>
+                {detalle.valor_usd != null && <span style={{ color: 'var(--muted)', fontSize: 12 }}> · USD {detalle.valor_usd}</span>}</div>
             </div>
+
+            {(detalle.transportista || detalle.patente_tracto) && (
+              <>
+                <div className="ev-tit">Transporte</div>
+                <div className="grid g2" style={{ gap: 10, marginBottom: 4 }}>
+                  <div><small style={{ color: 'var(--muted)' }}>Transportista</small><br /><b>{detalle.transportista || '—'}</b></div>
+                  <div><small style={{ color: 'var(--muted)' }}>RUT</small><br /><b className="mono">{detalle.transportista_rut || '—'}</b></div>
+                  <div><small style={{ color: 'var(--muted)' }}>Patente tracto</small><br /><b className="mono">{detalle.patente_tracto || '—'}</b></div>
+                  <div><small style={{ color: 'var(--muted)' }}>Patente rampla / batea</small><br /><b className="mono">{detalle.patente_rampla || '—'}</b></div>
+                </div>
+              </>
+            )}
+
+            {(detalle.ticket_numero || detalle.vale_numero || detalle.tara_kg != null) && (
+              <>
+                <div className="ev-tit">Pesaje en La Negra</div>
+                <div className="grid g2" style={{ gap: 10, marginBottom: 4 }}>
+                  <div><small style={{ color: 'var(--muted)' }}>N° de ticket</small><br /><b className="mono">{detalle.ticket_numero || '—'}</b></div>
+                  <div><small style={{ color: 'var(--muted)' }}>N° de vale</small><br /><b className="mono">{detalle.vale_numero || '—'}</b></div>
+                  <div><small style={{ color: 'var(--muted)' }}>Tara (camión vacío)</small><br />
+                    <b>{detalle.tara_kg != null ? `${fmtKg(detalle.tara_kg)} kg` : '—'}</b></div>
+                  <div><small style={{ color: 'var(--muted)' }}>Bruto del ticket</small><br />
+                    <b>{detalle.bruto_kg != null ? `${fmtKg(detalle.bruto_kg)} kg` : '—'}</b></div>
+                </div>
+              </>
+            )}
+
+            {detalle.descuentos?.length > 0 && (
+              <>
+                <div className="ev-tit">Descuentos aplicados en la recepción</div>
+                {detalle.descuentos.map((d) => (
+                  <div className="pend" key={d.id}>
+                    <Chip tone="bad">{descTexto(d)}</Chip>
+                    <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small></span>
+                    {puedeResolver && !detalle.ep_folio && (
+                      <button className="btn sm danger go" onClick={async () => {
+                        try {
+                          const r = await api(`/despachos/${detalle.id}/descuentos/${d.id}`, { method: 'DELETE' });
+                          toast('Descuento eliminado');
+                          setDetalle(r); load();
+                        } catch (e) { toast(e.message, true); }
+                      }}>Quitar</button>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+
+            {detalle.estado === 'anulado' && (
+              <div className="aviso bad">
+                <b>Guía anulada</b>
+                <p>{detalle.motivo_anulacion} — {detalle.anulada_por}, {detalle.anulada_el}.
+                {detalle.reemplazada_por && <> Fue reemplazada por otra guía del libro.</>}</p>
+              </div>
+            )}
             {detalle.obs_recepcion && <div className="audit-note">Observación: {detalle.obs_recepcion}</div>}
             <div className="ev-tit">Respaldos de la guía</div>
             {evidencia == null && <div className="loading" style={{ padding: '18px 0' }}>Cargando respaldos…</div>}
@@ -411,6 +534,31 @@ export default function Despachos() {
         <CampoPeso label="Peso en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
           onValor={(v) => setForm({ ...form, kg_origen: v })}
           onUnidad={(u) => setForm({ ...form, unidad: u })} />
+
+        {fn.transporte && <>
+        <div className="ev-tit">Transporte
+          <small>Obligatorio en la guía electrónica desde el 1 de noviembre de 2026 (Res. Ex. 154 del SII)</small>
+        </div>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="Transportista">
+            <input value={form.transportista} onChange={(e) => setForm({ ...form, transportista: e.target.value })}
+              placeholder="Nombre o razón social" />
+          </Field>
+          <Field label="RUT del transportista">
+            <input value={form.transportista_rut} onChange={(e) => setForm({ ...form, transportista_rut: e.target.value })}
+              placeholder="76.010.722-0" />
+          </Field>
+          <Field label="Patente del tracto">
+            <input value={form.patente_tracto} onChange={(e) => setForm({ ...form, patente_tracto: e.target.value.toUpperCase() })}
+              placeholder="ABCD12" />
+          </Field>
+          <Field label="Patente de la rampla o batea">
+            <input value={form.patente_rampla} onChange={(e) => setForm({ ...form, patente_rampla: e.target.value.toUpperCase() })}
+              placeholder="EFGH34" />
+          </Field>
+        </div>
+        </>}
+
         <div className="ev-tit">Respaldos de la guía <small>JPG, PNG o WebP · máx. 5 MB · hasta 2 fotos por respaldo</small></div>
         {EVIDENCIA.map(([tipo, etiqueta, ayuda]) => {
           const puestas = form.ev[tipo] ?? [];
@@ -467,6 +615,54 @@ export default function Despachos() {
             </>
           );
         })()}
+        {fn.pesaje && <>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="N° de ticket de báscula" hint="El folio que imprime la romana de La Negra.">
+            <input value={rForm.ticket_numero} onChange={(e) => setRForm({ ...rForm, ticket_numero: e.target.value })} placeholder="114523" />
+          </Field>
+          <Field label="N° de vale">
+            <input value={rForm.vale_numero} onChange={(e) => setRForm({ ...rForm, vale_numero: e.target.value })} placeholder="8871" />
+          </Field>
+        </div>
+        <CampoPeso label="Tara · peso del camión vacío"
+          hint={(() => {
+            const neto = aKg(rForm.kg_destino, rForm.unidad);
+            const tara = aKg(rForm.tara, rForm.unidad_tara);
+            return neto && tara
+              ? `Bruto del ticket: ${fmtKg(neto + tara)} kg (neto ${fmtKg(neto)} + tara ${fmtKg(tara)}).`
+              : 'Queda registrada junto al ticket. El peso valorizado sigue siendo el neto.';
+          })()}
+          valor={rForm.tara} unidad={rForm.unidad_tara}
+          onValor={(v) => setRForm({ ...rForm, tara: v })}
+          onUnidad={(u) => setRForm({ ...rForm, unidad_tara: u })} />
+        </>}
+
+        {fn.desc_item && <>
+        <div className="ev-tit">Descuentos de la carga <small>humedad, material ajeno, mermas</small></div>
+        {rForm.descuentos.length > 0 && rForm.descuentos.map((d, i) => (
+          <div className="pend" key={i}>
+            <Chip tone="bad">{descTexto(d)}</Chip>
+            <span>{d.glosa}</span>
+            <button className="btn sm danger go"
+              onClick={() => setRForm({ ...rForm, descuentos: rForm.descuentos.filter((_, j) => j !== i) })}>Quitar</button>
+          </div>
+        ))}
+        <div className="desc-nuevo">
+          <select value={rForm.nuevoDesc.tipo}
+            onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, tipo: e.target.value } })}>
+            {TIPO_DESC.map(([id, label, u]) => <option key={id} value={id}>{label} ({u})</option>)}
+          </select>
+          <input type="number" min="0" step="0.01" placeholder="0" value={rForm.nuevoDesc.valor}
+            onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, valor: e.target.value } })} />
+          <input placeholder="Motivo del descuento" value={rForm.nuevoDesc.glosa}
+            onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, glosa: e.target.value } })} />
+          <button className="btn sm" onClick={agregarDesc}>Agregar</button>
+        </div>
+        <small style={{ color: 'var(--muted)', display: 'block', marginBottom: 14 }}>
+          {TIPO_DESC.find(([t]) => t === rForm.nuevoDesc.tipo)?.[3]}
+        </small>
+        </>}
+
         <Field label="Foto del ticket de báscula La Negra" hint="Respalda el peso que acaba de declarar. Queda adjunto a la guía.">
           <input type="file" multiple accept="image/jpeg,image/png,image/webp"
             onChange={(e) => setRForm({ ...rForm, foto: Array.from(e.target.files).slice(0, 2) })} />
@@ -491,6 +687,35 @@ export default function Despachos() {
         <Field label="Resolución del ITO (obligatoria)" hint="Queda en la guía y en la bitácora de auditoría.">
           <textarea rows="2" value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ej.: diferencia justificada por humedad; se valida el peso de destino." />
         </Field>
+      </Modal>
+
+      <Modal open={!!anular} title={anular && `Anular ${anular.guia}`} onClose={() => setAnular(null)}
+        footer={<>
+          <button className="btn" onClick={() => setAnular(null)}>Cancelar</button>
+          <button className="btn danger" onClick={anularGuia}>
+            {aForm.reemplazar ? 'Anular y emitir reemplazo' : 'Anular guía'}
+          </button>
+        </>}>
+        <div className="aviso">
+          <b>La guía no se borra</b>
+          <p>Queda en el libro marcada como anulada, con su motivo y quién la anuló. El folio
+          <b className="mono"> {anular?.guia}</b> sigue consumido, igual que una guía de papel anulada,
+          y deja de sumar a la cuadratura, al estado de pago y al flujo del mes.</p>
+        </div>
+        <Field label="Motivo de la anulación (obligatorio)"
+          hint="Queda en la guía y en la bitácora de auditoría. Es lo que va a leer un auditor.">
+          <textarea rows="2" value={aForm.motivo} onChange={(e) => setAForm({ ...aForm, motivo: e.target.value })}
+            placeholder="Ej.: error en el peso de origen; el camión volvió al patio sin descargar." />
+        </Field>
+        <label className="check-linea">
+          <input type="checkbox" checked={aForm.reemplazar}
+            onChange={(e) => setAForm({ ...aForm, reemplazar: e.target.checked })} />
+          <span>
+            <b>Emitir la guía que la reemplaza</b>
+            <small>Se crea una guía nueva con folio propio, copiando patio, categoría, peso y transporte
+            de {anular?.guia}. Las dos quedan enlazadas.</small>
+          </span>
+        </label>
       </Modal>
 
       <Modal open={nuevoTras} title="Despachar traslado La Negra → Lampa" onClose={() => setNuevoTras(false)}

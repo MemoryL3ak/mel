@@ -45,6 +45,19 @@ export default function Cuadratura() {
         )}
       </PageHead>
 
+      {/* Lo que la semana tiene que explicar, antes de la tabla: si hay que
+          buscarlo entre las cifras, no es una alerta. */}
+      {(data.alertas ?? []).length > 0 && (
+        <div className="alertas">
+          {data.alertas.map((a, i) => (
+            <div key={i} className={`alerta ${a.tono}`}>
+              {a.categoria && <b>{a.categoria}</b>}
+              <span>{a.texto}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-h">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -88,13 +101,13 @@ export default function Cuadratura() {
                   <th rowSpan="2">Categoría</th>
                   <th colSpan="3" className="gh gsep">Guías de despacho</th>
                   <th colSpan="4" className="gh gsep">Kilos</th>
-                  <th colSpan="3" className="gh gsep">Monto valorizado</th>
+                  <th colSpan="4" className="gh gsep">Monto valorizado</th>
                   <th rowSpan="2" className="num gsep">Observadas</th>
                 </tr>
                 <tr>
                   <th className="num gsep">MEL</th><th className="num">La Negra</th><th className="num">Dif.</th>
                   <th className="num gsep">MEL</th><th className="num">La Negra</th><th className="num">Dif. kg</th><th className="num">Dif. %</th>
-                  <th className="num gsep">MEL</th><th className="num">La Negra</th><th className="num">Dif.</th>
+                  <th className="num gsep">MEL</th><th className="num">La Negra</th><th className="num">Dif.</th><th className="num">Descuentos</th>
                 </tr>
               </thead>
               <tbody>
@@ -133,6 +146,10 @@ export default function Cuadratura() {
                       <td className="num dif" style={fueraTol ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
                         {num(x.dif_monto, fmtCLP)}
                       </td>
+                      <td className="num" style={x.desc_monto ? { color: 'var(--bad-tx)', fontWeight: 600 } : {}}
+                        title={x.desc_guias ? `${x.desc_guias} guía(s) con descuentos` : undefined}>
+                        {x.desc_monto ? <>-{fmtCLP(x.desc_monto)}{x.desc_pct != null && <><br /><small>{x.desc_pct.toFixed(2)} %</small></>}</> : '—'}
+                      </td>
                       <td className="num gsep" style={x.observados ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>{x.observados || '—'}</td>
                     </tr>
                   );
@@ -152,6 +169,7 @@ export default function Cuadratura() {
                     <td className="num gsep">{fmtCLP(sum('monto_mel'))}</td>
                     <td className="num">{fmtCLP(sum('monto_lanegra', 'monto'))}</td>
                     <td className="num dif">{fmtCLP(sum('monto_lanegra', 'monto') - sum('monto_mel'))}</td>
+                    <td className="num">{sum('desc_monto') ? `-${fmtCLP(sum('desc_monto'))}` : '—'}</td>
                     <td className="num gsep">{sum('observados') || '—'}</td>
                   </tr>
                 )}
@@ -197,6 +215,25 @@ export default function Cuadratura() {
                   <td className="num">{fmtKg(x.kg_lampa_rec)}</td>
                   <td className="num">{fmtKg(x.kg_lampa_rec - x.kg_lampa_desp)}</td>
                   <td className="num">{x.pendientes_transito || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        </div>
+      )}
+
+      {(data.anuladas ?? []).length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-h"><h3>Guías anuladas en la semana</h3><small>no suman a la cuadratura</small></div>
+          <div className="tbl-wrap"><table>
+            <thead><tr><th>Guía</th><th>Fecha</th><th>Motivo</th><th>Anulada por</th></tr></thead>
+            <tbody>
+              {data.anuladas.map((a) => (
+                <tr key={a.guia}>
+                  <td className="mono">{a.guia}</td>
+                  <td className="mono">{a.fecha}</td>
+                  <td style={{ color: 'var(--ink-2)' }}>{a.motivo || '—'}</td>
+                  <td>{a.anulada_por || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -253,7 +290,7 @@ export default function Cuadratura() {
                 <thead><tr>
                   <th>Guía</th><th>Fecha</th>
                   <th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Dif.</th>
-                  <th className="num">Monto MEL</th><th className="num">Monto La Negra</th>
+                  <th className="num">Monto MEL</th><th className="num">Monto La Negra</th><th>Descuentos</th>
                 </tr></thead>
                 <tbody>
                   {fila.guias.map((g) => (
@@ -275,6 +312,22 @@ export default function Cuadratura() {
                         )}
                       </td>
                       <td className="num">{g.monto_lanegra != null ? fmtCLP(g.monto_lanegra) : '—'}</td>
+                      <td style={{ maxWidth: 260 }}>
+                        {(g.descuentos ?? []).length === 0 ? <span style={{ color: 'var(--muted)' }}>—</span> : (
+                          <>
+                            {g.descuentos.map((d, i) => (
+                              <div key={i} style={{ fontSize: 12, lineHeight: 1.45 }}>
+                                <b style={{ color: 'var(--bad-tx)' }}>
+                                  {d.tipo === 'pct' ? `${d.valor} %` : d.tipo === 'usd' ? `USD ${d.valor}` : `${fmtKg(d.valor)} kg`}
+                                </b> · {d.glosa}
+                              </div>
+                            ))}
+                            {g.desc_monto != null && (
+                              <small style={{ color: 'var(--bad-tx)', fontWeight: 700 }}>-{fmtCLP(g.desc_monto)}</small>
+                            )}
+                          </>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

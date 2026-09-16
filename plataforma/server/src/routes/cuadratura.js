@@ -4,6 +4,12 @@
 import { Router } from 'express';
 import { supa, q, ah, audit, semanaISO } from '../supa.js';
 import { auth } from '../auth.js';
+import { tiene } from '../esquema.js';
+import { valorDolar } from '../dolar.js';
+
+// Sobre este porcentaje, los descuentos de una categoría dejan de ser ruido
+// y pasan a ser algo que la semana tiene que explicar antes de cerrarse.
+const UMBRAL_DESCUENTO_PCT = 5;
 
 const r = Router();
 
@@ -21,22 +27,57 @@ function rangoSemana(anio, semana) {
   return { desde: f(ini), hasta: f(fin) };
 }
 
+// Descuentos por ítem de las guías de la semana, agrupados por guía.
+async function descuentosDeSemana(ids) {
+  if (!tiene.desc_item || !ids.length) return new Map();
+  const rows = await q(supa.from('despacho_descuentos').select('*').in('despacho_id', ids));
+  const m = new Map();
+  for (const x of rows) {
+    if (!m.has(x.despacho_id)) m.set(x.despacho_id, []);
+    m.get(x.despacho_id).push(x);
+  }
+  return m;
+}
+
 async function calcular(anio, semana) {
   const { desde, hasta } = rangoSemana(anio, semana);
-  const [cats, precios, desp, tras] = await Promise.all([
+  const [cats, precios, despTodos, tras, dolHoy] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
-    q(supa.from('precios').select('categoria_id, precio_kg, vigente_desde').order('vigente_desde', { ascending: false })),
+    q(supa.from('precios').select('*').order('vigente_desde', { ascending: false })),
     // `*` y no una lista: así el folio de MEL entra cuando la columna existe,
     // sin romper la consulta mientras la migración esté pendiente.
     q(supa.from('despachos').select('*').gte('fecha', desde).lte('fecha', hasta)),
     q(supa.from('traslados').select('categoria_id, kg, kg_lampa, estado')
       .gte('fecha', desde).lte('fecha', hasta)),
+    valorDolar().catch(() => null),
   ]);
+  let desp = despTodos;
+  const dolarRef = dolHoy?.valor ?? null;
+  // Una guía anulada no existe para la cuadratura: queda en el libro con su
+  // motivo, pero no suma kilos, ni guías, ni montos.
+  const anuladas = desp.filter((d) => d.estado === 'anulado');
+  desp = desp.filter((d) => d.estado !== 'anulado');
+
+  const descuentos = await descuentosDeSemana(desp.map((d) => d.id));
+
   // Lo que MEL despachó y La Negra aún no recepciona no tiene precio congelado.
   // Para poder cuadrar montos igual que kilos, esas guías se valorizan con el
   // precio que regía a su fecha; la fila avisa cuántas van estimadas así.
-  const precioRef = (catId, fecha) =>
-    Number(precios.find((p) => p.categoria_id === catId && p.vigente_desde <= fecha)?.precio_kg ?? 0);
+  const precioRef = (catId, fecha) => {
+    const p = precios.find((x) => x.categoria_id === catId && x.vigente_desde <= fecha);
+    if (!p) return 0;
+    // Una vigencia en dólares se lleva a pesos con el último dólar conocido.
+    if (p.precio_usd != null) return Number(p.precio_usd) * (dolarRef ?? 0);
+    return Number(p.precio_kg ?? 0);
+  };
+  // Valor que habría tenido la recepción sin descuentos: la diferencia contra
+  // lo efectivamente valorizado es, exactamente, lo que costaron los descuentos.
+  const brutoDe = (d) => {
+    if (d.kg_destino == null) return 0;
+    if (d.precio_usd != null && d.dolar != null) return Math.round(Number(d.kg_destino) * Number(d.precio_usd) * Number(d.dolar));
+    return Math.round(Number(d.kg_destino) * Number(d.precio_kg ?? 0));
+  };
+
   const detalle = cats.map((c) => {
     // Las guías despachadas se cuentan por la categoría declarada en origen y
     // las recepcionadas por la categoría final: si hubo reclasificación, la
@@ -59,11 +100,20 @@ async function calcular(anio, semana) {
     const guias = [...new Set([...dMel, ...dLN])].map((d) => {
       const enMel = d.categoria_id === c.id;
       const enLN = (d.categoria_final_id ?? d.categoria_id) === c.id && d.kg_destino != null;
-      const precio = d.precio_kg != null ? Number(d.precio_kg) : precioRef(d.categoria_id, d.fecha);
+      // El precio congelado manda; si la guía viene en dólares se lleva a pesos
+      // con el tipo de cambio que se congeló con ella.
+      const precio = d.precio_usd != null && d.dolar != null ? Number(d.precio_usd) * Number(d.dolar)
+        : d.precio_kg != null ? Number(d.precio_kg)
+        : precioRef(d.categoria_id, d.fecha);
       const kgO = Number(d.kg_origen);
       const kgD = d.kg_destino == null ? null : Number(d.kg_destino);
+      const desc = descuentos.get(d.id) ?? [];
       return {
         guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha, estado: d.estado,
+        descuentos: desc.map((x) => ({ tipo: x.tipo, valor: Number(x.valor), glosa: x.glosa })),
+        desc_monto: enLN && desc.length ? Math.round(brutoDe(d) - Number(d.valor ?? 0)) : null,
+        precio_usd: d.precio_usd == null ? null : Number(d.precio_usd),
+        dolar: d.dolar == null ? null : Number(d.dolar),
         categoria_origen: nombreCat(d.categoria_id),
         categoria_final: d.categoria_final_id ? nombreCat(d.categoria_final_id) : null,
         kg_origen: enMel ? kgO : null,
@@ -71,7 +121,7 @@ async function calcular(anio, semana) {
         dif_kg: kgD == null ? null : Math.round((kgD - kgO) * 10) / 10,
         dif_pct: kgD == null ? null : Math.round(((kgD - kgO) / kgO) * 10000) / 100,
         precio_kg: precio || null,
-        precio_estimado: d.precio_kg == null,
+        precio_estimado: d.precio_kg == null && d.precio_usd == null,
         monto_mel: enMel ? Math.round(kgO * precio) : null,
         monto_lanegra: enLN ? Math.round(Number(d.valor ?? 0)) : null,
         lado: enMel && enLN ? 'ambos' : enMel ? 'mel' : 'lanegra',
@@ -91,25 +141,78 @@ async function calcular(anio, semana) {
       monto_lanegra: Math.round(montoLN),
       dif_monto: Math.round(montoLN - montoMel),
       // Guías del lado MEL valorizadas con precio de referencia, no congelado.
-      montos_estimados: dMel.filter((d) => d.precio_kg == null).length,
+      montos_estimados: dMel.filter((d) => d.precio_kg == null && d.precio_usd == null).length,
       monto: Math.round(montoLN),   // compatibilidad con cierres anteriores
       pendientes_transito: dMel.filter((d) => d.estado === 'en_transito').length,
       observados: dMel.filter((d) => d.estado === 'observado').length,
+      // descuentos por ítem aplicados en la recepción
+      ...(() => {
+        const conDesc = dLN.filter((d) => (descuentos.get(d.id) ?? []).length);
+        const todos = conDesc.flatMap((d) => descuentos.get(d.id));
+        const bruto = dLN.reduce((a, d) => a + brutoDe(d), 0);
+        const monto = bruto - montoLN;
+        return {
+          desc_guias: conDesc.length,
+          desc_kg: todos.filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0),
+          desc_usd: todos.filter((x) => x.tipo === 'usd').reduce((a, x) => a + Number(x.valor), 0),
+          desc_monto: Math.round(monto),
+          // cuánto pesan los descuentos sobre lo que se habría facturado
+          desc_pct: bruto > 0 ? Math.round((monto / bruto) * 10000) / 100 : null,
+          bruto_lanegra: Math.round(bruto),
+        };
+      })(),
     };
   }).filter((x) => x.kg_mel || x.kg_lanegra || x.kg_lampa_desp);
-  return { desde, hasta, detalle };
+
+  // Lo que la semana tiene que explicar, dicho una vez y en un solo lugar.
+  const alertas = [];
+  for (const x of detalle) {
+    if (x.dif_pct != null && Math.abs(x.dif_pct) > 2) {
+      alertas.push({ tono: 'bad', categoria: x.categoria, texto: `Diferencia de peso de ${x.dif_pct.toFixed(2)}% entre MEL y La Negra.` });
+    }
+    if (x.observados) {
+      alertas.push({ tono: 'warn', categoria: x.categoria, texto: `${x.observados} recepción(es) observada(s) sin resolver.` });
+    }
+    if (x.desc_pct != null && x.desc_pct >= UMBRAL_DESCUENTO_PCT) {
+      alertas.push({
+        tono: 'bad', categoria: x.categoria,
+        texto: `Los descuentos alcanzan el ${x.desc_pct.toFixed(2)}% de lo valorizado (${x.desc_guias} guía(s)).`,
+      });
+    } else if (x.desc_guias) {
+      alertas.push({
+        tono: 'warn', categoria: x.categoria,
+        texto: `${x.desc_guias} guía(s) con descuentos aplicados en la recepción.`,
+      });
+    }
+    if (x.dif_guias) {
+      alertas.push({ tono: 'warn', categoria: x.categoria, texto: `Faltan ${Math.abs(x.dif_guias)} guía(s) por recepcionar.` });
+    }
+  }
+  if (anuladas.length) {
+    alertas.push({
+      tono: 'info', categoria: null,
+      texto: `${anuladas.length} guía(s) anulada(s) en la semana: ${anuladas.map((d) => d.guia).join(', ')}. No suman a la cuadratura.`,
+    });
+  }
+
+  return {
+    desde, hasta, detalle, alertas,
+    anuladas: anuladas.map((d) => ({
+      guia: d.guia, fecha: d.fecha, motivo: d.motivo_anulacion ?? null, anulada_por: d.anulada_por ?? null,
+    })),
+  };
 }
 
 r.get('/cuadratura', auth('ito', 'coordinador'), ah(async (req, res) => {
   const actual = semanaISO();
   const anio = Number(req.query.anio || actual.anio);
   const semana = Number(req.query.semana || actual.semana);
-  const [{ desde, hasta, detalle }, cerradas] = await Promise.all([
+  const [{ desde, hasta, detalle, alertas, anuladas }, cerradas] = await Promise.all([
     calcular(anio, semana),
     q(supa.from('cuadraturas').select('*').order('anio', { ascending: false }).order('semana', { ascending: false }).limit(12)),
   ]);
   const cerrada = cerradas.find((c) => c.anio === anio && c.semana === semana) ?? null;
-  res.json({ anio, semana, actual, desde, hasta, detalle, cerrada, historico: cerradas });
+  res.json({ anio, semana, actual, desde, hasta, detalle, alertas, anuladas, cerrada, historico: cerradas });
 }));
 
 // Cierra la cuadratura de la semana con el snapshot calculado en ese momento.
@@ -119,9 +222,16 @@ r.post('/cuadratura/cerrar', auth('ito', 'coordinador'), ah(async (req, res) => 
   const { detalle } = await calcular(Number(anio), Number(semana));
   if (!detalle.length) return res.status(400).json({ error: 'La semana no registra movimientos que cuadrar' });
 
-  const conDif = detalle.some((x) => x.observados > 0 || (x.dif_pct != null && Math.abs(x.dif_pct) > 2));
+  // Un descuento fuerte es una diferencia como cualquier otra: si se llevó más
+  // del umbral de lo valorizado, la semana no se cierra sin explicarlo.
+  const descFuerte = detalle.some((x) => x.desc_pct != null && x.desc_pct >= UMBRAL_DESCUENTO_PCT);
+  const conDif = descFuerte || detalle.some((x) => x.observados > 0 || (x.dif_pct != null && Math.abs(x.dif_pct) > 2));
   if (conDif && !(observacion || '').trim()) {
-    return res.status(400).json({ error: 'Hay diferencias sobre el 2% u observados: la observación es obligatoria' });
+    return res.status(400).json({
+      error: descFuerte
+        ? `Hay categorías con descuentos sobre el ${UMBRAL_DESCUENTO_PCT}% de lo valorizado: la observación es obligatoria`
+        : 'Hay diferencias sobre el 2% u observados: la observación es obligatoria',
+    });
   }
   const row = await q(supa.from('cuadraturas').upsert({
     anio: Number(anio), semana: Number(semana),
