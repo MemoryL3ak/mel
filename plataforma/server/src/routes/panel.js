@@ -21,9 +21,10 @@ r.get('/panel', auth(), ah(async (req, res) => {
     q(supa.from('estados_pago').select('*').order('periodo', { ascending: false }).limit(6)),
     q(supa.from('cuadraturas').select('anio, semana, estado').order('id', { ascending: false }).limit(1)),
     q(supa.from('auditoria').select('*').order('id', { ascending: false }).limit(6)),
-    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').gte('fecha', mes + '-01')),
+    // Las guías anuladas no suman al flujo del mes ni a la actividad reciente.
+    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').neq('estado', 'anulado').gte('fecha', mes + '-01')),
     q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio').gte('fecha', mes + '-01')),
-    q(supa.from('despachos').select('fecha, kg_origen').gte('fecha', desde14)),
+    q(supa.from('despachos').select('fecha, kg_origen').neq('estado', 'anulado').gte('fecha', desde14)),
     q(supa.from('categorias').select('id, nombre').eq('activo', true)),
     q(supa.from('precios').select('categoria_id, precio_kg, vigente_desde').order('vigente_desde', { ascending: false })),
     contrato(),

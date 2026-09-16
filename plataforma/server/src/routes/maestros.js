@@ -4,6 +4,7 @@ import { supa, q, ah, hoy, audit } from '../supa.js';
 import { auth } from '../auth.js';
 import { contrato, olvidarContrato, venceElPrecio } from '../contrato.js';
 import { tiene } from '../esquema.js';
+import { valorDolar, historialDolar, fijarDolar } from '../dolar.js';
 
 const r = Router();
 
@@ -28,28 +29,38 @@ r.get('/maestros', auth(), ah(async (_req, res) => {
     patios,
     sitios,
     categorias: categorias.map((c) => ({ ...c, precio_kg: vigente[c.id] ?? null })),
+    // Qué funciones tienen respaldo en la base ahora mismo: la interfaz no
+    // debe ofrecer campos que el servidor va a descartar en silencio.
+    funciones: { ...tiene },
   });
 }));
 
 r.get('/valorizacion', auth('ito', 'coordinador'), ah(async (_req, res) => {
-  const [categorias, precios, desp, cfg] = await Promise.all([
+  const [categorias, precios, desp, cfg, dol, histDolar] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
     q(supa.from('precios').select('*').order('vigente_desde', { ascending: false })),
-    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_destino, valor').not('kg_destino', 'is', null)),
+    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_destino, valor, estado').not('kg_destino', 'is', null)),
     contrato(),
+    valorDolar().catch(() => null),
+    historialDolar(30).catch(() => []),
   ]);
   const h = hoy();
   const meses = cfg.meses_vigencia_precio;
+  const vivos = desp.filter((d) => d.estado !== 'anulado');   // lo anulado no valoriza
   const porCat = categorias.map((c) => {
     const vig = precios.find((p) => p.categoria_id === c.id && p.vigente_desde <= h);
-    const propios = desp.filter((d) => (d.categoria_final_id ?? d.categoria_id) === c.id);
+    const propios = vivos.filter((d) => (d.categoria_final_id ?? d.categoria_id) === c.id);
     // El contrato fija la vigencia de cada precio: pasado ese plazo hay que
     // renegociar, y la plataforma tiene que avisarlo antes de que ocurra.
     const vence = vig ? venceElPrecio(vig.vigente_desde, meses) : null;
     const dias = vence ? diasPara(vence) : null;
+    const usd = vig?.precio_usd == null ? null : Number(vig.precio_usd);
     return {
       ...c,
-      precio_kg: vig ? Number(vig.precio_kg) : null,
+      precio_kg: vig?.precio_kg == null ? null : Number(vig.precio_kg),
+      precio_usd: usd,
+      // Referencia en pesos de hoy, solo informativa: lo que se congela es el USD.
+      precio_clp_hoy: usd != null && dol ? Math.round(usd * dol.valor) : null,
       vigente_desde: vig?.vigente_desde ?? null,
       vence_el: vence,
       dias_para_vencer: dias,
@@ -58,18 +69,83 @@ r.get('/valorizacion', auth('ito', 'coordinador'), ah(async (_req, res) => {
       valor_ytd: propios.reduce((a, d) => a + Number(d.valor ?? 0), 0),
     };
   });
-  res.json({ categorias: porCat, historial: precios, meses_vigencia: meses });
+  res.json({
+    categorias: porCat, historial: precios, meses_vigencia: meses,
+    usd: tiene.usd, dolar: dol, historial_dolar: histDolar,
+  });
 }));
+
+// Valida una fila de precio; devuelve el error o null.
+function revisarPrecio({ precio_usd, precio_kg, vigente_desde }) {
+  if (!(Number(precio_usd) > 0) && !(Number(precio_kg) > 0)) return 'Precio válido obligatorio';
+  if (vigente_desde && !/^\d{4}-\d{2}-\d{2}$/.test(vigente_desde)) return 'Fecha de vigencia inválida';
+  return null;
+}
 
 // Nueva vigencia de precio (solo Coordinador): no edita, agrega historia.
 r.post('/precios', auth('coordinador'), ah(async (req, res) => {
-  const { categoria_id, precio_kg, vigente_desde } = req.body || {};
-  if (!categoria_id || !(Number(precio_kg) > 0)) return res.status(400).json({ error: 'Categoría y precio válido son obligatorios' });
+  const { categoria_id, precio_usd, precio_kg, vigente_desde } = req.body || {};
+  if (!categoria_id) return res.status(400).json({ error: 'La categoría es obligatoria' });
+  const mal = revisarPrecio(req.body || {});
+  if (mal) return res.status(400).json({ error: mal });
+
   const row = await q(supa.from('precios').insert({
-    categoria_id, precio_kg: Number(precio_kg),
+    categoria_id,
+    precio_kg: Number(precio_kg) > 0 ? Number(precio_kg) : null,
+    ...(tiene.usd && Number(precio_usd) > 0 ? { precio_usd: Number(precio_usd) } : {}),
     vigente_desde: vigente_desde || hoy(), creado_por: req.user.name,
   }).select().single());
-  await audit(req.user.name, req.user.role, 'Actualizó precio de contrato', `categoría ${categoria_id} → $${precio_kg}/kg`);
+  await audit(req.user.name, req.user.role, 'Actualizó precio de contrato',
+    `categoría ${categoria_id} → ${Number(precio_usd) > 0 ? `USD ${precio_usd}` : `$${precio_kg}`}/kg`);
+  res.json(row);
+}));
+
+// Carga masiva de vigencias: o entran todas, o no entra ninguna. Una carga a
+// medias dejaría la tabla de precios en un estado que nadie pidió.
+r.post('/precios/masivo', auth('coordinador'), ah(async (req, res) => {
+  const filas = Array.isArray(req.body?.filas) ? req.body.filas : [];
+  if (!filas.length) return res.status(400).json({ error: 'No hay filas que cargar' });
+  if (filas.length > 500) return res.status(400).json({ error: 'Máximo 500 filas por carga' });
+
+  const cats = await q(supa.from('categorias').select('id,nombre'));
+  const porNombre = new Map(cats.map((c) => [c.nombre.trim().toLowerCase(), c.id]));
+  const errores = [];
+  const limpias = filas.map((f, i) => {
+    const n = i + 1;
+    const catId = Number(f.categoria_id) ||
+      porNombre.get(String(f.categoria ?? '').trim().toLowerCase());
+    if (!catId) errores.push(`Fila ${n}: categoría desconocida ("${f.categoria ?? ''}")`);
+    const mal = revisarPrecio(f);
+    if (mal) errores.push(`Fila ${n}: ${mal}`);
+    return {
+      categoria_id: catId,
+      precio_kg: Number(f.precio_kg) > 0 ? Number(f.precio_kg) : null,
+      ...(tiene.usd && Number(f.precio_usd) > 0 ? { precio_usd: Number(f.precio_usd) } : {}),
+      vigente_desde: f.vigente_desde || hoy(),
+      creado_por: req.user.name,
+    };
+  });
+  if (errores.length) return res.status(400).json({ error: 'La carga no entró', detalle: errores.slice(0, 12) });
+
+  const rows = await q(supa.from('precios').insert(limpias).select());
+  await audit(req.user.name, req.user.role, 'Carga masiva de precios', `${rows.length} vigencia(s)`);
+  res.json({ cargadas: rows.length, filas: rows });
+}));
+
+/* ---------- valor del dólar ---------- */
+
+r.get('/dolar', auth('ito', 'coordinador'), ah(async (_req, res) => {
+  res.json({ activo: tiene.usd, actual: await valorDolar(), historial: await historialDolar(60) });
+}));
+
+// Registro manual: fines de semana, feriados o caída de la API.
+r.post('/dolar', auth('ito', 'coordinador'), ah(async (req, res) => {
+  if (!tiene.usd) return res.status(503).json({ error: 'Esta función requiere aplicar db/0004_operacion.sql en la base de datos' });
+  const { fecha, valor } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha || '')) return res.status(400).json({ error: 'Fecha inválida' });
+  if (!(Number(valor) > 0)) return res.status(400).json({ error: 'El valor del dólar debe ser mayor que cero' });
+  const row = await fijarDolar(fecha, Number(valor), req.user.name);
+  await audit(req.user.name, req.user.role, 'Fijó el valor del dólar', `${fecha} · $${valor}`);
   res.json(row);
 }));
 

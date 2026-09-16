@@ -412,6 +412,29 @@ table.grp th.gsep,table.grp td.gsep{border-left:2px solid var(--line)}
 table.grp td{font-variant-numeric:tabular-nums}
 /* La diferencia es la respuesta de cada grupo: se lee antes que sus sumandos. */
 table.grp td.dif{font-weight:600;color:var(--ink)}
+/* Alertas de la semana: lo que hay que explicar, antes de la tabla y no dentro. */
+.alertas{display:grid;gap:7px;margin-bottom:16px}
+.alerta{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  border:1px solid var(--warn-line);background:var(--warn-bg);color:var(--warn-tx);
+  border-left:3px solid var(--warn-tx);border-radius:var(--radius-s);
+  padding:10px 15px;font-size:13px;line-height:1.5;
+}
+.alerta.bad{border-color:var(--bad-line);border-left-color:var(--bad-tx);background:var(--bad-bg);color:var(--bad-tx)}
+.alerta.info{border-color:var(--info-line);border-left-color:var(--info-tx);background:var(--info-bg);color:var(--info-tx)}
+.alerta b{font-weight:700;flex-shrink:0}
+/* Una guía anulada sigue en el libro, pero se lee de inmediato que no cuenta. */
+tbody tr.anulada td{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--bad-line)}
+tbody tr.anulada td.acc,tbody tr.anulada td:last-child{text-decoration:none}
+/* Alta rápida de un descuento: tipo, monto y glosa en una línea */
+.desc-nuevo{display:grid;grid-template-columns:150px 110px 1fr auto;gap:8px;align-items:center;margin-top:10px}
+.desc-nuevo input,.desc-nuevo select{margin:0}
+@media (max-width:620px){.desc-nuevo{grid-template-columns:1fr 1fr}.desc-nuevo input:nth-of-type(2){grid-column:1/-1}}
+/* Casilla con explicación al lado, para decisiones que cambian el proceso */
+.check-linea{display:flex;gap:11px;align-items:flex-start;cursor:pointer;padding:11px 0}
+.check-linea input{width:auto;margin-top:2px;flex-shrink:0}
+.check-linea b{display:block;font-size:13.5px}
+.check-linea small{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.5}
 /* Aviso de que la fila se abre: una fila clicable sin señal no se descubre. */
 .abrir{
   display:block;margin-top:2px;font-size:11px;font-weight:600;color:var(--copper);
