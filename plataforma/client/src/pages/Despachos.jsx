@@ -56,7 +56,7 @@ export default function Despachos() {
   });
   const recepVacia = () => ({
     kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [],
-    ticket_numero: '', vale_numero: '', tara: '', unidad_tara: unidadGuardada(),
+    ticket_numero: '', vale_numero: '', tara: '', unidad_tara: unidadGuardada(), con_madera: false,
     descuentos: [], nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
   });
   const [form, setForm] = useState(formVacio);
@@ -134,6 +134,7 @@ export default function Despachos() {
       if (rForm.vale_numero.trim()) fd.append('vale_numero', rForm.vale_numero.trim());
       const tara = aKg(rForm.tara, rForm.unidad_tara);
       if (tara) fd.append('tara_kg', tara);
+      if (fn.tm) fd.append('con_madera', rForm.con_madera ? 'true' : 'false');
       if (rForm.descuentos.length) fd.append('descuentos', JSON.stringify(rForm.descuentos));
       for (const f of rForm.foto ?? []) fd.append('recepcion', f);
       const d = await api(`/despachos/${recep.id}/recepcionar`, { method: 'POST', body: fd });
@@ -443,7 +444,13 @@ export default function Despachos() {
                 <b>{detalle.kg_destino != null ? `${fmtKg(detalle.kg_destino)} kg` : 'pendiente'}</b>
                 {detalle.dif_pct != null && <span style={{ color: Math.abs(detalle.dif_pct) > 2 ? 'var(--bad-tx)' : 'var(--muted)', fontSize: 12 }}> ({detalle.dif_pct.toFixed(2)}%)</span>}</div>
               <div><small style={{ color: 'var(--muted)' }}>Precio congelado</small><br />
-                <b>{detalle.precio_usd != null ? `USD ${detalle.precio_usd}/kg` : detalle.precio_kg != null ? `$ ${detalle.precio_kg}/kg` : '—'}</b>
+                <b>{detalle.precio_usd_tm != null ? `USD ${detalle.precio_usd_tm}/TM`
+                  : detalle.precio_usd != null ? `USD ${detalle.precio_usd}/kg`
+                  : detalle.precio_kg != null ? `$ ${detalle.precio_kg}/kg` : '—'}</b>
+                {detalle.con_madera != null && (
+                  <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+                    {' '}· {detalle.con_madera ? 'con madera (alt. B)' : 'sin madera (alt. A)'}</span>
+                )}
                 {detalle.dolar != null && <span style={{ color: 'var(--muted)', fontSize: 12 }}> · dólar $ {detalle.dolar}</span>}</div>
               <div><small style={{ color: 'var(--muted)' }}>Valorización</small><br /><b>{fmtCLP(detalle.valor)}</b>
                 {detalle.valor_usd != null && <span style={{ color: 'var(--muted)', fontSize: 12 }}> · USD {detalle.valor_usd}</span>}</div>
@@ -678,6 +685,34 @@ export default function Despachos() {
             </>
           );
         })()}
+        {/* Alternativa A o B del contrato. Se decide mirando la carga, y el
+            precio que se elija aquí queda congelado con la guía. */}
+        {fn.tm && (() => {
+          const cat = maestros?.categorias?.find((c) => c.nombre === (
+            rForm.categoria_final_id
+              ? maestros.categorias.find((x) => x.id === rForm.categoria_final_id)?.nombre
+              : recep?.categoria));
+          const a = cat?.precio_usd_tm;
+          const b = cat?.precio_usd_tm_madera;
+          const usd = (v) => v == null ? 'sin precio' : `USD ${Number(v).toLocaleString('es-CL', { minimumFractionDigits: 2 })}/TM`;
+          return (
+            <Field label="¿La carga viene con madera?"
+              hint="Define qué alternativa del contrato se aplica. El precio elegido queda congelado con esta guía.">
+              <div className="alternativas">
+                {[[false, 'Sin madera', 'Alternativa A', a], [true, 'Con madera', 'Alternativa B', b]].map(([val, tit, alt, precio]) => (
+                  <button key={String(val)} type="button"
+                    className={`alt${rForm.con_madera === val ? ' sel' : ''}`}
+                    onClick={() => setRForm({ ...rForm, con_madera: val })}>
+                    <b>{tit}</b>
+                    <small>{alt}</small>
+                    <span className="mono">{usd(precio)}</span>
+                  </button>
+                ))}
+              </div>
+            </Field>
+          );
+        })()}
+
         {fn.pesaje && <>
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="N° de ticket de báscula" hint="El folio que imprime la romana de La Negra.">

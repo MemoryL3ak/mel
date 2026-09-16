@@ -22,12 +22,28 @@ export const TIPO_DESCUENTO = {
 // Valoriza una recepción: primero los kilos descontados, después el precio, y
 // sobre ese valor los descuentos porcentuales y de monto fijo. El orden importa
 // y es el del contrato: no se descuenta dos veces lo mismo.
-export function valorizar({ kg, precio_usd, precio_kg, dolar, descuentos = [] }) {
+export function valorizar({ kg, precio_usd_tm, precio_usd, precio_kg, dolar, descuentos = [] }) {
   const suma = (t) => descuentos.filter((d) => d.tipo === t).reduce((a, d) => a + Number(d.valor), 0);
   const kgNeto = Math.max(Number(kg) - suma('kg'), 0);
   const pct = Math.min(suma('pct'), 100);
   const clp = suma('clp');
 
+  // El contrato está en USD por tonelada métrica. La conversión ocurre aquí y
+  // no al guardar el precio, para que la tabla conserve la cifra del contrato
+  // tal como fue pactada.
+  if (precio_usd_tm != null && dolar != null) {
+    const bruto = (kgNeto / 1000) * Number(precio_usd_tm);
+    const usd = Math.max(bruto * (1 - pct / 100) - suma('usd') - clp / dolar, 0);
+    return {
+      kg_neto: kgNeto,
+      valor_usd: Math.round(usd * 10000) / 10000,
+      valor: Math.round(usd * dolar),
+      bruto_usd: Math.round(bruto * 10000) / 10000,
+    };
+  }
+
+  // Vigencias en USD/kg (0004, antes de que se supiera que el contrato va por
+  // tonelada). Se conservan para no reescribir lo ya valorizado.
   if (precio_usd != null && dolar != null) {
     const bruto = kgNeto * precio_usd;
     // El descuento en pesos se convierte con el dólar congelado de la guía, no
@@ -120,6 +136,7 @@ const view = (d, descuentos = []) => ({
   bruto_kg: d.tara_kg != null && d.kg_destino != null ? Number(d.tara_kg) + Number(d.kg_destino) : null,
   // valorización en dólares
   precio_usd: num(d.precio_usd), dolar: num(d.dolar), valor_usd: num(d.valor_usd),
+  precio_usd_tm: num(d.precio_usd_tm), con_madera: d.con_madera ?? null,
   // anulación
   anulada_el: d.anulada_el ? fmtFecha(d.anulada_el) : null,
   anulada_por: d.anulada_por ?? null, motivo_anulacion: d.motivo_anulacion ?? null,
@@ -166,7 +183,8 @@ async function revalorizar(id) {
     ? await q(supa.from('despacho_descuentos').select('tipo,valor').eq('despacho_id', id))
     : [];
   const v = valorizar({
-    kg: d.kg_destino, precio_usd: num(d.precio_usd), precio_kg: num(d.precio_kg),
+    kg: d.kg_destino, precio_usd_tm: num(d.precio_usd_tm),
+    precio_usd: num(d.precio_usd), precio_kg: num(d.precio_kg),
     dolar: num(d.dolar), descuentos,
   });
   return q(supa.from('despachos').update({
@@ -275,15 +293,24 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
   }
 
   const catFinal = Number(req.body?.categoria_final_id) || Number(d.categoria_id);
-  const precio = await precioVigente(catFinal, d.fecha, tiene.usd);
+  const precio = await precioVigente(catFinal, d.fecha, tiene.usd, tiene.tm);
+
+  // Alternativa A (sin madera) o B (con madera): lo declara quien recibe, según
+  // cómo llegó la carga, y queda congelado con la guía.
+  const conMadera = tiene.tm && ['true', '1', 'on', 'si', 'sí'].includes(String(req.body?.con_madera ?? '').toLowerCase());
+  const precioTm = !tiene.tm ? null
+    : conMadera ? (precio.precio_usd_tm_madera ?? precio.precio_usd_tm)
+    : precio.precio_usd_tm;
+
   // El tipo de cambio se congela junto con el precio: una variación posterior
   // del dólar no revaloriza una recepción ya declarada.
-  const dol = precio.precio_usd != null ? await valorDolar(d.fecha) : null;
-  if (precio.precio_usd != null && !dol) {
+  const enDolares = precioTm != null || precio.precio_usd != null;
+  const dol = enDolares ? await valorDolar(d.fecha) : null;
+  if (enDolares && !dol) {
     return res.status(503).json({ error: 'No hay valor del dólar disponible para la fecha de la guía. Regístrelo en Valorización y reintente.' });
   }
   const v = valorizar({
-    kg, precio_usd: precio.precio_usd, precio_kg: precio.precio_kg,
+    kg, precio_usd_tm: precioTm, precio_usd: precio.precio_usd, precio_kg: precio.precio_kg,
     dolar: dol?.valor ?? null, descuentos,
   });
 
@@ -299,6 +326,7 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
     precio_kg: precio.precio_kg,
     valor: v.valor,
     ...(tiene.usd ? { precio_usd: precio.precio_usd, dolar: dol?.valor ?? null, valor_usd: v.valor_usd } : {}),
+    ...(tiene.tm ? { con_madera: conMadera, precio_usd_tm: precioTm } : {}),
     ...(tiene.pesaje ? {
       ticket_numero: (req.body?.ticket_numero || '').trim() || null,
       vale_numero: (req.body?.vale_numero || '').trim() || null,
@@ -318,7 +346,8 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
   await audit(req.user.name, req.user.role,
     observado ? 'Recepción observada en La Negra (dif. > 2%)' : 'Recepción validada en La Negra',
     `${row.guia} · ${kg} kg${descuentos.length ? ` · ${descuentos.length} descuento(s)` : ''}` +
-    `${dol ? ` · USD ${precio.precio_usd}/kg a $${dol.valor}` : ''}`);
+    `${precioTm != null ? ` · USD ${precioTm}/TM (${conMadera ? 'con' : 'sin'} madera) a $${dol.valor}`
+      : dol ? ` · USD ${precio.precio_usd}/kg a $${dol.valor}` : ''}`);
   res.json(view(row, desc.get(d.id) ?? []));
 }));
 

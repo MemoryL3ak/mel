@@ -605,3 +605,18 @@ tbody tr.tot:hover{background:var(--surface-2)}
 .prop{display:flex;align-items:center;gap:10px;min-width:150px}
 .prop .bar-track{flex:1}
 .prop .pct{font-family:var(--mono);font-size:11px;color:var(--muted);width:36px;text-align:right}
+
+/* Alternativa A / B del contrato, elegida al recepcionar */
+.alternativas { display: flex; gap: 10px; flex-wrap: wrap; }
+.alternativas .alt {
+  flex: 1 1 180px; display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  font: inherit; color: inherit;
+}
+.alternativas .alt:hover { border-color: var(--copper); }
+.alternativas .alt.sel { border-color: var(--copper); background: var(--copper-tint); }
+.alternativas .alt b { font-size: 14px; }
+.alternativas .alt small { color: var(--muted); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.alternativas .alt span { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.alternativas .alt.sel span { color: var(--copper); font-weight: 700; }

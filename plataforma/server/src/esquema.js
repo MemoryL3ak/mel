@@ -19,6 +19,8 @@ export const tiene = {
   anulacion: false,    // despachos: anulada_el, motivo, reemplazada_por
   usd: false,          // precios.precio_usd, despachos.precio_usd/dolar, tabla dolar
   desc_item: false,    // tabla despacho_descuentos
+  // db/0005_precio_tm.sql
+  tm: false,           // precios.precio_usd_tm(+_madera), despachos.con_madera/precio_usd_tm
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -27,6 +29,7 @@ const ORIGEN = {
   descuentos: '0003_ep_contrato.sql', contrato: '0003_ep_contrato.sql',
   transporte: '0004_operacion.sql', pesaje: '0004_operacion.sql',
   anulacion: '0004_operacion.sql', usd: '0004_operacion.sql', desc_item: '0004_operacion.sql',
+  tm: '0005_precio_tm.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -47,6 +50,9 @@ export async function detectarEsquema() {
     && (await existe('despachos', 'precio_usd,dolar,valor_usd'))
     && (await existe('dolar', 'fecha,valor'));
   tiene.desc_item = await existe('despacho_descuentos', 'id');
+
+  tiene.tm = (await existe('precios', 'precio_usd_tm,precio_usd_tm_madera'))
+    && (await existe('despachos', 'con_madera,precio_usd_tm'));
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {

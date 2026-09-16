@@ -63,17 +63,31 @@ async function calcular(anio, semana) {
   // Lo que MEL despachó y La Negra aún no recepciona no tiene precio congelado.
   // Para poder cuadrar montos igual que kilos, esas guías se valorizan con el
   // precio que regía a su fecha; la fila avisa cuántas van estimadas así.
+  // Siempre expresado en pesos por KILO, que es la unidad con la que la
+  // cuadratura multiplica los kilos de cada fila.
   const precioRef = (catId, fecha) => {
     const p = precios.find((x) => x.categoria_id === catId && x.vigente_desde <= fecha);
     if (!p) return 0;
-    // Una vigencia en dólares se lleva a pesos con el último dólar conocido.
+    // El contrato va en USD por tonelada: a pesos por kilo con el último dólar.
+    if (p.precio_usd_tm != null) return (Number(p.precio_usd_tm) / 1000) * (dolarRef ?? 0);
     if (p.precio_usd != null) return Number(p.precio_usd) * (dolarRef ?? 0);
     return Number(p.precio_kg ?? 0);
   };
+  // Precio de una guía en pesos por kilo. Manda el que quedó congelado con
+  // ella; si todavía no tiene ninguno, el de referencia de su fecha.
+  const precioPesosKg = (d) =>
+    d.precio_usd_tm != null && d.dolar != null ? (Number(d.precio_usd_tm) / 1000) * Number(d.dolar)
+    : d.precio_usd != null && d.dolar != null ? Number(d.precio_usd) * Number(d.dolar)
+    : d.precio_kg != null ? Number(d.precio_kg)
+    : precioRef(d.categoria_id, d.fecha);
+
   // Valor que habría tenido la recepción sin descuentos: la diferencia contra
   // lo efectivamente valorizado es, exactamente, lo que costaron los descuentos.
   const brutoDe = (d) => {
     if (d.kg_destino == null) return 0;
+    if (d.precio_usd_tm != null && d.dolar != null) {
+      return Math.round((Number(d.kg_destino) / 1000) * Number(d.precio_usd_tm) * Number(d.dolar));
+    }
     if (d.precio_usd != null && d.dolar != null) return Math.round(Number(d.kg_destino) * Number(d.precio_usd) * Number(d.dolar));
     return Math.round(Number(d.kg_destino) * Number(d.precio_kg ?? 0));
   };
@@ -89,8 +103,7 @@ async function calcular(anio, semana) {
     const kgLN = dLN.reduce((a, d) => a + Number(d.kg_destino), 0);
     const kgLPd = tLP.reduce((a, t) => a + Number(t.kg), 0);
     const kgLPr = tLP.reduce((a, t) => a + Number(t.kg_lampa ?? 0), 0);
-    const montoMel = dMel.reduce((a, d) => a + Number(d.kg_origen)
-      * (d.precio_kg != null ? Number(d.precio_kg) : precioRef(d.categoria_id, d.fecha)), 0);
+    const montoMel = dMel.reduce((a, d) => a + Number(d.kg_origen) * precioPesosKg(d), 0);
     const montoLN = dLN.reduce((a, d) => a + Number(d.valor ?? 0), 0);
 
     // Guía por guía: de dónde nace cada diferencia de la fila. Una guía
@@ -102,9 +115,7 @@ async function calcular(anio, semana) {
       const enLN = (d.categoria_final_id ?? d.categoria_id) === c.id && d.kg_destino != null;
       // El precio congelado manda; si la guía viene en dólares se lleva a pesos
       // con el tipo de cambio que se congeló con ella.
-      const precio = d.precio_usd != null && d.dolar != null ? Number(d.precio_usd) * Number(d.dolar)
-        : d.precio_kg != null ? Number(d.precio_kg)
-        : precioRef(d.categoria_id, d.fecha);
+      const precio = precioPesosKg(d);
       const kgO = Number(d.kg_origen);
       const kgD = d.kg_destino == null ? null : Number(d.kg_destino);
       const desc = descuentos.get(d.id) ?? [];
@@ -113,6 +124,8 @@ async function calcular(anio, semana) {
         descuentos: desc.map((x) => ({ tipo: x.tipo, valor: Number(x.valor), glosa: x.glosa })),
         desc_monto: enLN && desc.length ? Math.round(brutoDe(d) - Number(d.valor ?? 0)) : null,
         precio_usd: d.precio_usd == null ? null : Number(d.precio_usd),
+        precio_usd_tm: d.precio_usd_tm == null ? null : Number(d.precio_usd_tm),
+        con_madera: d.con_madera ?? null,
         dolar: d.dolar == null ? null : Number(d.dolar),
         categoria_origen: nombreCat(d.categoria_id),
         categoria_final: d.categoria_final_id ? nombreCat(d.categoria_final_id) : null,
@@ -121,7 +134,7 @@ async function calcular(anio, semana) {
         dif_kg: kgD == null ? null : Math.round((kgD - kgO) * 10) / 10,
         dif_pct: kgD == null ? null : Math.round(((kgD - kgO) / kgO) * 10000) / 100,
         precio_kg: precio || null,
-        precio_estimado: d.precio_kg == null && d.precio_usd == null,
+        precio_estimado: d.precio_kg == null && d.precio_usd == null && d.precio_usd_tm == null,
         monto_mel: enMel ? Math.round(kgO * precio) : null,
         monto_lanegra: enLN ? Math.round(Number(d.valor ?? 0)) : null,
         lado: enMel && enLN ? 'ambos' : enMel ? 'mel' : 'lanegra',
@@ -141,7 +154,7 @@ async function calcular(anio, semana) {
       monto_lanegra: Math.round(montoLN),
       dif_monto: Math.round(montoLN - montoMel),
       // Guías del lado MEL valorizadas con precio de referencia, no congelado.
-      montos_estimados: dMel.filter((d) => d.precio_kg == null && d.precio_usd == null).length,
+      montos_estimados: dMel.filter((d) => d.precio_kg == null && d.precio_usd == null && d.precio_usd_tm == null).length,
       monto: Math.round(montoLN),   // compatibilidad con cierres anteriores
       pendientes_transito: dMel.filter((d) => d.estado === 'en_transito').length,
       observados: dMel.filter((d) => d.estado === 'observado').length,
