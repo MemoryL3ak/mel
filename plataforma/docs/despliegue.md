@@ -47,19 +47,45 @@ con el dominio de Vercel como origen permitido.
    | `VITE_API_URL` | `https://<dominio-railway>/api` |
 
    > Es variable de *build*: si después cambia, hay que **Redeploy**.
-4. Deploy → anotar el dominio (ej. `gea-mel.vercel.app`).
+4. Deploy → **anotar aquí el dominio real** que asigna Vercel. No inventarlo:
+   el dominio de producción se lee en Vercel → Deployments → el que está
+   marcado *Production*, o en Settings → Domains.
+
+   > Dominio de producción: `________________.vercel.app`
 
 ## 3. Cerrar el círculo (CORS)
 
-En Railway → Variables → `CORS_ORIGIN` = `https://gea-mel.vercel.app`
-(el dominio real de Vercel, sin barra final; varios dominios van separados por
-coma, ej. agregar el dominio propio cuando exista). Railway redespliega solo.
+En Railway → Variables → `CORS_ORIGIN` = el dominio de Vercel con `https://` y
+sin barra final; varios dominios van separados por coma (agregar el dominio
+propio cuando exista). Railway redespliega solo.
 
 ## 4. Prueba de humo
 
-1. Abrir `https://gea-mel.vercel.app` → login con un usuario real.
+1. Abrir el dominio de producción → login con un usuario real.
 2. Crear un despacho con foto (valida Storage + multipart a través de CORS).
 3. Abrir el detalle de la guía y ver la evidencia (valida URLs firmadas).
+
+## Si un push a `main` no llega a producción
+
+Ha pasado: Vercel recibe el commit, lo construye como **Preview** y no lo
+promueve. El síntoma es que la aplicación sigue mostrando la versión anterior
+aunque `git push origin main` diga `Everything up-to-date`.
+
+Cómo distinguirlo de un problema de caché del navegador, sin adivinar:
+
+```
+curl -s https://api.github.com/repos/MemoryL3ak/mel/deployments?per_page=8
+```
+
+Cada despliegue trae su `environment` (`Preview` o `Production`) y su `sha`. Si
+el último `Production` no es el commit que acaba de subir, el problema está en
+Vercel y no en el navegador de nadie.
+
+Para destrabarlo: Vercel → Deployments → el Preview de ese commit → `⋯` →
+**Promote to Production**. Es inmediato y no recompila.
+
+Para evitarlo: empujar a `main` y a `dev` por separado, no encadenados en el
+mismo comando.
 
 ## Dominio propio (opcional)
 
