@@ -22,6 +22,15 @@ const descTexto = (d) => d.tipo === 'pct' ? `${d.valor} %`
   : d.tipo === 'clp' ? fmtCLP(d.valor)
   : `${fmtKg(d.valor)} kg`;
 
+// Precio vigente de una categoría, en la unidad en que esté pactado. Va al
+// lado del nombre en los desplegables, como referencia de quien elige.
+const usd = (v) => Number(v).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const precioRef = (c) =>
+  c?.precio_usd_tm != null ? ` · USD ${usd(c.precio_usd_tm)}/TM`
+  : c?.precio_usd != null ? ` · USD ${c.precio_usd}/kg`
+  : c?.precio_kg ? ` · $${Number(c.precio_kg).toLocaleString('es-CL')}/kg`
+  : '';
+
 // Respaldos que pide el proceso al despachar. El nombre del campo viaja al
 // servidor y define cómo queda etiquetada cada foto en la guía.
 const EVIDENCIA = [
@@ -598,7 +607,7 @@ export default function Despachos() {
         </Field>
         <Field label="Categoría de material">
           <select value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
-            {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{c.precio_kg ? ` · $${c.precio_kg}/kg` : ''}</option>)}
+            {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
           </select>
         </Field>
         <CampoPeso label="Peso en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
@@ -688,13 +697,14 @@ export default function Despachos() {
         {/* Alternativa A o B del contrato. Se decide mirando la carga, y el
             precio que se elija aquí queda congelado con la guía. */}
         {fn.tm && (() => {
-          const cat = maestros?.categorias?.find((c) => c.nombre === (
-            rForm.categoria_final_id
-              ? maestros.categorias.find((x) => x.id === rForm.categoria_final_id)?.nombre
-              : recep?.categoria));
+          // Si se reclasificó, el precio que rige es el de la categoría final:
+          // es la que se congela con la guía.
+          const cat = rForm.categoria_final_id
+            ? maestros?.categorias?.find((c) => c.id === rForm.categoria_final_id)
+            : maestros?.categorias?.find((c) => c.nombre === recep?.categoria);
           const a = cat?.precio_usd_tm;
           const b = cat?.precio_usd_tm_madera;
-          const usd = (v) => v == null ? 'sin precio' : `USD ${Number(v).toLocaleString('es-CL', { minimumFractionDigits: 2 })}/TM`;
+          const precioTm = (v) => v == null ? 'sin precio vigente' : `USD ${usd(v)}/TM`;
           return (
             <Field label="¿La carga viene con madera?"
               hint="Define qué alternativa del contrato se aplica. El precio elegido queda congelado con esta guía.">
@@ -705,7 +715,7 @@ export default function Despachos() {
                     onClick={() => setRForm({ ...rForm, con_madera: val })}>
                     <b>{tit}</b>
                     <small>{alt}</small>
-                    <span className="mono">{usd(precio)}</span>
+                    <span className="mono">{precioTm(precio)}</span>
                   </button>
                 ))}
               </div>
@@ -769,7 +779,7 @@ export default function Despachos() {
         <Field label="Reclasificación (solo si el material se reduce)" hint="El precio se congela con la categoría final al momento de esta recepción.">
           <select value={rForm.categoria_final_id} onChange={(e) => setRForm({ ...rForm, categoria_final_id: e.target.value ? +e.target.value : '' })}>
             <option value="">Mantener {recep?.categoria}</option>
-            {maestros?.categorias.filter((c) => c.nombre !== recep?.categoria).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {maestros?.categorias.filter((c) => c.nombre !== recep?.categoria).map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
           </select>
         </Field>
         <Field label="Observación (opcional)">
@@ -826,7 +836,7 @@ export default function Despachos() {
         </>}>
         <Field label="Categoría de material">
           <select value={tForm.categoria_id} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
-            {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
           </select>
         </Field>
         <CampoPeso label="Peso despachado desde La Negra" hint="La guía se folia automáticamente (GT-####)."
