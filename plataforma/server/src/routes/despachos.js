@@ -16,6 +16,7 @@ export const TIPO_DESCUENTO = {
   kg: 'Kilos descontados',
   pct: 'Porcentaje del valor',
   usd: 'Monto fijo en USD',
+  clp: 'Monto fijo en pesos',
 };
 
 // Valoriza una recepción: primero los kilos descontados, después el precio, y
@@ -25,10 +26,15 @@ export function valorizar({ kg, precio_usd, precio_kg, dolar, descuentos = [] })
   const suma = (t) => descuentos.filter((d) => d.tipo === t).reduce((a, d) => a + Number(d.valor), 0);
   const kgNeto = Math.max(Number(kg) - suma('kg'), 0);
   const pct = Math.min(suma('pct'), 100);
+  const clp = suma('clp');
 
   if (precio_usd != null && dolar != null) {
     const bruto = kgNeto * precio_usd;
-    const usd = Math.max(bruto * (1 - pct / 100) - suma('usd'), 0);
+    // El descuento en pesos se convierte con el dólar congelado de la guía, no
+    // con el de hoy: así el total en pesos y el total en dólares siguen siendo
+    // la misma cifra vista en dos monedas. Y como el monto en pesos es entero,
+    // restarlo antes de redondear descuenta exactamente lo que se digitó.
+    const usd = Math.max(bruto * (1 - pct / 100) - suma('usd') - clp / dolar, 0);
     return {
       kg_neto: kgNeto,
       valor_usd: Math.round(usd * 10000) / 10000,
@@ -36,14 +42,27 @@ export function valorizar({ kg, precio_usd, precio_kg, dolar, descuentos = [] })
       bruto_usd: Math.round(bruto * 10000) / 10000,
     };
   }
-  // Vigencias antiguas en pesos: el descuento "usd" se ignora por no ser convertible.
+  // Vigencias antiguas en pesos: el descuento "usd" se ignora por no ser
+  // convertible sin un tipo de cambio congelado; el de pesos sí se aplica.
   const bruto = kgNeto * Number(precio_kg ?? 0);
   return {
     kg_neto: kgNeto,
     valor_usd: null,
-    valor: Math.round(Math.max(bruto * (1 - pct / 100), 0)),
+    valor: Math.round(Math.max(bruto * (1 - pct / 100) - clp, 0)),
     bruto_usd: null,
   };
+}
+
+// Reglas propias de cada tipo de descuento; devuelve el error o null.
+export function revisarDescuento({ tipo, valor }, kg) {
+  const v = Number(valor);
+  if (tipo === 'pct' && v > 100) return 'Un descuento porcentual no puede superar el 100%';
+  if (tipo === 'kg' && kg != null && v >= Number(kg)) {
+    return 'El descuento en kilos no puede igualar ni superar el peso recibido';
+  }
+  // El peso chileno no tiene fracciones: un descuento de $1.500,25 no existe.
+  if (tipo === 'clp' && !Number.isInteger(v)) return 'El descuento en pesos debe ser un monto entero';
+  return null;
 }
 
 // Evidencia fotográfica por tipo de respaldo: el proceso exige la guía que
@@ -111,6 +130,20 @@ const view = (d, descuentos = []) => ({
     etiqueta: TIPO_DESCUENTO[x.tipo] ?? x.tipo, creado_por: x.creado_por,
   })),
 });
+
+// El tipo 'clp' se agregó después de la primera versión de 0004. Si la base
+// todavía tiene la restricción antigua, el rechazo dice qué hay que ejecutar,
+// en vez de devolver el mensaje crudo de Postgres.
+async function guardarDescuentos(filas) {
+  try {
+    return await q(supa.from('despacho_descuentos').insert(filas).select('id'));
+  } catch (e) {
+    if (/despacho_descuentos_tipo_check/.test(e.message)) {
+      throw new Error('La base todavía no acepta descuentos en pesos: vuelva a ejecutar db/0004_operacion.sql');
+    }
+    throw e;
+  }
+}
 
 // Descuentos de un conjunto de guías, en una sola consulta.
 async function descuentosDe(ids) {
@@ -235,11 +268,9 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
     descuentos = descuentos
       .filter((x) => TIPO_DESCUENTO[x?.tipo] && Number(x.valor) > 0 && (x.glosa || '').trim())
       .map((x) => ({ tipo: x.tipo, valor: Number(x.valor), glosa: String(x.glosa).trim() }));
-    if (descuentos.some((x) => x.tipo === 'pct' && x.valor > 100)) {
-      return res.status(400).json({ error: 'Un descuento porcentual no puede superar el 100%' });
-    }
-    if (descuentos.some((x) => x.tipo === 'kg' && x.valor >= kg)) {
-      return res.status(400).json({ error: 'El descuento en kilos no puede igualar ni superar el peso recibido' });
+    for (const x of descuentos) {
+      const mal = revisarDescuento(x, kg);
+      if (mal) return res.status(400).json({ error: mal });
     }
   }
 
@@ -279,9 +310,7 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
   }).eq('id', req.params.id).select('id').single());
 
   if (descuentos.length && tiene.desc_item) {
-    await q(supa.from('despacho_descuentos')
-      .insert(descuentos.map((x) => ({ ...x, despacho_id: d.id, creado_por: req.user.name })))
-      .select('id'));
+    await guardarDescuentos(descuentos.map((x) => ({ ...x, despacho_id: d.id, creado_por: req.user.name })));
   }
   const row = await q(supa.from('despachos').select(DESP_SEL).eq('id', d.id).single());
   const desc = await descuentosDe([d.id]);
@@ -307,13 +336,9 @@ r.post('/despachos/:id/descuentos', auth('vendor', 'ito', 'coordinador'), ah(asy
   if (!puedeDescontar(d)) {
     return res.status(409).json({ error: d.ep_id ? 'La guía ya está en un estado de pago' : 'La guía aún no se recepciona' });
   }
-  if (tipo === 'pct' && Number(valor) > 100) return res.status(400).json({ error: 'El porcentaje no puede superar el 100%' });
-  if (tipo === 'kg' && Number(valor) >= Number(d.kg_destino)) {
-    return res.status(400).json({ error: 'El descuento en kilos no puede igualar ni superar el peso recibido' });
-  }
-  await q(supa.from('despacho_descuentos')
-    .insert({ despacho_id: d.id, tipo, valor: Number(valor), glosa: String(glosa).trim(), creado_por: req.user.name })
-    .select('id'));
+  const mal = revisarDescuento({ tipo, valor }, d.kg_destino);
+  if (mal) return res.status(400).json({ error: mal });
+  await guardarDescuentos({ despacho_id: d.id, tipo, valor: Number(valor), glosa: String(glosa).trim(), creado_por: req.user.name });
   await revalorizar(d.id);
   const row = await q(supa.from('despachos').select(DESP_SEL).eq('id', d.id).single());
   const desc = await descuentosDe([d.id]);

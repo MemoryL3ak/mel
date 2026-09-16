@@ -9,14 +9,18 @@ const CHIP = {
   observado: ['warn', 'Difer. de peso'], anulado: ['bad', 'Anulada'],
 };
 
-// Descuentos que se aplican sobre una recepción. El monto fijo va en dólares
-// porque la valorización del contrato es en USD/kg.
+// Descuentos que se aplican sobre una recepción. El monto fijo se puede cargar
+// en dólares —la moneda del contrato— o en pesos, como venga en el documento.
 const TIPO_DESC = [
   ['kg', 'Kilos', 'kg', 'Se descuentan del peso antes de valorizar.'],
   ['pct', 'Porcentaje', '%', 'Se descuenta del valor de la carga.'],
-  ['usd', 'Monto', 'USD', 'Monto fijo en dólares, descontado al final.'],
+  ['usd', 'Monto en dólares', 'USD', 'Monto fijo en dólares, descontado al final.'],
+  ['clp', 'Monto en pesos', '$', 'Monto fijo en pesos enteros, convertido con el dólar congelado de la guía.'],
 ];
-const descTexto = (d) => `${d.tipo === 'pct' ? `${d.valor} %` : d.tipo === 'usd' ? `USD ${d.valor}` : `${fmtKg(d.valor)} kg`}`;
+const descTexto = (d) => d.tipo === 'pct' ? `${d.valor} %`
+  : d.tipo === 'usd' ? `USD ${d.valor}`
+  : d.tipo === 'clp' ? fmtCLP(d.valor)
+  : `${fmtKg(d.valor)} kg`;
 
 // Respaldos que pide el proceso al despachar. El nombre del campo viaja al
 // servidor y define cómo queda etiquetada cada foto en la guía.
@@ -144,6 +148,7 @@ export default function Despachos() {
     const d = rForm.nuevoDesc;
     if (!(Number(d.valor) > 0) || !d.glosa.trim()) return toast('Indique monto y glosa del descuento', true);
     if (d.tipo === 'pct' && Number(d.valor) > 100) return toast('El porcentaje no puede superar el 100%', true);
+    if (d.tipo === 'clp' && !Number.isInteger(Number(d.valor))) return toast('El descuento en pesos debe ser un monto entero', true);
     setRForm({
       ...rForm,
       descuentos: [...rForm.descuentos, { tipo: d.tipo, valor: Number(d.valor), glosa: d.glosa.trim() }],
@@ -652,7 +657,8 @@ export default function Despachos() {
             onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, tipo: e.target.value } })}>
             {TIPO_DESC.map(([id, label, u]) => <option key={id} value={id}>{label} ({u})</option>)}
           </select>
-          <input type="number" min="0" step="0.01" placeholder="0" value={rForm.nuevoDesc.valor}
+          <input type="number" min="0" step={rForm.nuevoDesc.tipo === 'clp' ? '1' : '0.01'} placeholder="0"
+            value={rForm.nuevoDesc.valor}
             onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, valor: e.target.value } })} />
           <input placeholder="Motivo del descuento" value={rForm.nuevoDesc.glosa}
             onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, glosa: e.target.value } })} />

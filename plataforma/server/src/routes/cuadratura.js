@@ -155,6 +155,7 @@ async function calcular(anio, semana) {
           desc_guias: conDesc.length,
           desc_kg: todos.filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0),
           desc_usd: todos.filter((x) => x.tipo === 'usd').reduce((a, x) => a + Number(x.valor), 0),
+          desc_clp: todos.filter((x) => x.tipo === 'clp').reduce((a, x) => a + Number(x.valor), 0),
           desc_monto: Math.round(monto),
           // cuánto pesan los descuentos sobre lo que se habría facturado
           desc_pct: bruto > 0 ? Math.round((monto / bruto) * 10000) / 100 : null,

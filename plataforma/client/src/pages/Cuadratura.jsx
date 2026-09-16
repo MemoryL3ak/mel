@@ -318,7 +318,8 @@ export default function Cuadratura() {
                             {g.descuentos.map((d, i) => (
                               <div key={i} style={{ fontSize: 12, lineHeight: 1.45 }}>
                                 <b style={{ color: 'var(--bad-tx)' }}>
-                                  {d.tipo === 'pct' ? `${d.valor} %` : d.tipo === 'usd' ? `USD ${d.valor}` : `${fmtKg(d.valor)} kg`}
+                                  {d.tipo === 'pct' ? `${d.valor} %` : d.tipo === 'usd' ? `USD ${d.valor}`
+                                    : d.tipo === 'clp' ? fmtCLP(d.valor) : `${fmtKg(d.valor)} kg`}
                                 </b> · {d.glosa}
                               </div>
                             ))}
