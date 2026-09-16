@@ -64,15 +64,22 @@ alter table despachos add column if not exists valor_usd  numeric(14,4);
 -- kg  → descuenta kilos antes de valorizar (humedad, material ajeno)
 -- pct → descuenta un porcentaje del valor
 -- usd → descuenta un monto fijo en dólares
+-- clp → descuenta un monto fijo en pesos, convertido al dólar de la guía
 create table if not exists despacho_descuentos (
   id          bigint generated always as identity primary key,
   despacho_id bigint not null references despachos(id) on delete cascade,
-  tipo        text not null check (tipo in ('kg','pct','usd')),
+  tipo        text not null check (tipo in ('kg','pct','usd','clp')),
   valor       numeric(14,4) not null check (valor > 0),
   glosa       text not null,
   creado_por  text,
   creado_el   timestamptz not null default now()
 );
+-- El tipo 'clp' se agregó después: en una base donde la tabla ya existe el
+-- `create table if not exists` de arriba no toca su restricción, así que hay
+-- que rehacerla aparte. Volver a ejecutar este archivo es suficiente.
+alter table despacho_descuentos drop constraint if exists despacho_descuentos_tipo_check;
+alter table despacho_descuentos add constraint despacho_descuentos_tipo_check
+  check (tipo in ('kg','pct','usd','clp'));
 create index if not exists despacho_desc_idx on despacho_descuentos (despacho_id);
 alter table despacho_descuentos enable row level security;
 drop policy if exists desp_desc_read on despacho_descuentos;
