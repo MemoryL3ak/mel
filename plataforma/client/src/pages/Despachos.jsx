@@ -31,6 +31,22 @@ const precioRef = (c) =>
   : c?.precio_kg ? ` · $${Number(c.precio_kg).toLocaleString('es-CL')}/kg`
   : '';
 
+// El servidor solo guarda imágenes y hasta 5 MB. Si el navegador deja elegir
+// otra cosa —basta con poner «todos los archivos» en el diálogo—, el archivo
+// se descartaba sin decir nada y la guía quedaba sin respaldo: el usuario creía
+// haberlo adjuntado. Se filtra aquí, con el motivo a la vista.
+const TIPOS_FOTO = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_FOTO = 5 * 1024 * 1024;
+const revisarFotos = (lista) => {
+  const buenas = [], malas = [];
+  for (const f of lista) {
+    if (!TIPOS_FOTO.includes(f.type)) malas.push(`«${f.name}» no es una foto (JPG, PNG o WebP)`);
+    else if (f.size > MAX_FOTO) malas.push(`«${f.name}» pesa ${(f.size / 1024 / 1024).toFixed(1)} MB y el máximo son 5 MB`);
+    else buenas.push(f);
+  }
+  return { buenas, malas };
+};
+
 // Respaldos que pide el proceso al despachar. El nombre del campo viaja al
 // servidor y define cómo queda etiquetada cada foto en la guía.
 const EVIDENCIA = [
@@ -58,8 +74,12 @@ export default function Despachos() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
+  // Patio y categoría por defecto: se fijan cuando llegan los maestros, no
+  // a mano. Un id fijo hace que el formulario envíe una categoría que puede
+  // ya no existir, y la base lo rechaza con un error que nadie entiende.
+  const [porDefecto, setPorDefecto] = useState({ patio_id: null, categoria_id: null });
   const formVacio = () => ({
-    patio_id: 1, categoria_id: 1, kg_origen: '', unidad: unidadGuardada(),
+    ...porDefecto, kg_origen: '', unidad: unidadGuardada(),
     guia_mel: '', fecha: hoyISO(), ev: {},
     transportista: '', transportista_rut: '', patente_tracto: '', patente_rampla: '',
   });
@@ -76,7 +96,7 @@ export default function Despachos() {
   // Descuento que se agrega desde el detalle de una guía ya recepcionada.
   const [dForm, setDForm] = useState({ tipo: 'kg', valor: '', glosa: '' });
   const [rForm, setRForm] = useState(recepVacia);
-  const [tForm, setTForm] = useState({ categoria_id: 1, kg: '', unidad: unidadGuardada() });
+  const [tForm, setTForm] = useState({ categoria_id: null, kg: '', unidad: unidadGuardada() });
   const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
   const [obs, setObs] = useState('');
   const { user } = useAuth();
@@ -86,7 +106,16 @@ export default function Despachos() {
     api('/despachos').then(setRows).catch((e) => toast(e.message, true));
     api('/traslados').then(setTraslados).catch(() => {});
   };
-  useEffect(() => { load(); api('/maestros').then(setMaestros).catch(() => {}); }, []);
+  useEffect(() => {
+    load();
+    api('/maestros').then((m) => {
+      setMaestros(m);
+      const d = { patio_id: m.patios?.[0]?.id ?? null, categoria_id: m.categorias?.[0]?.id ?? null };
+      setPorDefecto(d);
+      setForm((f) => ({ ...f, patio_id: f.patio_id ?? d.patio_id, categoria_id: f.categoria_id ?? d.categoria_id }));
+      setTForm((t) => ({ ...t, categoria_id: t.categoria_id ?? d.categoria_id }));
+    }).catch(() => {});
+  }, []);
   if (!rows) return <div className="loading">Cargando despachos…</div>;
 
   // La interfaz no ofrece lo que el servidor todavía no puede guardar.
@@ -108,6 +137,7 @@ export default function Despachos() {
   async function crearDespacho() {
     const kg = aKg(form.kg_origen, form.unidad);
     if (!kg) return toast('Ingrese el peso registrado en la báscula', true);
+    if (!form.patio_id || !form.categoria_id) return toast('Elija patio y categoría de material', true);
     try {
       const fd = new FormData();
       fd.append('patio_id', form.patio_id);
@@ -601,12 +631,12 @@ export default function Despachos() {
           </Field>
         </div>
         <Field label="Patio de origen">
-          <select value={form.patio_id} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
+          <select value={form.patio_id ?? ''} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
             {maestros?.patios.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
           </select>
         </Field>
         <Field label="Categoría de material">
-          <select value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
+          <select value={form.categoria_id ?? ''} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
           </select>
         </Field>
@@ -644,7 +674,12 @@ export default function Despachos() {
           return (
             <Field key={tipo} label={`${etiqueta}${puestas.length ? ` · ${puestas.length}` : ''}`} hint={ayuda}>
               <input type="file" multiple accept="image/jpeg,image/png,image/webp"
-                onChange={(e) => setForm({ ...form, ev: { ...form.ev, [tipo]: Array.from(e.target.files).slice(0, 2) } })} />
+                onChange={(e) => {
+                  const { buenas, malas } = revisarFotos(Array.from(e.target.files));
+                  if (malas.length) toast(malas.join(' · '), true);
+                  if (!buenas.length) e.target.value = '';
+                  setForm({ ...form, ev: { ...form.ev, [tipo]: buenas.slice(0, 2) } });
+                }} />
               {puestas.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                   {puestas.map((f) => (
@@ -774,7 +809,12 @@ export default function Despachos() {
 
         <Field label="Foto del ticket de báscula La Negra" hint="Respalda el peso que acaba de declarar. Queda adjunto a la guía.">
           <input type="file" multiple accept="image/jpeg,image/png,image/webp"
-            onChange={(e) => setRForm({ ...rForm, foto: Array.from(e.target.files).slice(0, 2) })} />
+            onChange={(e) => {
+              const { buenas, malas } = revisarFotos(Array.from(e.target.files));
+              if (malas.length) toast(malas.join(' · '), true);
+              if (!buenas.length) e.target.value = '';
+              setRForm({ ...rForm, foto: buenas.slice(0, 2) });
+            }} />
         </Field>
         <Field label="Reclasificación (solo si el material se reduce)" hint="El precio se congela con la categoría final al momento de esta recepción.">
           <select value={rForm.categoria_final_id} onChange={(e) => setRForm({ ...rForm, categoria_final_id: e.target.value ? +e.target.value : '' })}>
@@ -835,7 +875,7 @@ export default function Despachos() {
             'Traslado despachado con guía foliada', () => { setNuevoTras(false); setTForm({ ...tForm, kg: '' }); })}>Despachar</button>
         </>}>
         <Field label="Categoría de material">
-          <select value={tForm.categoria_id} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
+          <select value={tForm.categoria_id ?? ''} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
           </select>
         </Field>

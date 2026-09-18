@@ -72,10 +72,23 @@ if (existsSync(dist)) {
   app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(join(dist, 'index.html')));
 }
 
+// Los mensajes de Postgres son precisos pero ilegibles para quien opera: nombran
+// la restricción, no lo que hay que corregir. Se traducen los que pueden llegarle
+// a un usuario; el detalle técnico siempre queda en el log del servidor.
+const LEGIBLE = [
+  [/despachos_categoria_id_fkey/, 'La categoría seleccionada ya no existe. Recargue la página y elíjala de nuevo.'],
+  [/despachos_patio_id_fkey/, 'El patio seleccionado ya no existe. Recargue la página y elíjalo de nuevo.'],
+  [/categoria_id_fkey/, 'La categoría seleccionada ya no existe. Recargue la página y elíjala de nuevo.'],
+  [/violates foreign key constraint/, 'El dato al que apunta este registro ya no existe. Recargue la página e intente otra vez.'],
+  [/duplicate key value/, 'Ya existe un registro con ese identificador.'],
+  [/violates check constraint/, 'Uno de los valores no cumple las reglas de la base de datos.'],
+];
+
 // Errores: mensaje claro al cliente, detalle al log del servidor.
 app.use((err, _req, res, _next) => {
   console.error('[GEA]', err.message);
-  res.status(500).json({ error: err.message || 'Error interno' });
+  const traducido = LEGIBLE.find(([re]) => re.test(err.message || ''))?.[1];
+  res.status(500).json({ error: traducido || err.message || 'Error interno' });
 });
 
 // Bucket privado de evidencia fotográfica (idempotente). No bloquea el

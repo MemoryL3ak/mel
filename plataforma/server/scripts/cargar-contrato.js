@@ -41,9 +41,12 @@ const MATERIALES = [
 ];
 
 // Tablas que se vacían, en orden de dependencia (las hijas primero).
+// `programa` va antes que `categorias`: el programa semanal apunta a una
+// categoría, y si queda una fila el borrado de categorías falla por clave
+// foránea y la base termina con las viejas y las nuevas conviviendo.
 const A_BORRAR = [
   'despacho_descuentos', 'ep_descuentos', 'cuadraturas',
-  'despachos', 'traslados', 'estados_pago', 'precios', 'categorias',
+  'despachos', 'traslados', 'estados_pago', 'programa', 'precios', 'categorias',
 ];
 
 const n = (v) => v.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -67,9 +70,18 @@ if (!confirmar) {
 }
 
 console.log('Vaciando…');
+let falló = false;
 for (const t of A_BORRAR) {
   const { error } = await supa.from(t).delete().gte('id', 0);
+  if (error) falló = true;
   console.log(`  ${t.padEnd(22)} ${error ? 'ERROR: ' + error.message : 'ok'}`);
+}
+// Si el vaciado falló, cargar igual dejaría las categorías viejas conviviendo
+// con las nuevas: dos listas para lo mismo, y nadie sabría cuál usar.
+if (falló) {
+  console.error('\nNo se vació todo. No se carga nada para no dejar la base a medias.');
+  console.error('Resuelva el error de arriba y vuelva a ejecutar.');
+  process.exit(1);
 }
 
 console.log('\nCargando categorías…');
