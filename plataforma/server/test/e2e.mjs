@@ -106,8 +106,17 @@ try {
   ok(fantasma.status === 401 && fantasma.data.error === mala.data.error,
     'usuario inexistente → misma respuesta (sin filtrar cuentas)');
 
+  // Los ids se leen de los maestros, no se asumen: cargar otro contrato cambia
+  // las categorías y una prueba con ids fijos falla por la razón equivocada.
+  const maestros = (await api('/maestros', { token: tc })).data;
+  const CAT = maestros.categorias[0].id;
+  const CAT2 = (maestros.categorias[1] ?? maestros.categorias[0]).id;
+  const PATIO = maestros.patios[0].id;
+  const PATIO2 = (maestros.patios[1] ?? maestros.patios[0]).id;
+  ok(!!CAT && !!PATIO, `maestros disponibles (categoría ${CAT}, patio ${PATIO})`);
+
   console.log('\nRBAC: cada rol solo lo suyo');
-  ok((await api('/precios', { method: 'POST', token: tl, body: { categoria_id: 1, precio_kg: 1 } })).status === 403, 'limpieza no puede cambiar precios');
+  ok((await api('/precios', { method: 'POST', token: tl, body: { categoria_id: CAT, precio_kg: 1 } })).status === 403, 'limpieza no puede cambiar precios');
   ok((await api('/eps', { token: tl })).status === 403, 'limpieza no ve estados de pago');
   ok((await api('/usuarios', { token: ti })).status === 403, 'ITO no administra cuentas');
   ok((await api('/despachos', { method: 'POST', token: tv, form: new FormData() })).status === 403, 'vendor no crea despachos MEL');
@@ -115,7 +124,7 @@ try {
 
   console.log('\nCadena física con evidencia');
   const fd = new FormData();
-  fd.set('patio_id', '1'); fd.set('categoria_id', '1'); fd.set('kg_origen', '5000');
+  fd.set('patio_id', String(PATIO)); fd.set('categoria_id', String(CAT)); fd.set('kg_origen', '5000');
   fd.append('guia', new Blob([PNG], { type: 'image/png' }), 'guia.png');
   fd.append('bascula', new Blob([PNG], { type: 'image/png' }), 'ticket.png');
   const d = await api('/despachos', { method: 'POST', token: tl, form: fd });
@@ -139,19 +148,34 @@ try {
   const ev2 = await api(`/despachos/${d.data.id}/evidencia`, { token: tv });
   ok((ev2.data.archivos ?? []).some((a) => a.etiqueta === 'Ticket de báscula La Negra'),
     'el ticket de báscula de La Negra queda adjunto a la guía');
-  const precioCongelado = rec.data.precio_kg;
-  ok(precioCongelado > 0 && rec.data.valor === Math.round(4800 * precioCongelado), 'precio congelado y valor calculado');
+  // La guía congela el precio en la unidad en que esté pactado el contrato:
+  // USD por tonelada, USD por kilo o pesos por kilo. La prueba comprueba la
+  // aritmética de la que corresponda, no una en particular.
+  const esperado = rec.data.precio_usd_tm != null
+    ? Math.round((4800 / 1000) * rec.data.precio_usd_tm * rec.data.dolar)
+    : rec.data.precio_usd != null
+    ? Math.round(4800 * rec.data.precio_usd * rec.data.dolar)
+    : Math.round(4800 * rec.data.precio_kg);
+  const unidad = rec.data.precio_usd_tm != null ? `USD ${rec.data.precio_usd_tm}/TM`
+    : rec.data.precio_usd != null ? `USD ${rec.data.precio_usd}/kg` : `$${rec.data.precio_kg}/kg`;
+  ok(rec.data.valor === esperado && esperado > 0, `precio congelado y valor calculado (${unidad})`);
 
   ok((await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: {} })).status === 400, 'resolver sin observación → rechazado');
   const resu = await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: { observacion: 'Merma verificada en báscula (prueba E2E)' } });
   ok(resu.data.estado === 'recepcionado', 'ITO resuelve el observado con observación');
 
-  const nuevoPrecio = await api('/precios', { method: 'POST', token: tc, body: { categoria_id: 1, precio_kg: precioCongelado + 500 } });
+  // Una vigencia nueva no debe tocar lo ya valorizado, sea cual sea la unidad.
+  const antes = { kg: rec.data.precio_kg, usd: rec.data.precio_usd, tm: rec.data.precio_usd_tm, valor: rec.data.valor };
+  const subir = antes.tm != null ? { precio_usd_tm: antes.tm + 50 }
+    : antes.usd != null ? { precio_usd: antes.usd + 0.05 }
+    : { precio_kg: (antes.kg ?? 0) + 500 };
+  const nuevoPrecio = await api('/precios', { method: 'POST', token: tc, body: { categoria_id: CAT, ...subir } });
   creado.precioId = nuevoPrecio.data.id;
   const despues = (await api('/despachos', { token: tc })).data.find((x) => x.id === d.data.id);
-  ok(despues.precio_kg === precioCongelado, 'cambio de precio no altera guías ya valorizadas');
+  ok(despues.precio_kg === antes.kg && despues.precio_usd_tm === antes.tm && despues.valor === antes.valor,
+    'cambio de precio no altera guías ya valorizadas');
 
-  const tr = await api('/traslados', { method: 'POST', token: tv, body: { categoria_id: 1, kg: 4800 } });
+  const tr = await api('/traslados', { method: 'POST', token: tv, body: { categoria_id: CAT, kg: 4800 } });
   creado.trasladoId = tr.data.id;
   ok(/^GT-\d+$/.test(tr.data.guia), `traslado a Lampa con folio (${tr.data.guia})`);
   const lampa = await api(`/traslados/${tr.data.id}/recepcionar`, { method: 'POST', token: tv, body: { kg_lampa: 4795 } });
@@ -162,13 +186,13 @@ try {
   const SEM = [2031, 15]; creado.programaSemana = SEM;
   const malo = await api('/programa/masivo', { method: 'POST', token: tl, body: {
     anio: SEM[0], semana: SEM[1],
-    filas: [{ dia: 'Lun', patio_id: 1, categoria_id: 1, ton_estimadas: 10 }, { dia: 'Lun', patio_id: 999, categoria_id: 1, ton_estimadas: 5 }],
+    filas: [{ dia: 'Lun', patio_id: PATIO, categoria_id: CAT, ton_estimadas: 10 }, { dia: 'Lun', patio_id: 999, categoria_id: CAT, ton_estimadas: 5 }],
   } });
   const trasFallo = await api(`/programa?anio=${SEM[0]}&semana=${SEM[1]}`, { token: tl });
   ok(malo.status === 400 && trasFallo.data.rows.length === 0, 'carga con una fila inválida → no entra ninguna (atómica)');
   const bueno = await api('/programa/masivo', { method: 'POST', token: tl, body: {
     anio: SEM[0], semana: SEM[1],
-    filas: [{ dia: 'Lun', patio_id: 1, categoria_id: 1, ton_estimadas: 10 }, { dia: 'Mar', patio_id: 2, categoria_id: 2, ton_estimadas: 8 }],
+    filas: [{ dia: 'Lun', patio_id: PATIO, categoria_id: CAT, ton_estimadas: 10 }, { dia: 'Mar', patio_id: PATIO2, categoria_id: CAT2, ton_estimadas: 8 }],
   } });
   ok(bueno.status === 200 && bueno.data.length === 2, 'carga válida inserta las 2 actividades');
 
