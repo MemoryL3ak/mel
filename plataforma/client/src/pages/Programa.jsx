@@ -48,13 +48,20 @@ function parsearMasivo(texto, maestros) {
 
 // La plantilla lleva BOM para que Excel en Windows muestre bien las tildes,
 // y días con nombre completo (el parser acepta también las abreviaturas).
-const PLANTILLA = 'data:text/csv;charset=utf-8,' + encodeURIComponent(
-  '\uFEFF' +
-  'Día;Patio;Material;Toneladas\n' +
-  'Lunes;HOP01;Fierro pesado;24\n' +
-  'Lunes;LD01;Fierro liviano / mixto;14\n' +
-  'Martes;CLS01;Cables forrados;6\n' +
-  'Miércoles;HOP01;Fierro pesado;22\n');
+// Se arma con los patios y materiales que existen ahora, no con una lista
+// escrita a mano: si el contrato cambia de categorías, una plantilla fija
+// entrega ejemplos que el propio parser rechaza por desconocidos.
+const plantilla = (maestros) => {
+  const dias = ['Lunes', 'Lunes', 'Martes', 'Miércoles'];
+  const tons = [24, 14, 6, 22];
+  const pat = maestros?.patios?.length ? maestros.patios : [{ codigo: 'HOP01' }];
+  const cat = maestros?.categorias?.length ? maestros.categorias : [{ nombre: 'Material' }];
+  const filas = dias
+    .map((d, i) => `${d};${pat[i % pat.length].codigo};${cat[i % cat.length].nombre};${tons[i]}`)
+    .join('\n');
+  return 'data:text/csv;charset=utf-8,' + encodeURIComponent(
+    '﻿' + 'Día;Patio;Material;Toneladas\n' + filas + '\n');
+};
 
 export default function Programa() {
   const [data, setData] = useState(null);
@@ -65,7 +72,10 @@ export default function Programa() {
   const [texto, setTexto] = useState('');
   const [ejec, setEjec] = useState(null);
   const [repro, setRepro] = useState(null);
-  const [form, setForm] = useState({ dia: 'Lun', patio_id: 1, categoria_id: 1, ton_estimadas: '' });
+  // Patio y categoría por defecto salen de los maestros, no de un id escrito a
+  // mano: si esa categoría se reemplazó, el formulario enviaría una que ya no
+  // existe y la base lo rechaza con un error ilegible.
+  const [form, setForm] = useState({ dia: 'Lun', patio_id: null, categoria_id: null, ton_estimadas: '' });
   const [tonReal, setTonReal] = useState('');
   const [obs, setObs] = useState('');
   const { user } = useAuth();
@@ -76,7 +86,17 @@ export default function Programa() {
     api('/programa' + qs).then((d) => { setData(d); setSel({ anio: d.anio, semana: d.semana }); })
       .catch((e) => toast(e.message, true));
   };
-  useEffect(() => { load(); api('/maestros').then(setMaestros).catch(() => {}); }, []);
+  useEffect(() => {
+    load();
+    api('/maestros').then((m) => {
+      setMaestros(m);
+      setForm((f) => ({
+        ...f,
+        patio_id: f.patio_id ?? m.patios?.[0]?.id ?? null,
+        categoria_id: f.categoria_id ?? m.categorias?.[0]?.id ?? null,
+      }));
+    }).catch(() => {});
+  }, []);
   if (!data) return <div className="loading">Cargando programa…</div>;
 
   const puedePlanificar = ['limpieza', 'coordinador'].includes(user.role);
@@ -108,6 +128,8 @@ export default function Programa() {
     } catch (e) { toast(e.message, true); }
   }
   async function crear() {
+    if (!form.patio_id || !form.categoria_id) return toast('Elija patio y material', true);
+    if (!(Number(form.ton_estimadas) > 0)) return toast('Indique las toneladas estimadas', true);
     try {
       await api('/programa', { method: 'POST', body: { ...form, anio: sel.anio, semana: sel.semana, ton_estimadas: +form.ton_estimadas } });
       toast('Actividad planificada');
@@ -194,7 +216,7 @@ export default function Programa() {
         return (
           <Modal open title={`Carga masiva · semana ${sel?.semana}`} onClose={() => setMasivo(false)}
             footer={<>
-              <a className="btn" href={PLANTILLA} download="Programa semanal (plantilla).csv" style={{ marginRight: 'auto', textDecoration: 'none' }}>⇩ Plantilla CSV</a>
+              <a className="btn" href={plantilla(maestros)} download="Programa semanal (plantilla).csv" style={{ marginRight: 'auto', textDecoration: 'none' }}>⇩ Plantilla CSV</a>
               <button className="btn" onClick={() => setMasivo(false)}>Cancelar</button>
               <button className="btn primary" disabled={!validas.length || errores > 0}
                 onClick={() => cargarMasivo(validas)}>
@@ -254,12 +276,12 @@ export default function Programa() {
           </select>
         </Field>
         <Field label="Patio de origen">
-          <select value={form.patio_id} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
+          <select value={form.patio_id ?? ''} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
             {maestros?.patios.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
           </select>
         </Field>
         <Field label="Tipo de material">
-          <select value={form.categoria_id} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
+          <select value={form.categoria_id ?? ''} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c2) => <option key={c2.id} value={c2.id}>{c2.nombre}</option>)}
           </select>
         </Field>
