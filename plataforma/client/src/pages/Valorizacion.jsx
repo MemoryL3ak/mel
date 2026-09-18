@@ -56,16 +56,30 @@ function parsearPrecios(texto, categorias, porTonelada) {
   return filas;
 }
 
+// Filas de ejemplo con materiales que existen de verdad y con su precio
+// vigente: una plantilla con nombres escritos a mano queda obsoleta apenas
+// cambia el contrato, y el propio parser la rechaza por categoría desconocida.
+const dec2 = (n) => Number(n).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const ejemplos = (cats, porTonelada) => {
+  const lista = (cats?.length ? cats : [{ nombre: 'Material' }]).slice(0, 3);
+  const filas = lista.map((c) => {
+    if (!porTonelada) return `${c.nombre};${dec2(c.precio_usd ?? 0.195).replace('.', ',')};${hoyISO()}`;
+    const a = c.precio_usd_tm ?? 100;
+    const b = c.precio_usd_tm_madera ?? a;
+    return `${c.nombre};${dec2(a)};${dec2(b)};${c.vigente_desde ?? hoyISO()}`;
+  });
+  return filas.join('\n') + '\n';
+};
+const hoyISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 // BOM al inicio para que Excel en Windows muestre bien las tildes.
-const plantilla = (porTonelada) => 'data:text/csv;charset=utf-8,' + encodeURIComponent(
+const plantilla = (porTonelada, cats = []) => 'data:text/csv;charset=utf-8,' + encodeURIComponent(
   '﻿' + (porTonelada
-    ? 'Material;Alt. A sin madera USD/TM;Alt. B con madera USD/TM;Vigente desde\n' +
-      'Excedente de Fierro chatarra Pesada;177,26;166,21;2026-06-30\n' +
-      'Excedente de Bronce;7.558,38;6.382,61;2026-06-30\n' +
-      'Motores Eléctricos;660,67;660,67;2026-06-30\n'
-    : 'Categoría;Precio USD/kg;Vigente desde\n' +
-      'Fierro pesado;0,1950;2026-09-16\n' +
-      'Acero inoxidable;0,6850;2026-09-16\n'));
+    ? 'Material;Alt. A sin madera USD/TM;Alt. B con madera USD/TM;Vigente desde\n' + ejemplos(cats, true)
+    : 'Categoría;Precio USD/kg;Vigente desde\n' + ejemplos(cats, false)));
 
 export default function Valorizacion() {
   const [data, setData] = useState(null);
@@ -430,7 +444,7 @@ export default function Valorizacion() {
           const malas = filas.filter((f) => f.error).length;
           return (
             <>
-              <a className="btn" href={plantilla(data.tm)} download="Precios del contrato (plantilla).csv"
+              <a className="btn" href={plantilla(data.tm, data.categorias)} download="Precios del contrato (plantilla).csv"
                 style={{ marginRight: 'auto', textDecoration: 'none' }}>⇩ Plantilla CSV</a>
               <button className="btn" onClick={() => setMasivo(false)}>Cancelar</button>
               <button className="btn primary" disabled={!filas.length || malas > 0}
@@ -451,9 +465,7 @@ export default function Valorizacion() {
         </Field>
         <Field label="Contenido">
           <textarea rows="6" value={texto} onChange={(e) => setTexto(e.target.value)}
-            placeholder={data.tm
-              ? 'Excedente de Bronce;7.558,38;6.382,61;2026-06-30\nMotores Eléctricos;660,67'
-              : 'Fierro pesado;0,1950;2026-09-16\nFierro liviano / mixto;0,1260'} />
+            placeholder={ejemplos(data.categorias, data.tm).trim()} />
         </Field>
         {(() => {
           const filas = texto.trim() ? parsearPrecios(texto, data.categorias, data.tm) : [];
