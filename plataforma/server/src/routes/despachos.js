@@ -11,6 +11,20 @@ import { valorDolar } from '../dolar.js';
 
 const r = Router();
 
+// Folio del código interno del despacho. Desde la migración 0006 el tipo es
+// 'CI' (antes 'GD', renombrado para no confundirlo con la GD que emite el SII).
+// Se intenta 'CI' y, si la base todavía no migró, se cae a 'GD'. Así el folio
+// NO depende del esquema detectado al arrancar: aplicar la migración con el
+// servidor encendido deja de romper la creación de despachos.
+async function folioInterno() {
+  try {
+    return await folio('CI');
+  } catch (e) {
+    if (/tipo de folio desconocido/i.test(e.message || '')) return await folio('GD');
+    throw e;
+  }
+}
+
 // Tipos de descuento que se aplican sobre una recepción.
 export const TIPO_DESCUENTO = {
   kg: 'Kilos descontados',
@@ -243,7 +257,7 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
   }
   const archivos = Object.entries(req.files ?? {})
     .flatMap(([tipo, lista]) => lista.map((f, i) => ({ tipo, n: i + 1, f })));
-  const guia = await folio(tiene.codigo_interno ? 'CI' : 'GD');
+  const guia = await folioInterno();
   const row = await q(supa.from('despachos').insert({
     guia, patio_id: Number(patio_id), categoria_id: Number(categoria_id), kg_origen: Number(kg_origen),
     ...(tiene.guia_mel ? { guia_mel: (guia_mel || '').trim() || null } : {}),
@@ -434,7 +448,7 @@ r.post('/despachos/:id/anular', auth('ito', 'coordinador'), ah(async (req, res) 
   let nueva = null;
   if (req.body?.reemplazar) {
     const b = req.body.nueva || {};
-    const guia = await folio(tiene.codigo_interno ? 'CI' : 'GD');
+    const guia = await folioInterno();
     nueva = await q(supa.from('despachos').insert({
       guia,
       patio_id: Number(b.patio_id) || d.patio_id,
