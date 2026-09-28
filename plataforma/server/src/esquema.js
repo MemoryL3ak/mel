@@ -21,6 +21,11 @@ export const tiene = {
   desc_item: false,    // tabla despacho_descuentos
   // db/0005_precio_tm.sql
   tm: false,           // precios.precio_usd_tm(+_madera), despachos.con_madera/precio_usd_tm
+  // db/0006_review.sql
+  tara_origen: false,    // despachos.tara_origen_kg
+  cdf_doc: false,        // traslados.cert_fotos
+  cuad_doble: false,     // cuadraturas.confirmada_por, confirmada_el
+  codigo_interno: false, // folios: el tipo 'GD' se renombró a 'CI'
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -30,6 +35,8 @@ const ORIGEN = {
   transporte: '0004_operacion.sql', pesaje: '0004_operacion.sql',
   anulacion: '0004_operacion.sql', usd: '0004_operacion.sql', desc_item: '0004_operacion.sql',
   tm: '0005_precio_tm.sql',
+  tara_origen: '0006_review.sql', cdf_doc: '0006_review.sql',
+  cuad_doble: '0006_review.sql', codigo_interno: '0006_review.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -53,6 +60,16 @@ export async function detectarEsquema() {
 
   tiene.tm = (await existe('precios', 'precio_usd_tm,precio_usd_tm_madera'))
     && (await existe('despachos', 'con_madera,precio_usd_tm'));
+
+  tiene.tara_origen = await existe('despachos', 'tara_origen_kg');
+  tiene.cdf_doc = await existe('traslados', 'cert_fotos');
+  tiene.cuad_doble = await existe('cuadraturas', 'confirmada_por,confirmada_el');
+  // El folio interno se renombró de 'GD' a 'CI'. Se detecta por la existencia
+  // del tipo 'CI' en la tabla folios; si no está, se sigue emitiendo 'GD'.
+  try {
+    const { data } = await supa.from('folios').select('tipo').eq('tipo', 'CI').limit(1);
+    tiene.codigo_interno = !!data?.length;
+  } catch { tiene.codigo_interno = false; }
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {

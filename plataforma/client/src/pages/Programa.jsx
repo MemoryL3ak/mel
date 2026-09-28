@@ -99,7 +99,7 @@ export default function Programa() {
   }, []);
   if (!data) return <div className="loading">Cargando programa…</div>;
 
-  const puedePlanificar = ['limpieza', 'coordinador'].includes(user.role);
+  const puedePlanificar = ['limpieza', 'ito', 'coordinador'].includes(user.role);
   const puedeEjecutar = ['limpieza', 'ito', 'coordinador'].includes(user.role);
   const mover = (delta) => {
     let { anio, semana } = sel;

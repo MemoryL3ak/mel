@@ -282,6 +282,21 @@ export default function Valorizacion() {
               );
             })}
           </tbody>
+          {data.categorias.length > 0 && (() => {
+            // Suma de todos los materiales de la tabla. La cantidad de columnas
+            // antes de "Kg YTD" cambia según el modo de precio (CLP, USD o TM).
+            const totKg = data.categorias.reduce((a, c) => a + (Number(c.kg_ytd) || 0), 0);
+            const totVal = data.categorias.reduce((a, c) => a + (Number(c.valor_ytd) || 0), 0);
+            const antes = 3 + (data.tm ? 2 : 1) + ((data.usd || data.tm) ? 1 : 0);
+            return (
+              <tfoot><tr>
+                <td colSpan={antes} style={{ textAlign: 'right', fontWeight: 600 }}>Total</td>
+                <td className="num"><b>{fmtKg(totKg)}</b></td>
+                <td className="num"><b>{fmtCLP(totVal)}</b></td>
+                <td></td>
+              </tr></tfoot>
+            );
+          })()}
         </table></div>
       </div>
 

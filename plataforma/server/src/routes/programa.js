@@ -28,7 +28,7 @@ r.get('/programa', auth(), ah(async (req, res) => {
   });
 }));
 
-r.post('/programa', auth('limpieza', 'coordinador'), ah(async (req, res) => {
+r.post('/programa', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const { anio, semana, dia, fecha, patio_id, categoria_id, ton_estimadas } = req.body || {};
   if (!anio || !semana || !dia || !patio_id || !categoria_id || !(Number(ton_estimadas) > 0)) {
     return res.status(400).json({ error: 'Faltan datos de la planificación' });
@@ -43,7 +43,7 @@ r.post('/programa', auth('limpieza', 'coordinador'), ah(async (req, res) => {
 
 // Copia la planificación de la semana anterior a la semana indicada (vacía).
 // Los lunes se parte de la semana pasada y solo se ajusta lo que cambia.
-r.post('/programa/duplicar', auth('limpieza', 'coordinador'), ah(async (req, res) => {
+r.post('/programa/duplicar', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const anio = Number(req.body?.anio), semana = Number(req.body?.semana);
   if (!anio || !semana) return res.status(400).json({ error: 'Año y semana son obligatorios' });
   let pAnio = anio, pSem = semana - 1;
@@ -69,7 +69,7 @@ r.post('/programa/duplicar', auth('limpieza', 'coordinador'), ah(async (req, res
 
 // Carga masiva de la semana: filas ya resueltas por el cliente (vista previa
 // validada). Inserción atómica: o entran todas, o ninguna.
-r.post('/programa/masivo', auth('limpieza', 'coordinador'), ah(async (req, res) => {
+r.post('/programa/masivo', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const anio = Number(req.body?.anio), semana = Number(req.body?.semana);
   const filas = req.body?.filas;
   if (!anio || !semana || !Array.isArray(filas) || !filas.length) {
@@ -106,7 +106,7 @@ r.post('/programa/:id/ejecutar', auth('limpieza', 'ito', 'coordinador'), ah(asyn
   res.json(row);
 }));
 
-r.post('/programa/:id/reprogramar', auth('limpieza', 'coordinador'), ah(async (req, res) => {
+r.post('/programa/:id/reprogramar', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const obs = (req.body?.observacion || '').trim();
   if (!obs) return res.status(400).json({ error: 'La reprogramación requiere una observación' });
   const row = await q(supa.from('programa')

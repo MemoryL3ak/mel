@@ -217,7 +217,7 @@ async function calcular(anio, semana) {
   };
 }
 
-r.get('/cuadratura', auth('ito', 'coordinador'), ah(async (req, res) => {
+r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) => {
   const actual = semanaISO();
   const anio = Number(req.query.anio || actual.anio);
   const semana = Number(req.query.semana || actual.semana);
@@ -253,6 +253,22 @@ r.post('/cuadratura/cerrar', auth('ito', 'coordinador'), ah(async (req, res) => 
     detalle, observacion: (observacion || '').trim() || null, generada_por: req.user.name,
   }, { onConflict: 'anio,semana' }).select().single());
   await audit(req.user.name, req.user.role, `Cerró cuadratura semanal (${row.estado})`, `S${semana}/${anio}`);
+  res.json(row);
+}));
+
+// Doble control: el ITO cierra la semana; el responsable de Lampa la confirma.
+// Recién con la confirmación el cierre queda con doble firma.
+r.post('/cuadratura/confirmar', auth('lampa', 'coordinador'), ah(async (req, res) => {
+  if (!tiene.cuad_doble) return res.status(503).json({ error: 'Esta función requiere aplicar db/0006_review.sql en la base de datos' });
+  const { anio, semana } = req.body || {};
+  if (!anio || !semana) return res.status(400).json({ error: 'Año y semana son obligatorios' });
+  const cerrada = await q(supa.from('cuadraturas').select('*').eq('anio', Number(anio)).eq('semana', Number(semana)).maybeSingle());
+  if (!cerrada) return res.status(409).json({ error: 'La semana aún no ha sido cerrada por el ITO' });
+  if (cerrada.confirmada_el) return res.status(409).json({ error: `Ya la confirmó ${cerrada.confirmada_por}` });
+  const row = await q(supa.from('cuadraturas')
+    .update({ confirmada_por: req.user.name, confirmada_el: new Date().toISOString() })
+    .eq('id', cerrada.id).select().single());
+  await audit(req.user.name, req.user.role, 'Confirmó cuadratura semanal (responsable Lampa)', `S${semana}/${anio}`);
   res.json(row);
 }));
 
