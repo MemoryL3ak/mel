@@ -35,12 +35,12 @@ const precioRef = (c) =>
 // otra cosa —basta con poner «todos los archivos» en el diálogo—, el archivo
 // se descartaba sin decir nada y la guía quedaba sin respaldo: el usuario creía
 // haberlo adjuntado. Se filtra aquí, con el motivo a la vista.
-const TIPOS_FOTO = ['image/jpeg', 'image/png', 'image/webp'];
+const TIPOS_FOTO = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const MAX_FOTO = 5 * 1024 * 1024;
 const revisarFotos = (lista) => {
   const buenas = [], malas = [];
   for (const f of lista) {
-    if (!TIPOS_FOTO.includes(f.type)) malas.push(`«${f.name}» no es una foto (JPG, PNG o WebP)`);
+    if (!TIPOS_FOTO.includes(f.type)) malas.push(`«${f.name}» no es un formato válido (JPG, PNG, WebP o PDF)`);
     else if (f.size > MAX_FOTO) malas.push(`«${f.name}» pesa ${(f.size / 1024 / 1024).toFixed(1)} MB y el máximo son 5 MB`);
     else buenas.push(f);
   }
@@ -80,6 +80,7 @@ export default function Despachos() {
   const [porDefecto, setPorDefecto] = useState({ patio_id: null, categoria_id: null });
   const formVacio = () => ({
     ...porDefecto, kg_origen: '', unidad: unidadGuardada(),
+    tara_origen: '', unidad_tara: unidadGuardada(),
     guia_mel: '', fecha: hoyISO(), ev: {},
     transportista: '', transportista_rut: '', patente_tracto: '', patente_rampla: '',
   });
@@ -98,6 +99,10 @@ export default function Despachos() {
   const [rForm, setRForm] = useState(recepVacia);
   const [tForm, setTForm] = useState({ categoria_id: null, kg: '', unidad: unidadGuardada() });
   const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
+  const [cdfFile, setCdfFile] = useState([]);        // documento(s) del CDF a adjuntar
+  const [verCdf, setVerCdf] = useState(null);        // { traslado, archivos } del CDF abierto
+  const [editar, setEditar] = useState(null);        // guía en edición de datos
+  const [eForm, setEForm] = useState(null);
   const [obs, setObs] = useState('');
   const { user } = useAuth();
   const toast = useToast();
@@ -123,7 +128,9 @@ export default function Despachos() {
   const puedeCrear = ['limpieza', 'ito', 'coordinador'].includes(user.role);
   const puedeRecep = ['vendor', 'ito', 'coordinador'].includes(user.role);
   const puedeTras = ['vendor', 'coordinador'].includes(user.role);
+  const puedeRecepTras = ['vendor', 'coordinador', 'lampa'].includes(user.role);
   const puedeResolver = ['ito', 'coordinador'].includes(user.role);
+  const puedeEditar = ['ito', 'coordinador'].includes(user.role);
 
   const post = (path, body, okMsg, cierra) => async () => {
     try {
@@ -143,6 +150,8 @@ export default function Despachos() {
       fd.append('patio_id', form.patio_id);
       fd.append('categoria_id', form.categoria_id);
       fd.append('kg_origen', kg);
+      const taraOrigen = aKg(form.tara_origen, form.unidad_tara);
+      if (taraOrigen) fd.append('tara_origen_kg', taraOrigen);
       fd.append('guia_mel', form.guia_mel.trim());
       fd.append('fecha', form.fecha);
       for (const k of ['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla']) {
@@ -181,6 +190,64 @@ export default function Despachos() {
         ? `Recepción registrada con diferencia de ${d.dif_pct}%: queda observada para el ITO`
         : 'Recepción registrada dentro de la tolerancia');
       setRecep(null);
+      load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // Recepción en Lampa: viaja como formulario para poder adjuntar el documento
+  // del certificado de disposición final.
+  async function recepcionarLampa() {
+    const kg = aKg(lampa.valor, lampa.unidad);
+    if (!kg) return toast('Ingrese el peso validado en báscula de Lampa', true);
+    try {
+      const fd = new FormData();
+      fd.append('kg_lampa', kg);
+      for (const f of cdfFile ?? []) fd.append('cdf', f);
+      await api(`/traslados/${recepTras.id}/recepcionar`, { method: 'POST', body: fd });
+      toast('Recepción en Lampa registrada; certificado emitido');
+      setRecepTras(null);
+      setCdfFile([]);
+      load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // Abre el/los documento(s) del CDF de un traslado.
+  async function abrirCdf(t) {
+    try {
+      const r = await api(`/traslados/${t.id}/cdf`);
+      if (!r.archivos?.length) return toast('Este certificado no tiene documento adjunto', true);
+      setVerCdf({ traslado: t, archivos: r.archivos });
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // Corrección de datos de una guía que aún no entró a un estado de pago.
+  function abrirEditar(d) {
+    setEditar(d);
+    setEForm({
+      guia_mel: d.guia_mel ?? '', fecha: d.fecha ?? '',
+      patio_id: maestros?.patios.find((p) => p.codigo === d.patio)?.id ?? '',
+      categoria_id: maestros?.categorias.find((c) => c.nombre === d.categoria)?.id ?? '',
+      kg_origen: String(d.kg_origen ?? ''), unidad: 'kg',
+      tara_origen: d.tara_origen_kg != null ? String(d.tara_origen_kg) : '', unidad_tara: 'kg',
+      transportista: d.transportista ?? '', transportista_rut: d.transportista_rut ?? '',
+      patente_tracto: d.patente_tracto ?? '', patente_rampla: d.patente_rampla ?? '',
+    });
+  }
+
+  async function guardarEdicion() {
+    const kg = aKg(eForm.kg_origen, eForm.unidad);
+    if (!kg) return toast('El peso de origen debe ser mayor que cero', true);
+    try {
+      const body = {
+        guia_mel: eForm.guia_mel.trim(), fecha: eForm.fecha,
+        patio_id: eForm.patio_id, categoria_id: eForm.categoria_id, kg_origen: kg,
+        tara_origen_kg: aKg(eForm.tara_origen, eForm.unidad_tara) || '',
+        transportista: eForm.transportista.trim(), transportista_rut: eForm.transportista_rut.trim(),
+        patente_tracto: eForm.patente_tracto.trim(), patente_rampla: eForm.patente_rampla.trim(),
+      };
+      await api(`/despachos/${editar.id}`, { method: 'PATCH', body });
+      toast(`Guía ${editar.guia} corregida`);
+      setEditar(null); setEForm(null);
       load();
     } catch (e) { toast(e.message, true); }
   }
@@ -297,7 +364,7 @@ export default function Despachos() {
             <small>{visibles.length} de {rows.length} guía(s)</small>
           </div>
           <div className="tbl-wrap"><table>
-          <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th className="acc"></th></tr></thead>
+          <thead><tr><th>Código interno</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th className="acc"></th></tr></thead>
           <tbody>
             {visibles.map((d) => (
               <tr key={d.id} className={d.estado === 'anulado' ? 'anulada' : undefined}>
@@ -335,6 +402,10 @@ export default function Despachos() {
                   {d.estado === 'observado' && puedeResolver && (
                     <button className="btn sm" onClick={() => { setResolver(d); setObs(''); }}>Resolver</button>
                   )}{' '}
+                  {/* Corrección de datos de digitación, mientras la guía no esté en un EP. */}
+                  {puedeEditar && d.estado !== 'anulado' && !d.ep_folio && (
+                    <button className="btn sm" onClick={() => abrirEditar(d)}>Editar</button>
+                  )}{' '}
                   {/* Una guía no se borra: se anula con motivo y queda en el libro. */}
                   {fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeResolver && (
                     <button className="btn sm danger" onClick={() => { setAnular(d); setAForm({ motivo: '', reemplazar: false }); }}>Anular</button>
@@ -371,7 +442,7 @@ export default function Despachos() {
                 </Empty>
               ) : (
                 <div className="tbl-wrap"><table>
-                  <thead><tr><th>Guía</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg declarados por MEL</th><th className="num acc">Pesaje</th></tr></thead>
+                  <thead><tr><th>Código interno</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg declarados por MEL</th><th className="num acc">Pesaje</th></tr></thead>
                   <tbody>
                     {porValidar.map((d) => (
                       <tr key={d.id}>
@@ -401,7 +472,7 @@ export default function Despachos() {
             <div className="card">
               <div className="card-h"><h3>Recepciones validadas</h3><small>registro de los pesajes ya declarados</small></div>
               <div className="tbl-wrap"><table>
-                <thead><tr><th>Guía</th><th>Recepción</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Diferencia</th><th>Clasificación</th><th>Validación</th><th>Observación</th></tr></thead>
+                <thead><tr><th>Código interno</th><th>Recepción</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Diferencia</th><th>Clasificación</th><th>Validación</th><th>Observación</th></tr></thead>
                 <tbody>
                   {validadas.map((d) => (
                     <tr key={d.id}>
@@ -425,7 +496,7 @@ export default function Despachos() {
 
       {tab === 'd3' && (
         <div className="card"><div className="tbl-wrap"><table>
-          <thead><tr><th>Guía</th><th>Fecha</th><th>Categoría</th><th className="num">Kg despachados</th><th className="num">Kg Lampa</th><th>Estado</th><th>Certificado</th><th></th></tr></thead>
+          <thead><tr><th>Guía traslado</th><th>Fecha</th><th>Categoría</th><th className="num">Kg despachados</th><th className="num">Kg Lampa</th><th>Estado</th><th>Certificado</th><th></th></tr></thead>
           <tbody>
             {traslados.map((t) => (
               <tr key={t.id}>
@@ -435,8 +506,11 @@ export default function Despachos() {
                 <td><Chip tone={t.estado === 'recepcionado' ? 'ok' : 'info'}>{t.estado === 'recepcionado' ? 'Recepcionado' : 'En tránsito'}</Chip></td>
                 <td className="mono">{t.cert_folio || '—'}</td>
                 <td className="num">
-                  {t.estado === 'en_transito' && puedeTras && (
-                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setLampa({ valor: '', unidad: unidadGuardada() }); }}>Recepcionar en Lampa</button>
+                  {t.estado === 'en_transito' && puedeRecepTras && (
+                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setLampa({ valor: '', unidad: unidadGuardada() }); setCdfFile([]); }}>Recepcionar en Lampa</button>
+                  )}
+                  {t.estado === 'recepcionado' && t.cert_fotos > 0 && (
+                    <button className="btn sm" onClick={() => abrirCdf(t)}>Ver CDF</button>
                   )}
                 </td>
               </tr>
@@ -449,7 +523,7 @@ export default function Despachos() {
 
       {tab === 'd4' && (
         <div className="card"><div className="tbl-wrap"><table>
-          <thead><tr><th>Certificado</th><th>Guía traslado</th><th>Categoría</th><th className="num">Kg certificados</th><th>Emisión</th></tr></thead>
+          <thead><tr><th>Certificado</th><th>Guía traslado</th><th>Categoría</th><th className="num">Kg certificados</th><th>Emisión</th><th>Documento</th></tr></thead>
           <tbody>
             {certificados.map((t) => (
               <tr key={t.id}>
@@ -458,6 +532,9 @@ export default function Despachos() {
                 <td>{t.categoria}</td>
                 <td className="num">{fmtKg(t.kg_lampa)}</td>
                 <td>{t.recepcionado_el}</td>
+                <td>{t.cert_fotos > 0
+                  ? <button className="btn sm" onClick={() => abrirCdf(t)}>Ver documento</button>
+                  : <span style={{ color: 'var(--muted)' }}>Sin adjunto</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -467,7 +544,7 @@ export default function Despachos() {
       )}
 
       {/* ---- modales ---- */}
-      <Modal open={!!detalle} title={detalle && `Guía ${detalle.guia}`} onClose={() => setDetalle(null)}
+      <Modal open={!!detalle} title={detalle && `Código interno ${detalle.guia}`} onClose={() => setDetalle(null)}
         footer={<button className="btn" onClick={() => setDetalle(null)}>Cerrar</button>}>
         {detalle && (
           <>
@@ -478,7 +555,8 @@ export default function Despachos() {
               <div><small style={{ color: 'var(--muted)' }}>Patio de origen</small><br /><b>{detalle.patio} · {detalle.patio_nombre}</b></div>
               <div><small style={{ color: 'var(--muted)' }}>Categoría</small><br />
                 <b>{detalle.categoria}</b>{detalle.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {detalle.categoria_final}</span>}</div>
-              <div><small style={{ color: 'var(--muted)' }}>Pesaje MEL</small><br /><b>{fmtKg(detalle.kg_origen)} kg</b></div>
+              <div><small style={{ color: 'var(--muted)' }}>Pesaje MEL</small><br /><b>{fmtKg(detalle.kg_origen)} kg</b>
+                {detalle.tara_origen_kg != null && <><br /><small style={{ color: 'var(--muted)' }}>Tara {fmtKg(detalle.tara_origen_kg)} · bruto {fmtKg(detalle.bruto_origen_kg)} kg</small></>}</div>
               <div><small style={{ color: 'var(--muted)' }}>Pesaje La Negra</small><br />
                 <b>{detalle.kg_destino != null ? `${fmtKg(detalle.kg_destino)} kg` : 'pendiente'}</b>
                 {detalle.dif_pct != null && <span style={{ color: Math.abs(detalle.dif_pct) > 2 ? 'var(--bad-tx)' : 'var(--muted)', fontSize: 12 }}> ({detalle.dif_pct.toFixed(2)}%)</span>}</div>
@@ -604,8 +682,14 @@ export default function Despachos() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 8 }}>
                   {urls.map((u) => (
                     <a key={u} href={u} target="_blank" rel="noreferrer" title="Abrir en tamaño completo">
-                      <img src={u} alt={etiqueta}
-                        style={{ width: '100%', height: 130, objectFit: 'contain', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)' }} />
+                      {/\.pdf(\?|$)/i.test(u) ? (
+                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', height: 130, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600 }}>
+                          <span style={{ fontSize: 26 }}>📄</span>Ver PDF
+                        </span>
+                      ) : (
+                        <img src={u} alt={etiqueta}
+                          style={{ width: '100%', height: 130, objectFit: 'contain', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)' }} />
+                      )}
                     </a>
                   ))}
                 </div>
@@ -643,6 +727,19 @@ export default function Despachos() {
         <CampoPeso label="Peso en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
           onValor={(v) => setForm({ ...form, kg_origen: v })}
           onUnidad={(u) => setForm({ ...form, unidad: u })} />
+        {fn.tara_origen && (
+          <CampoPeso label="Tara · peso del camión vacío (opcional)"
+            hint={(() => {
+              const neto = aKg(form.kg_origen, form.unidad);
+              const tara = aKg(form.tara_origen, form.unidad_tara);
+              return neto && tara
+                ? `Bruto en origen: ${fmtKg(neto + tara)} kg (neto ${fmtKg(neto)} + tara ${fmtKg(tara)}).`
+                : 'El peso valorizado sigue siendo el neto declarado por MEL.';
+            })()}
+            valor={form.tara_origen} unidad={form.unidad_tara}
+            onValor={(v) => setForm({ ...form, tara_origen: v })}
+            onUnidad={(u) => setForm({ ...form, unidad_tara: u })} />
+        )}
 
         {fn.transporte && <>
         <div className="ev-tit">Transporte
@@ -668,12 +765,12 @@ export default function Despachos() {
         </div>
         </>}
 
-        <div className="ev-tit">Respaldos de la guía <small>JPG, PNG o WebP · máx. 5 MB · hasta 2 fotos por respaldo</small></div>
+        <div className="ev-tit">Respaldos de la guía <small>JPG, PNG, WebP o PDF · máx. 5 MB · hasta 2 archivos por respaldo</small></div>
         {EVIDENCIA.map(([tipo, etiqueta, ayuda]) => {
           const puestas = form.ev[tipo] ?? [];
           return (
             <Field key={tipo} label={`${etiqueta}${puestas.length ? ` · ${puestas.length}` : ''}`} hint={ayuda}>
-              <input type="file" multiple accept="image/jpeg,image/png,image/webp"
+              <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={(e) => {
                   const { buenas, malas } = revisarFotos(Array.from(e.target.files));
                   if (malas.length) toast(malas.join(' · '), true);
@@ -683,15 +780,18 @@ export default function Despachos() {
               {puestas.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                   {puestas.map((f) => (
-                    <img key={f.name} src={URL.createObjectURL(f)} alt={f.name}
-                      style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
+                    f.type === 'application/pdf'
+                      ? <span key={f.name} title={f.name}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 48, padding: '0 8px', fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', background: 'var(--surface-2)', borderRadius: 6, border: '1px solid var(--line)' }}>📄 PDF</span>
+                      : <img key={f.name} src={URL.createObjectURL(f)} alt={f.name}
+                          style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
                   ))}
                 </div>
               )}
             </Field>
           );
         })}
-        <small style={{ color: 'var(--muted)' }}>La guía se folia automáticamente (GD-####) al registrar.</small>
+        <small style={{ color: 'var(--muted)' }}>Se folia con un código interno automático (CI-####) al registrar. No es la GD del SII: esa es el «N° de guía de despacho MEL».</small>
       </Modal>
 
       <Modal open={!!recep} title={recep && `Recepcionar ${recep.guia} en La Negra`} onClose={() => setRecep(null)}
@@ -808,7 +908,7 @@ export default function Despachos() {
         </>}
 
         <Field label="Foto del ticket de báscula La Negra" hint="Respalda el peso que acaba de declarar. Queda adjunto a la guía.">
-          <input type="file" multiple accept="image/jpeg,image/png,image/webp"
+          <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
             onChange={(e) => {
               const { buenas, malas } = revisarFotos(Array.from(e.target.files));
               if (malas.length) toast(malas.join(' · '), true);
@@ -874,6 +974,9 @@ export default function Despachos() {
             { categoria_id: tForm.categoria_id, kg: aKg(tForm.kg, tForm.unidad) },
             'Traslado despachado con guía foliada', () => { setNuevoTras(false); setTForm({ ...tForm, kg: '' }); })}>Despachar</button>
         </>}>
+        <Field label="Origen" hint="El traslado siempre sale del patio del vendor en La Negra hacia el destino final en Lampa.">
+          <input value="La Negra" readOnly disabled />
+        </Field>
         <Field label="Categoría de material">
           <select value={tForm.categoria_id ?? ''} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
@@ -885,18 +988,87 @@ export default function Despachos() {
           onUnidad={(u) => setTForm({ ...tForm, unidad: u })} />
       </Modal>
 
-      <Modal open={!!recepTras} title={recepTras && `Recepcionar ${recepTras.guia} en Lampa`} onClose={() => setRecepTras(null)}
+      <Modal open={!!recepTras} title={recepTras && `Recepcionar ${recepTras.guia} en Lampa`} onClose={() => { setRecepTras(null); setCdfFile([]); }}
         footer={<>
-          <button className="btn" onClick={() => setRecepTras(null)}>Cancelar</button>
-          <button className="btn primary" onClick={post(`/traslados/${recepTras?.id}/recepcionar`,
-            { kg_lampa: aKg(lampa.valor, lampa.unidad) },
-            'Recepción en Lampa registrada; certificado emitido', () => setRecepTras(null))}>Recepcionar y emitir CDF</button>
+          <button className="btn" onClick={() => { setRecepTras(null); setCdfFile([]); }}>Cancelar</button>
+          <button className="btn primary" onClick={recepcionarLampa}>Recepcionar y emitir CDF</button>
         </>}>
         <CampoPeso label="Peso validado en báscula Lampa"
           hint={`Despachado desde La Negra: ${recepTras && fmtKg(recepTras.kg)} kg. Al validar se emite el certificado de disposición final foliado (CDF-####).`}
           valor={lampa.valor} unidad={lampa.unidad}
           onValor={(v) => setLampa({ ...lampa, valor: v })}
           onUnidad={(u) => setLampa({ ...lampa, unidad: u })} />
+        {fn.cdf_doc && (
+          <Field label="Documento del certificado de disposición final (opcional)"
+            hint="Adjunte el CDF firmado en PDF o foto. Queda asociado al certificado foliado.">
+            <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
+              onChange={(e) => {
+                const { buenas, malas } = revisarFotos(Array.from(e.target.files));
+                if (malas.length) toast(malas.join(' · '), true);
+                if (!buenas.length) e.target.value = '';
+                setCdfFile(buenas.slice(0, 2));
+              }} />
+            {cdfFile.length > 0 && <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>{cdfFile.length} documento(s) adjunto(s).</small>}
+          </Field>
+        )}
+      </Modal>
+
+      <Modal open={!!verCdf} title={verCdf && `Certificado ${verCdf.traslado.cert_folio}`} onClose={() => setVerCdf(null)}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 8 }}>
+          {verCdf?.archivos.map((a) => (
+            <a key={a.url} href={a.url} target="_blank" rel="noreferrer" title="Abrir en tamaño completo">
+              {/\.pdf(\?|$)/i.test(a.url)
+                ? <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', height: 130, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600 }}><span style={{ fontSize: 26 }}>📄</span>Ver PDF</span>
+                : <img src={a.url} alt="CDF" style={{ width: '100%', height: 130, objectFit: 'contain', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)' }} />}
+            </a>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal open={!!editar} title={editar && `Corregir datos · ${editar.guia}`} onClose={() => { setEditar(null); setEForm(null); }}
+        footer={<>
+          <button className="btn" onClick={() => { setEditar(null); setEForm(null); }}>Cancelar</button>
+          <button className="btn primary" onClick={guardarEdicion}>Guardar corrección</button>
+        </>}>
+        {eForm && <>
+        <small style={{ color: 'var(--muted)', display: 'block', marginBottom: 12 }}>
+          Solo datos del documento de origen. Los kilos y el precio de la recepción no se editan aquí: para eso se anula la guía y se rehace.
+        </small>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="N° de guía de despacho MEL">
+            <input value={eForm.guia_mel} onChange={(e) => setEForm({ ...eForm, guia_mel: e.target.value })} placeholder="458921" />
+          </Field>
+          <Field label="Fecha del despacho">
+            <input type="date" value={eForm.fecha} onChange={(e) => setEForm({ ...eForm, fecha: e.target.value })} />
+          </Field>
+        </div>
+        <Field label="Patio de origen">
+          <select value={eForm.patio_id} onChange={(e) => setEForm({ ...eForm, patio_id: +e.target.value })}>
+            {maestros?.patios.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
+          </select>
+        </Field>
+        <Field label="Categoría de material">
+          <select value={eForm.categoria_id} onChange={(e) => setEForm({ ...eForm, categoria_id: +e.target.value })}>
+            {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+        </Field>
+        <CampoPeso label="Peso en báscula MEL" valor={eForm.kg_origen} unidad={eForm.unidad}
+          onValor={(v) => setEForm({ ...eForm, kg_origen: v })}
+          onUnidad={(u) => setEForm({ ...eForm, unidad: u })} />
+        {fn.tara_origen && (
+          <CampoPeso label="Tara · peso del camión vacío (opcional)" valor={eForm.tara_origen} unidad={eForm.unidad_tara}
+            onValor={(v) => setEForm({ ...eForm, tara_origen: v })}
+            onUnidad={(u) => setEForm({ ...eForm, unidad_tara: u })} />
+        )}
+        {fn.transporte && (
+          <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+            <Field label="Transportista"><input value={eForm.transportista} onChange={(e) => setEForm({ ...eForm, transportista: e.target.value })} /></Field>
+            <Field label="RUT del transportista"><input value={eForm.transportista_rut} onChange={(e) => setEForm({ ...eForm, transportista_rut: e.target.value })} /></Field>
+            <Field label="Patente del tracto"><input value={eForm.patente_tracto} onChange={(e) => setEForm({ ...eForm, patente_tracto: e.target.value.toUpperCase() })} /></Field>
+            <Field label="Patente de la rampla o batea"><input value={eForm.patente_rampla} onChange={(e) => setEForm({ ...eForm, patente_rampla: e.target.value.toUpperCase() })} /></Field>
+          </div>
+        )}
+        </>}
       </Modal>
     </div>
   );

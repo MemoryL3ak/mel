@@ -7,12 +7,14 @@ export const SCREENS = {
   vendor:      ['panel', 'despachos', 'estados'],
   ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria'],
   coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria', 'usuarios'],
+  lampa:       ['panel', 'despachos', 'cuadratura'],
 };
 export const ROL_NOMBRE = {
   limpieza: 'Empresa de limpieza de patios',
   vendor: 'Empresa vendor de chatarra',
   ito: 'ITO',
   coordinador: 'Coordinador Logístico MEL',
+  lampa: 'Responsable de Lampa',
 };
 
 const Ctx = createContext(null);

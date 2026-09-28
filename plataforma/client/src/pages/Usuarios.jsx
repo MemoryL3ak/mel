@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useAuth, ROL_NOMBRE } from '../auth.jsx';
 import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 
-const ROLES = ['limpieza', 'vendor', 'ito', 'coordinador'];
+const ROLES = ['limpieza', 'vendor', 'ito', 'coordinador', 'lampa'];
 
 // Muestra una contraseña recién generada, una única vez, con botón de copiar.
 function ClaveUnica({ username, password }) {

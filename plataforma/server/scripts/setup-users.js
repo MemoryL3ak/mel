@@ -13,6 +13,7 @@ const USUARIOS = [
   { username: 'ito',         nombre: 'ITO Enajenación',           role: 'ito' },
   { username: 'vendor',      nombre: 'Empresa Vendor Chatarra',   role: 'vendor' },
   { username: 'limpieza',    nombre: 'Empresa Limpieza de Patios', role: 'limpieza' },
+  { username: 'lampa',       nombre: 'Responsable de Lampa',       role: 'lampa' },
 ];
 
 const filas = [];
@@ -23,7 +24,15 @@ for (const u of USUARIOS) {
     { username: u.username, nombre: u.nombre, role: u.role, password_hash, activo: true },
     { onConflict: 'username' }
   );
-  if (error) { console.error(`✗ ${u.username}: ${error.message}`); process.exit(1); }
+  if (error) {
+    // El rol 'lampa' exige la migración 0006. Si aún no se aplicó, se avisa y
+    // se sigue con el resto en vez de abortar todo el setup.
+    if (u.role === 'lampa' && /users_role_check/.test(error.message)) {
+      console.warn(`• ${u.username}: falta aplicar db/0006_review.sql para el rol 'lampa'. Se omite por ahora.`);
+      continue;
+    }
+    console.error(`✗ ${u.username}: ${error.message}`); process.exit(1);
+  }
   filas.push({ usuario: u.username, rol: u.role, contraseña: pass });
 }
 

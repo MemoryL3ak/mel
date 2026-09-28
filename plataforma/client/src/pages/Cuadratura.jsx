@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { useAuth } from '../auth.jsx';
 
 export default function Cuadratura() {
   const [data, setData] = useState(null);
@@ -8,7 +9,11 @@ export default function Cuadratura() {
   const [cat, setCat] = useState('todas');   // filtro de categoría de la tabla
   const [fila, setFila] = useState(null);    // fila abierta en el detalle guía a guía
   const [obs, setObs] = useState('');
+  const { user } = useAuth();
   const toast = useToast();
+  // Doble control: el ITO cierra la semana; el responsable de Lampa la confirma.
+  const puedeCerrar = ['ito', 'coordinador'].includes(user.role);
+  const puedeConfirmar = ['lampa', 'coordinador'].includes(user.role);
 
   const load = (s) => {
     const qs = s ? `?anio=${s.anio}&semana=${s.semana}` : '';
@@ -34,14 +39,25 @@ export default function Cuadratura() {
     } catch (e) { toast(e.message, true); }
   }
 
+  async function confirmarSemana() {
+    try {
+      await api('/cuadratura/confirmar', { method: 'POST', body: { anio: data.anio, semana: data.semana } });
+      toast('Cuadratura confirmada por el responsable de Lampa');
+      load({ anio: data.anio, semana: data.semana });
+    } catch (e) { toast(e.message, true); }
+  }
+
   const hayDif = data.detalle.some((x) => x.observados > 0 || (x.dif_pct != null && Math.abs(x.dif_pct) > 2));
 
   return (
     <div>
       <PageHead title="Cuadratura semanal de movimientos"
         sub="Cruce de la semana por categoría en sus tres dimensiones: cantidad de guías de despacho, kilos y monto valorizado. Haga clic en una categoría para ver guía a guía de dónde nace su diferencia. El cierre guarda un registro inmutable.">
-        {!data.cerrada && data.detalle.length > 0 && (
+        {!data.cerrada && data.detalle.length > 0 && puedeCerrar && (
           <button className="btn primary" onClick={() => setCerrar(true)}>Cerrar cuadratura S{data.semana}</button>
+        )}
+        {data.cerrada && !data.cerrada.confirmada_el && puedeConfirmar && (
+          <button className="btn primary" onClick={confirmarSemana}>Confirmar cierre (Lampa)</button>
         )}
       </PageHead>
 
@@ -71,6 +87,8 @@ export default function Cuadratura() {
             {data.desde} — {data.hasta}
             {data.cerrada && <> · <Chip tone={data.cerrada.estado === 'cuadrada' ? 'ok' : 'warn'}>
               {data.cerrada.estado === 'cuadrada' ? 'Cuadrada' : 'Con diferencias'}</Chip></>}
+            {data.cerrada && ('confirmada_el' in data.cerrada) && <> · <Chip tone={data.cerrada.confirmada_el ? 'ok' : 'warn'}>
+              {data.cerrada.confirmada_el ? `Confirmada por ${data.cerrada.confirmada_por}` : 'Pendiente de confirmación de Lampa'}</Chip></>}
           </small>
         </div>
         {(() => {
@@ -244,13 +262,16 @@ export default function Cuadratura() {
       <div className="card">
         <div className="card-h"><h3>Cierres históricos</h3><small>últimas 12 semanas cerradas</small></div>
         <div className="tbl-wrap"><table>
-          <thead><tr><th>Semana</th><th>Estado</th><th>Cerrada por</th><th>Observación</th></tr></thead>
+          <thead><tr><th>Semana</th><th>Estado</th><th>Cerrada por</th><th>Confirmación Lampa</th><th>Observación</th></tr></thead>
           <tbody>
             {data.historico.map((c) => (
               <tr key={c.id}>
                 <td className="mono">S{c.semana}/{c.anio}</td>
                 <td><Chip tone={c.estado === 'cuadrada' ? 'ok' : 'warn'}>{c.estado === 'cuadrada' ? 'Cuadrada' : 'Con diferencias'}</Chip></td>
                 <td>{c.generada_por}</td>
+                <td>{('confirmada_el' in c)
+                  ? (c.confirmada_el ? <Chip tone="ok">{c.confirmada_por}</Chip> : <Chip tone="warn">Pendiente</Chip>)
+                  : '—'}</td>
                 <td style={{ color: 'var(--ink-2)', maxWidth: 320 }}>{c.observacion || '—'}</td>
               </tr>
             ))}

@@ -95,7 +95,7 @@ export const EVIDENCIA = {
 const subir = multer({
   storage: multer.memoryStorage(),
   limits: { files: 6, fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, f, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp'].includes(f.mimetype)),
+  fileFilter: (_req, f, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(f.mimetype)),
 });
 // Respaldos que se adjuntan al despachar; el de recepción va en su propio paso.
 const CAMPOS_EVIDENCIA = ['guia', 'bascula', 'carga'].map((name) => ({ name, maxCount: 2 }));
@@ -104,10 +104,22 @@ const CAMPOS_EVIDENCIA = ['guia', 'bascula', 'carga'].map((name) => ({ name, max
 async function subirEvidencia(despachoId, tipo, archivos = []) {
   let n = 0;
   for (const f of archivos) {
-    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[f.mimetype];
+    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }[f.mimetype];
     const { error } = await supa.storage.from('evidencia')
       .upload(`GD/${despachoId}/${tipo}-${++n}.${ext}`, f.buffer, { contentType: f.mimetype });
     if (error) console.error('[GEA] evidencia:', error.message);
+  }
+  return n;
+}
+// Documento del certificado de disposición final que emite Lampa. Va en su
+// propia carpeta (CDF/<trasladoId>/) del mismo bucket privado.
+async function subirCDF(trasladoId, archivos = []) {
+  let n = 0;
+  for (const f of archivos) {
+    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }[f.mimetype];
+    const { error } = await supa.storage.from('evidencia')
+      .upload(`CDF/${trasladoId}/cdf-${++n}.${ext}`, f.buffer, { contentType: f.mimetype });
+    if (error) console.error('[GEA] CDF:', error.message);
   }
   return n;
 }
@@ -121,6 +133,9 @@ const view = (d, descuentos = []) => ({
   patio: d.patios?.codigo, patio_nombre: d.patios?.nombre,
   categoria: d.cat?.nombre, categoria_final: d.catf?.nombre ?? null,
   kg_origen: Number(d.kg_origen), kg_destino: num(d.kg_destino),
+  // tara y bruto declarados en el despacho de origen (báscula MEL)
+  tara_origen_kg: num(d.tara_origen_kg),
+  bruto_origen_kg: d.tara_origen_kg != null ? Number(d.kg_origen) + Number(d.tara_origen_kg) : null,
   dif_pct: d.kg_destino == null ? null : Math.round(((d.kg_destino - d.kg_origen) / d.kg_origen) * 10000) / 100,
   precio_kg: num(d.precio_kg),
   valor: num(d.valor),
@@ -220,13 +235,20 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
   if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
     return res.status(400).json({ error: 'Fecha inválida' });
   }
+  // Tara del camión en la báscula de origen (opcional). El neto declarado por
+  // MEL sigue siendo kg_origen; la tara solo respalda el bruto del ticket.
+  const taraOrigen = Number(req.body?.tara_origen_kg);
+  if (req.body?.tara_origen_kg && !(taraOrigen > 0)) {
+    return res.status(400).json({ error: 'La tara debe ser un peso mayor que cero' });
+  }
   const archivos = Object.entries(req.files ?? {})
     .flatMap(([tipo, lista]) => lista.map((f, i) => ({ tipo, n: i + 1, f })));
-  const guia = await folio('GD');
+  const guia = await folio(tiene.codigo_interno ? 'CI' : 'GD');
   const row = await q(supa.from('despachos').insert({
     guia, patio_id: Number(patio_id), categoria_id: Number(categoria_id), kg_origen: Number(kg_origen),
     ...(tiene.guia_mel ? { guia_mel: (guia_mel || '').trim() || null } : {}),
     ...(fecha ? { fecha } : {}),
+    ...(tiene.tara_origen && taraOrigen > 0 ? { tara_origen_kg: taraOrigen } : {}),
     ...transporteDe(req.body || {}),
     fotos: archivos.length, creado_por: req.user.name,
   }).select(DESP_SEL).single());
@@ -412,7 +434,7 @@ r.post('/despachos/:id/anular', auth('ito', 'coordinador'), ah(async (req, res) 
   let nueva = null;
   if (req.body?.reemplazar) {
     const b = req.body.nueva || {};
-    const guia = await folio('GD');
+    const guia = await folio(tiene.codigo_interno ? 'CI' : 'GD');
     nueva = await q(supa.from('despachos').insert({
       guia,
       patio_id: Number(b.patio_id) || d.patio_id,
@@ -454,6 +476,55 @@ r.post('/despachos/:id/resolver', auth('ito', 'coordinador'), ah(async (req, res
   res.json(view(row));
 }));
 
+// Corrección de datos de digitación de una guía, MIENTRAS no haya entrado a un
+// estado de pago. No se editan los kilos ni el precio de la recepción (eso
+// altera lo valorizado: para eso se anula y se rehace); solo los datos del
+// documento de origen: guía MEL, fecha, patio, categoría, transporte y tara.
+r.patch('/despachos/:id', auth('ito', 'coordinador'), ah(async (req, res) => {
+  const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).single());
+  if (d.estado === 'anulado') return res.status(409).json({ error: 'La guía está anulada; no se edita' });
+  if (d.ep_id) {
+    const ep = await q(supa.from('estados_pago').select('folio,estado').eq('id', d.ep_id).single());
+    return res.status(409).json({ error: `La guía está en el estado de pago ${ep.folio} (${ep.estado}). Sáquela de ese EP antes de corregirla.` });
+  }
+
+  const b = req.body || {};
+  const cambios = {};
+  const bitacora = [];
+  if (b.guia_mel !== undefined && tiene.guia_mel) {
+    cambios.guia_mel = (b.guia_mel || '').trim() || null;
+    bitacora.push(`guía MEL → ${cambios.guia_mel ?? '—'}`);
+  }
+  if (b.fecha !== undefined) {
+    if (b.fecha && !/^\d{4}-\d{2}-\d{2}$/.test(b.fecha)) return res.status(400).json({ error: 'Fecha inválida' });
+    if (b.fecha) { cambios.fecha = b.fecha; bitacora.push(`fecha → ${b.fecha}`); }
+  }
+  if (b.patio_id !== undefined && Number(b.patio_id) > 0) { cambios.patio_id = Number(b.patio_id); bitacora.push('patio'); }
+  if (b.categoria_id !== undefined && Number(b.categoria_id) > 0) { cambios.categoria_id = Number(b.categoria_id); bitacora.push('categoría'); }
+  if (b.kg_origen !== undefined) {
+    if (!(Number(b.kg_origen) > 0)) return res.status(400).json({ error: 'El peso de origen debe ser mayor que cero' });
+    cambios.kg_origen = Number(b.kg_origen); bitacora.push(`kg origen → ${cambios.kg_origen}`);
+  }
+  if (tiene.tara_origen && b.tara_origen_kg !== undefined) {
+    const t = Number(b.tara_origen_kg);
+    if (b.tara_origen_kg && !(t > 0)) return res.status(400).json({ error: 'La tara debe ser un peso mayor que cero' });
+    cambios.tara_origen_kg = t > 0 ? t : null; bitacora.push('tara de origen');
+  }
+  if (tiene.transporte) {
+    const tr = transporteDe(b);
+    for (const [k, v] of Object.entries(tr)) {
+      if (b[k] !== undefined) { cambios[k] = v; }
+    }
+    if (['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla'].some((k) => b[k] !== undefined)) bitacora.push('transporte');
+  }
+  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
+
+  const row = await q(supa.from('despachos').update(cambios).eq('id', req.params.id).select(DESP_SEL).single());
+  await audit(req.user.name, req.user.role, 'Corrigió datos de la guía', `${row.guia} · ${bitacora.join(', ')}`);
+  const desc = await descuentosDe([row.id]);
+  res.json(view(row, desc.get(row.id) ?? []));
+}));
+
 /* ---------- traslados La Negra → Lampa ---------- */
 
 r.get('/traslados', auth(), ah(async (_req, res) => {
@@ -476,19 +547,36 @@ r.post('/traslados', auth('vendor', 'coordinador'), ah(async (req, res) => {
 }));
 
 // Recepción en Lampa: pesa y emite el certificado de disposición final (CDF).
-r.post('/traslados/:id/recepcionar', auth('vendor', 'coordinador'), ah(async (req, res) => {
+r.post('/traslados/:id/recepcionar', auth('vendor', 'coordinador', 'lampa'),
+  subir.fields([{ name: 'cdf', maxCount: 2 }]), ah(async (req, res) => {
   const kg = Number(req.body?.kg_lampa);
   if (!(kg > 0)) return res.status(400).json({ error: 'Ingrese el peso validado en báscula de Lampa' });
   const t = await q(supa.from('traslados').select('*').eq('id', req.params.id).single());
   if (t.estado !== 'en_transito') return res.status(409).json({ error: 'El traslado ya fue recepcionado' });
 
   const cert = await folio('CDF');
+  // El documento físico del CDF (PDF o foto) es opcional al recepcionar.
+  const cdfN = await subirCDF(t.id, req.files?.cdf);
   const row = await q(supa.from('traslados').update({
     estado: 'recepcionado', kg_lampa: kg, cert_folio: cert,
     recepcionado_el: new Date().toISOString(),
+    ...(tiene.cdf_doc ? { cert_fotos: cdfN } : {}),
   }).eq('id', req.params.id).select(TRAS_SEL).single());
-  await audit(req.user.name, req.user.role, 'Recepcionó en Lampa y emitió certificado de disposición final', `${row.guia} → ${cert}`);
-  res.json(row);
+  await audit(req.user.name, req.user.role, 'Recepcionó en Lampa y emitió certificado de disposición final',
+    `${row.guia} → ${cert}${cdfN ? ` · ${cdfN} documento(s)` : ''}`);
+  res.json({ ...row, kg: Number(row.kg), kg_lampa: row.kg_lampa == null ? null : Number(row.kg_lampa), categoria: row.categorias?.nombre });
+}));
+
+// Documento(s) del certificado de disposición final de un traslado.
+r.get('/traslados/:id/cdf', auth(), ah(async (req, res) => {
+  const carpeta = `CDF/${Number(req.params.id)}`;
+  const { data: lista, error } = await supa.storage.from('evidencia').list(carpeta);
+  if (error) throw new Error(error.message);
+  if (!lista?.length) return res.json({ archivos: [] });
+  const { data: firmadas, error: e2 } = await supa.storage.from('evidencia')
+    .createSignedUrls(lista.map((f) => `${carpeta}/${f.name}`), 3600);
+  if (e2) throw new Error(e2.message);
+  res.json({ archivos: firmadas.filter((f) => f.signedUrl).map((f) => ({ url: f.signedUrl })) });
 }));
 
 export default r;
