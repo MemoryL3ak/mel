@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
-import { AuthProvider, useAuth, ROL_NOMBRE } from './auth.jsx';
+import { AuthProvider, useAuth, ROL_NOMBRE, SCREENS } from './auth.jsx';
 import { ToastProvider, Logo, Avatar } from './ui.jsx';
 import Login from './pages/Login.jsx';
 import Panel from './pages/Panel.jsx';
@@ -11,6 +11,12 @@ import Cuadratura from './pages/Cuadratura.jsx';
 import EstadosPago from './pages/EstadosPago.jsx';
 import Auditoria from './pages/Auditoria.jsx';
 import Usuarios from './pages/Usuarios.jsx';
+import Memos from './pages/Memos.jsx';
+import Inventario from './pages/Inventario.jsx';
+import Publicaciones from './pages/Publicaciones.jsx';
+import Ofertas from './pages/Ofertas.jsx';
+import Compradores from './pages/Compradores.jsx';
+import Portal from './pages/Portal.jsx';
 
 const I = {
   panel: <path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z" />,
@@ -21,6 +27,11 @@ const I = {
   estados: <path d="M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6" />,
   auditoria: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4" />,
   usuarios: <><circle cx="9" cy="8" r="3.4" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17.5" cy="9.5" r="2.6" /><path d="M16 14.6c2.9.4 5 2.7 5 5.4" /></>,
+  memos: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
+  inventario: <path d="M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10" />,
+  publicaciones: <path d="M4 5h16v11H4zM4 20h16M9 9h6M9 12h4" />,
+  ofertas: <path d="M4 5h16v14H4zM8 3v4M16 3v4M8 12l3 3 5-5" />,
+  compradores: <><circle cx="9" cy="8" r="3.4" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><path d="M15 4l2 2 4-4" /></>,
 };
 const NAV = [
   ['INICIO', [['panel', '/', 'Panel de control']]],
@@ -31,6 +42,13 @@ const NAV = [
     ['cuadratura', '/cuadratura', 'Cuadratura semanal'],
     ['estados', '/estados', 'Estados de pago'],
   ]],
+  ['VENTA DE OBSOLETOS', [
+    ['memos', '/memos', 'Memos de baja'],
+    ['inventario', '/inventario', 'Inventario de obsoletos'],
+    ['publicaciones', '/publicaciones', 'Publicaciones'],
+    ['ofertas', '/ofertas', 'Ofertas y adjudicación'],
+    ['compradores', '/compradores', 'Compradores'],
+  ]],
   ['GESTIÓN', [
     ['auditoria', '/auditoria', 'Auditoría y permisos'],
     ['usuarios', '/usuarios', 'Cuentas de usuario'],
@@ -40,7 +58,11 @@ const TITULOS = {
   '/': 'Panel de control', '/programa': 'Programa de limpieza', '/despachos': 'Despachos y recepciones',
   '/valorizacion': 'Valorización y precios', '/cuadratura': 'Cuadratura semanal',
   '/estados': 'Estados de pago', '/auditoria': 'Auditoría y permisos', '/usuarios': 'Cuentas de usuario',
+  '/memos': 'Memos de baja', '/inventario': 'Inventario de obsoletos', '/publicaciones': 'Publicaciones',
+  '/ofertas': 'Ofertas y adjudicación', '/compradores': 'Compradores',
 };
+// Ruta de cada pantalla, para el aterrizaje de quien no tiene Panel.
+const RUTA = Object.fromEntries(NAV.flatMap(([, items]) => items.map(([id, to]) => [id, to])));
 
 function Shell({ children }) {
   const { user, logout, can } = useAuth();
@@ -121,8 +143,12 @@ function Guard({ screen, children }) {
 function Home() {
   const { user, can } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (!can('panel')) return <Navigate to="/despachos" replace />;
-  return <Shell><Panel /></Shell>;
+  // El comprador es externo: su lugar es el portal público, no el panel interno.
+  if (user.role === 'comprador') return <Navigate to="/portal" replace />;
+  if (can('panel')) return <Shell><Panel /></Shell>;
+  // Quien no ve el Panel aterriza en su primera pantalla disponible.
+  const primera = (SCREENS[user.role] || []).find((s) => RUTA[s]);
+  return <Navigate to={primera ? RUTA[primera] : '/login'} replace />;
 }
 
 export default function App() {
@@ -140,6 +166,12 @@ export default function App() {
             <Route path="/estados" element={<Guard screen="estados"><EstadosPago /></Guard>} />
             <Route path="/auditoria" element={<Guard screen="auditoria"><Auditoria /></Guard>} />
             <Route path="/usuarios" element={<Guard screen="usuarios"><Usuarios /></Guard>} />
+            <Route path="/memos" element={<Guard screen="memos"><Memos /></Guard>} />
+            <Route path="/inventario" element={<Guard screen="inventario"><Inventario /></Guard>} />
+            <Route path="/publicaciones" element={<Guard screen="publicaciones"><Publicaciones /></Guard>} />
+            <Route path="/ofertas" element={<Guard screen="ofertas"><Ofertas /></Guard>} />
+            <Route path="/compradores" element={<Guard screen="compradores"><Compradores /></Guard>} />
+            <Route path="/portal" element={<Portal />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

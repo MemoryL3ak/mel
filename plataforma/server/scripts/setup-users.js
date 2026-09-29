@@ -14,6 +14,7 @@ const USUARIOS = [
   { username: 'vendor',      nombre: 'Empresa Vendor Chatarra',   role: 'vendor' },
   { username: 'limpieza',    nombre: 'Empresa Limpieza de Patios', role: 'limpieza' },
   { username: 'lampa',       nombre: 'Responsable de Lampa',       role: 'lampa' },
+  { username: 'ventas',      nombre: 'Administrador Plataforma de Venta', role: 'admin_venta' },
 ];
 
 const filas = [];
@@ -25,10 +26,11 @@ for (const u of USUARIOS) {
     { onConflict: 'username' }
   );
   if (error) {
-    // El rol 'lampa' exige la migración 0006. Si aún no se aplicó, se avisa y
-    // se sigue con el resto en vez de abortar todo el setup.
-    if (u.role === 'lampa' && /users_role_check/.test(error.message)) {
-      console.warn(`• ${u.username}: falta aplicar db/0006_review.sql para el rol 'lampa'. Se omite por ahora.`);
+    // Los roles nuevos exigen su migración: 'lampa' → 0006, 'admin_venta' → 0007.
+    // Si aún no se aplicó, se avisa y se sigue con el resto en vez de abortar.
+    if (['lampa', 'admin_venta'].includes(u.role) && /users_role_check/.test(error.message)) {
+      const mig = u.role === 'lampa' ? 'db/0006_review.sql' : 'db/0007_obsoletos.sql';
+      console.warn(`• ${u.username}: falta aplicar ${mig} para el rol '${u.role}'. Se omite por ahora.`);
       continue;
     }
     console.error(`✗ ${u.username}: ${error.message}`); process.exit(1);

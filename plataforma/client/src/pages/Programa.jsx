@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtTon } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { Select, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 
 const CHIP = {
   programado: ['info', 'Programado'], ejecutado: ['ok', 'Ejecutado'],
@@ -271,19 +271,19 @@ export default function Programa() {
           <button className="btn primary" onClick={crear}>Planificar</button>
         </>}>
         <Field label="Día">
-          <select value={form.dia} onChange={(e) => setForm({ ...form, dia: e.target.value })}>
+          <Select value={form.dia} onChange={(e) => setForm({ ...form, dia: e.target.value })}>
             {DIAS.map((d) => <option key={d}>{d}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Patio de origen">
-          <select value={form.patio_id ?? ''} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
+          <Select value={form.patio_id ?? ''} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
             {maestros?.patios.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Tipo de material">
-          <select value={form.categoria_id ?? ''} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
+          <Select value={form.categoria_id ?? ''} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c2) => <option key={c2.id} value={c2.id}>{c2.nombre}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Tonelaje estimado (t)">
           <input type="number" min="0.1" step="0.1" value={form.ton_estimadas}

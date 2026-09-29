@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth, ROL_NOMBRE } from '../auth.jsx';
-import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { Select, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 
-const ROLES = ['limpieza', 'vendor', 'ito', 'coordinador', 'lampa'];
+const ROLES = ['limpieza', 'vendor', 'ito', 'coordinador', 'lampa', 'admin_venta'];
 
 // Muestra una contraseña recién generada, una única vez, con botón de copiar.
 function ClaveUnica({ username, password }) {
@@ -106,9 +106,9 @@ export default function Usuarios() {
               <input value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} placeholder="Juan Pérez" />
             </Field>
             <Field label="Perfil">
-              <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+              <Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
                 {ROLES.map((r) => <option key={r} value={r}>{ROL_NOMBRE[r]}</option>)}
-              </select>
+              </Select>
             </Field>
           </>}
       </Modal>
