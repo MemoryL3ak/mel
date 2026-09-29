@@ -3,8 +3,18 @@
 // con frontend y backend separados, VITE_API_URL apunta al backend (…/api).
 const BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
+// El portal público y el panel interno son la misma aplicación en el mismo
+// origen, así que comparten localStorage. Con una sola llave de sesión, entrar
+// como comprador pisaba la sesión del coordinador (y al revés). Cada ámbito
+// guarda la suya por separado, y así conviven en el mismo navegador.
+export const enPortal = () => window.location.pathname.startsWith('/portal');
+export const llaves = () => (enPortal()
+  ? { token: 'gea_portal_token', user: 'gea_portal_user' }
+  : { token: 'gea_token', user: 'gea_user' });
+
 export async function api(path, { method = 'GET', body } = {}) {
-  const token = localStorage.getItem('gea_token');
+  const k = llaves();
+  const token = localStorage.getItem(k.token);
   const esForm = body instanceof FormData;
   const res = await fetch(BASE + path, {
     method,
@@ -15,9 +25,11 @@ export async function api(path, { method = 'GET', body } = {}) {
     body: esForm ? body : body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401 && !path.startsWith('/auth/')) {
-    localStorage.removeItem('gea_token');
-    localStorage.removeItem('gea_user');
-    window.location.href = '/login';
+    localStorage.removeItem(k.token);
+    localStorage.removeItem(k.user);
+    // Un comprador con la sesión vencida vuelve al portal, no al login interno:
+    // ese login no es suyo y no tiene cómo entrar por ahí.
+    window.location.href = enPortal() ? '/portal' : '/login';
     throw new Error('Sesión expirada');
   }
   const data = await res.json().catch(() => ({}));

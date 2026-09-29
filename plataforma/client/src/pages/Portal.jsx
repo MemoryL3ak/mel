@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { api, fmtUSD } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Select, Chip, Field, Logo, Modal, useToast } from '../ui.jsx';
@@ -45,7 +44,6 @@ const IcoDoc = () => (
 
 export default function Portal() {
   const { user, login, logout } = useAuth();
-  const nav = useNavigate();
   const esComprador = user?.role === 'comprador';
   const [pubs, setPubs] = useState(null);
   const [cuenta, setCuenta] = useState(null);
@@ -88,9 +86,15 @@ export default function Portal() {
     } catch (e) { toast(e.message, true); }
   }
   async function enviarOferta() {
+    // El monto va en dólares enteros (la columna no guarda centavos). Antes se
+    // limpiaba con /\D/g, que en pesos servía —el punto era separador de miles—
+    // pero en dólares borraba la coma decimal: "28500.50" se enviaba como
+    // 2.850.050, cien veces la oferta real.
+    const monto = Math.round(Number(of.monto));
+    if (!(monto > 0)) return toast('Ingrese el monto de su oferta', true);
     try {
       const r = await api('/portal/ofertas', { method: 'POST', body: {
-        publicacion_id: oferta.id, monto: Number(String(of.monto).replace(/\D/g, '')),
+        publicacion_id: oferta.id, monto,
         plazo_retiro: of.plazo_retiro, forma_pago: of.forma_pago, comentarios: of.comentarios } });
       toast(r.mensaje || 'Oferta registrada');
       setOferta(null); setOf({ ...of, monto: '', comentarios: '' });
@@ -113,10 +117,10 @@ export default function Portal() {
     } finally { setAbriendo(null); }
   }
 
-  // Salida del portal hacia el panel interno. Con sesión de comprador hay que
-  // cerrarla primero: su rol no ve ninguna pantalla interna y "/" lo devolvería
-  // al portal, dejándolo encerrado aquí.
-  const irInterno = () => { if (esComprador) logout(); nav('/'); };
+  // Salida del portal hacia el panel interno. Es un cambio de ámbito de sesión,
+  // así que se recarga en vez de navegar: la sesión del comprador queda intacta
+  // aquí y el panel lee la suya, si es que hay alguien conectado.
+  const irInterno = () => { window.location.href = '/'; };
 
   const puedeOfertar = esComprador && cuenta?.dd_estado === 'aprobada';
   const clickOferta = (p) => {
@@ -131,7 +135,6 @@ export default function Portal() {
     .filter((p) => !sitioF || p.sitio === sitioF)
     .filter((p) => !texto || `${p.componente} ${p.codigo ?? ''} ${p.especificaciones ?? ''}`.toLowerCase().includes(texto))
     .sort(ORDEN[orden] ?? ORDEN.cierre);
-  const filtrando = !!texto || !!sitioF;
 
   return (
     <div className="pt">
@@ -143,7 +146,7 @@ export default function Portal() {
           </div>
           <div className="pt-nav-act">
             <button className="pt-b plain" onClick={irInterno}
-              title={esComprador ? 'Cierra su sesión de comprador y vuelve al acceso interno' : 'Ir al panel interno de GEA'}>
+              title="Ir al panel interno de GEA (su sesión del portal se mantiene)">
               ← Plataforma interna
             </button>
             {esComprador ? (<>
@@ -359,7 +362,10 @@ export default function Portal() {
 
       <Modal open={!!oferta} title={oferta && `Presentar oferta · ${oferta.componente}`} onClose={() => setOferta(null)}
         footer={<><button className="btn" onClick={() => setOferta(null)}>Cancelar</button><button className="btn primary" onClick={enviarOferta}>Enviar oferta</button></>}>
-        <Field label="Monto ofertado (USD)"><input value={of.monto} onChange={(e) => setOf({ ...of, monto: e.target.value })} placeholder="31500" /></Field>
+        <Field label="Monto ofertado (USD)" hint="Dólares enteros, sin centavos.">
+          <input type="number" min="0" step="1" value={of.monto}
+            onChange={(e) => setOf({ ...of, monto: e.target.value })} placeholder="31500" />
+        </Field>
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="Plazo de retiro comprometido">
             <Select value={of.plazo_retiro} onChange={(e) => setOf({ ...of, plazo_retiro: e.target.value })}>

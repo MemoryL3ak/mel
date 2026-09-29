@@ -176,7 +176,10 @@ r.post('/portal/ofertas', auth('comprador'), ah(async (req, res) => {
   if (comprador.dd_estado !== 'aprobada') {
     return res.status(403).json({ error: 'Su due diligence aún no está aprobada; no puede ofertar todavía.' });
   }
-  const monto = Number(req.body?.monto);
+  // La columna es numeric(14,0): dólares enteros, sin centavos. Se redondea acá
+  // y no en el cliente, para que el monto guardado no dependa de que el
+  // navegador haya mandado bien la cifra.
+  const monto = Math.round(Number(req.body?.monto));
   const publicacion_id = Number(req.body?.publicacion_id);
   if (!publicacion_id) return res.status(400).json({ error: 'Publicación inválida' });
   if (!(monto > 0)) return res.status(400).json({ error: 'Ingrese el monto de su oferta' });
