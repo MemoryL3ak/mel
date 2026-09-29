@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, ROL_NOMBRE, SCREENS } from './auth.jsx';
 import { ToastProvider, Logo, Avatar } from './ui.jsx';
@@ -140,11 +140,20 @@ function Guard({ screen, children }) {
   return <Shell>{children}</Shell>;
 }
 
+// Un comprador guardado en el ámbito interno es un resto inválido: el portal
+// guarda su sesión aparte. Mandarlo al portal lo dejaría rebotando —el portal
+// no lo reconoce y "/" lo devolvería una y otra vez—, así que se limpia el
+// resto y se muestra el login, que es la salida real.
+function SesionAjena() {
+  const { logout } = useAuth();
+  useEffect(() => { logout(); }, []);
+  return <Navigate to="/login" replace />;
+}
+
 function Home() {
   const { user, can } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  // El comprador es externo: su lugar es el portal público, no el panel interno.
-  if (user.role === 'comprador') return <Navigate to="/portal" replace />;
+  if (user.role === 'comprador') return <SesionAjena />;
   if (can('panel')) return <Shell><Panel /></Shell>;
   // Quien no ve el Panel aterriza en su primera pantalla disponible.
   const primera = (SCREENS[user.role] || []).find((s) => RUTA[s]);

@@ -4,7 +4,7 @@ import { useAuth } from '../auth.jsx';
 import { Field, Logo } from '../ui.jsx';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const nav = useNavigate();
   const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState(null);
@@ -15,7 +15,15 @@ export default function Login() {
     setError(null);
     setCargando(true);
     try {
-      await login(form.username, form.password);
+      const u = await login(form.username, form.password);
+      // Un comprador no tiene pantallas internas, y su sesión vive en el ámbito
+      // del portal: si entrara por acá quedaría conectado donde no puede hacer
+      // nada. Se le cierra y se le indica su acceso.
+      if (u.role === 'comprador') {
+        logout();
+        setError('Esta es una cuenta de comprador. Ingrese por el portal de ventas, en /portal.');
+        return;
+      }
       nav('/', { replace: true });
     } catch (err) {
       setError(err.message);

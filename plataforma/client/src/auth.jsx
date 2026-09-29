@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from 'react';
-import { api } from './api.js';
+import { api, llaves } from './api.js';
 
 // Pantallas visibles por rol — espejo del RBAC del servidor (el servidor manda).
 export const SCREENS = {
@@ -27,20 +27,26 @@ const Ctx = createContext(null);
 export const useAuth = () => useContext(Ctx);
 
 export function AuthProvider({ children }) {
+  // La sesión se guarda bajo las llaves del ámbito en que se abrió la página
+  // (portal o panel interno), así que el comprador y el personal de MEL pueden
+  // estar conectados a la vez en el mismo navegador. Cruzar de un ámbito al
+  // otro exige recargar, para que el proveedor lea las llaves correctas.
   const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('gea_user')); } catch { return null; }
+    try { return JSON.parse(localStorage.getItem(llaves().user)); } catch { return null; }
   });
 
   async function login(username, password) {
     const { token, user } = await api('/auth/login', { method: 'POST', body: { username, password } });
-    localStorage.setItem('gea_token', token);
-    localStorage.setItem('gea_user', JSON.stringify(user));
+    const k = llaves();
+    localStorage.setItem(k.token, token);
+    localStorage.setItem(k.user, JSON.stringify(user));
     setUser(user);
     return user;
   }
   function logout() {
-    localStorage.removeItem('gea_token');
-    localStorage.removeItem('gea_user');
+    const k = llaves();
+    localStorage.removeItem(k.token);
+    localStorage.removeItem(k.user);
     setUser(null);
   }
   const can = (screen) => !!user && SCREENS[user.role]?.includes(screen);
