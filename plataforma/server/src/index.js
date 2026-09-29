@@ -16,6 +16,8 @@ import estados from './routes/estados.js';
 import panel from './routes/panel.js';
 import auditoria from './routes/auditoria.js';
 import usuarios from './routes/usuarios.js';
+import obsoletos from './routes/obsoletos.js';
+import portal from './routes/portal.js';
 
 const app = express();
 // Detrás del proxy de la plataforma de hosting: el primer X-Forwarded-For es la IP real.
@@ -52,9 +54,21 @@ if (env.CORS_ORIGIN.length) {
   });
 }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 1 }));
+// El portal público no tiene sesión: se frena por IP para que registros y
+// ofertas anónimas no puedan usarse como vector de abuso.
+const portalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes. Espere unos minutos y vuelva a intentar.' },
+});
+
+app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 2 }));
 app.post('/api/auth/login', loginLimiter, ah(login));
 app.get('/api/auth/me', auth(), (req, res) => res.json({ user: req.user }));
+
+app.use('/api/portal', portalLimiter);
 
 app.use('/api', maestros);
 app.use('/api', programa);
@@ -64,6 +78,8 @@ app.use('/api', estados);
 app.use('/api', panel);
 app.use('/api', auditoria);
 app.use('/api', usuarios);
+app.use('/api', obsoletos);
+app.use('/api', portal);
 
 // Cliente compilado (producción / revisión local).
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist');
@@ -105,6 +121,12 @@ supa.storage.createBucket('evidencia', { public: false, fileSizeLimit: '5MB' })
 import { detectarEsquema } from './esquema.js';
 await detectarEsquema().catch((e) => console.error('[GEA] esquema:', e.message));
 
+// Barrido de la regla de 15 días de obsoletos (Fase 2): convierte a chatarra
+// las publicaciones cuyo plazo venció sin adjudicar. Corre al arrancar y cada
+// pocas horas.
+import { iniciarBarridoObsoletos } from './jobs.js';
+iniciarBarridoObsoletos();
+
 app.listen(env.PORT, () => {
-  console.log(`GEA · Fase 1 chatarra — servidor en http://localhost:${env.PORT}`);
+  console.log(`GEA · plataforma — servidor en http://localhost:${env.PORT}`);
 });

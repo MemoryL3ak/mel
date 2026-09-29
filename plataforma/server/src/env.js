@@ -26,4 +26,15 @@ export const env = {
   // Orígenes permitidos para CORS cuando el cliente se sirve desde otro dominio
   // (frontend en Vercel). Lista separada por comas; vacío = solo mismo origen.
   CORS_ORIGIN: (process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean),
+  // Correo saliente (opcional). Sin proveedor configurado, los correos se
+  // registran en el log y no se envían; la plataforma opera igual.
+  // Preferente: Resend (API HTTP, solo una API key). Alternativa: SMTP.
+  RESEND_API_KEY: process.env.RESEND_API_KEY || '',
+  SMTP_HOST: process.env.SMTP_HOST || '',
+  SMTP_PORT: Number(process.env.SMTP_PORT || 587),
+  SMTP_USER: process.env.SMTP_USER || '',
+  SMTP_PASS: process.env.SMTP_PASS || '',
+  MAIL_FROM: process.env.MAIL_FROM || 'GEA · Venta de obsoletos <no-reply@gea-escondida.cl>',
+  // URL pública del portal, para los enlaces dentro de los correos.
+  PORTAL_URL: process.env.PORTAL_URL || '',
 };

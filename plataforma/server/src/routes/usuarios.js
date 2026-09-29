@@ -8,7 +8,7 @@ import { supa, q, ah, audit } from '../supa.js';
 import { auth } from '../auth.js';
 
 const r = Router();
-const ROLES = ['limpieza', 'vendor', 'ito', 'coordinador', 'lampa'];
+const ROLES = ['limpieza', 'vendor', 'ito', 'coordinador', 'lampa', 'admin_venta'];
 const clave = () => randomBytes(9).toString('base64url');
 
 r.get('/usuarios', auth('coordinador'), ah(async (_req, res) => {

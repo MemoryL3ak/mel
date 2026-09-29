@@ -26,6 +26,10 @@ export const tiene = {
   cdf_doc: false,        // traslados.cert_fotos
   cuad_doble: false,     // cuadraturas.confirmada_por, confirmada_el
   codigo_interno: false, // folios: el tipo 'GD' se renombró a 'CI'
+  // db/0007_obsoletos.sql
+  obsoletos: false,      // Fase 2: componentes, publicaciones, ofertas, adjudicaciones
+  // db/0008_memos.sql
+  memos: false,          // tabla memos + componentes.memo_id/nota_terreno
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -37,6 +41,8 @@ const ORIGEN = {
   tm: '0005_precio_tm.sql',
   tara_origen: '0006_review.sql', cdf_doc: '0006_review.sql',
   cuad_doble: '0006_review.sql', codigo_interno: '0006_review.sql',
+  obsoletos: '0007_obsoletos.sql',
+  memos: '0008_memos.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -70,6 +76,17 @@ export async function detectarEsquema() {
     const { data } = await supa.from('folios').select('tipo').eq('tipo', 'CI').limit(1);
     tiene.codigo_interno = !!data?.length;
   } catch { tiene.codigo_interno = false; }
+
+  tiene.obsoletos = (await existe('componentes', 'id,codigo,estado'))
+    && (await existe('publicaciones', 'id,componente_id,estado'))
+    && (await existe('ofertas', 'id,publicacion_id,comprador_id'))
+    && (await existe('adjudicaciones', 'id,cert_folio'));
+
+  // El memo solo tiene sentido con la Fase 2 aplicada: sin componentes que
+  // respaldar, la tabla existe pero no hay de dónde colgarla.
+  tiene.memos = tiene.obsoletos
+    && (await existe('memos', 'id,folio,area_usuaria'))
+    && (await existe('componentes', 'memo_id,nota_terreno'));
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {

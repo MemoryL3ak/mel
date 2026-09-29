@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { DateField, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 import DocumentoEP from '../DocumentoEP.jsx';
 
 const CHIP = {
@@ -285,7 +285,7 @@ export default function EstadosPago() {
             'Encabezado actualizado', 'PATCH')}>Guardar</button>
         </>}>
         <Field label="Fecha de presentación" hint="Si se deja vacía, se completa sola al enviar el EP a revisión.">
-          <input type="date" value={f.presentado_el || ''} onChange={(e) => setF({ ...f, presentado_el: e.target.value })} />
+          <DateField value={f.presentado_el || ''} onChange={(e) => setF({ ...f, presentado_el: e.target.value })} />
         </Field>
         <Field label="Valor no afecto a IVA (CLP)" hint="Parte del neto que no paga IVA. Normalmente 0.">
           <input type="number" min="0" value={f.no_afecto_iva ?? 0} onChange={(e) => setF({ ...f, no_afecto_iva: e.target.value })} />
@@ -325,7 +325,7 @@ export default function EstadosPago() {
         </>}>
         <Field label="Número de factura"><input value={f.numero || ''} onChange={(e) => setF({ ...f, numero: e.target.value })} placeholder="F-000123" /></Field>
         <Field label="Fecha de emisión" hint="Desde esta fecha corre el plazo de pago de 15 días del contrato.">
-          <input type="date" value={f.fecha || ''} onChange={(e) => setF({ ...f, fecha: e.target.value })} />
+          <DateField value={f.fecha || ''} onChange={(e) => setF({ ...f, fecha: e.target.value })} />
         </Field>
       </Modal>
 
@@ -357,7 +357,7 @@ export default function EstadosPago() {
           hint="Escriba lo que salió del banco. El campo parte vacío a propósito.">
           <input type="number" min="1" value={f.monto || ''} onChange={(e) => setF({ ...f, monto: e.target.value })} placeholder="0" />
         </Field>
-        <Field label="Fecha de transferencia"><input type="date" value={f.fecha || ''} onChange={(e) => setF({ ...f, fecha: e.target.value })} /></Field>
+        <Field label="Fecha de transferencia"><DateField value={f.fecha || ''} onChange={(e) => setF({ ...f, fecha: e.target.value })} /></Field>
         <Field label="Referencia (opcional)"><input value={f.referencia || ''} onChange={(e) => setF({ ...f, referencia: e.target.value })} placeholder="N° de operación bancaria" /></Field>
       </Modal>
 

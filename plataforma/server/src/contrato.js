@@ -19,6 +19,7 @@ const DEFECTO = {
   iva_pct: 19,
   dia_corte: 20,
   meses_vigencia_precio: 3,
+  comision_vendor_pct: 0,
 };
 
 let cache = null;

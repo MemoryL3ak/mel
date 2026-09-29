@@ -193,7 +193,8 @@ r.patch('/contrato', auth('coordinador'), ah(async (req, res) => {
     return res.status(503).json({ error: 'Esta función requiere aplicar db/0003_ep_contrato.sql en la base de datos' });
   }
   const permitidos =['numero', 'gerencia', 'glosa', 'mandante', 'contratista', 'firma_mandante',
-    'firma_contratista', 'monto_original', 'modificaciones', 'iva_pct', 'dia_corte', 'meses_vigencia_precio'];
+    'firma_contratista', 'monto_original', 'modificaciones', 'iva_pct', 'dia_corte', 'meses_vigencia_precio',
+    'comision_vendor_pct'];
   const cambios = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => permitidos.includes(k)));
   if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
   const row = await q(supa.from('contrato').update(cambios).eq('id', 1).select().single());

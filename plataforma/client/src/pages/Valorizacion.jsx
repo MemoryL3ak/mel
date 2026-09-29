@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { DateField, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 
 // Carga masiva de vigencias: acepta pegado desde Excel (tabulaciones) o CSV
 // con ";" o ",". Columnas: Categoría | Alt. A | Alt. B | Vigente desde.
@@ -389,6 +389,7 @@ export default function Valorizacion() {
                 ['IVA', `${Number(contrato.iva_pct)} %`],
                 ['Día de corte del período', `día ${contrato.dia_corte} de cada mes`],
                 ['Vigencia de los precios', `${contrato.meses_vigencia_precio} meses`],
+                ['Comisión al vendor (obsoletos)', `${Number(contrato.comision_vendor_pct ?? 0)} %`],
               ].map(([k, v]) => (
                 <div key={k}><small style={{ color: 'var(--muted)' }}>{k}</small><br /><b>{v}</b></div>
               ))}
@@ -418,6 +419,7 @@ export default function Valorizacion() {
         {campoContrato('iva_pct', 'IVA (%)', { type: 'number' })}
         {campoContrato('dia_corte', 'Día de corte del período', { type: 'number', hint: 'El EP va del día siguiente al corte del mes anterior hasta este día.' })}
         {campoContrato('meses_vigencia_precio', 'Vigencia de los precios (meses)', { type: 'number', hint: 'Pasado ese plazo la plataforma avisa que hay que renegociar.' })}
+        {campoContrato('comision_vendor_pct', 'Comisión al vendor por venta de obsoletos (%)', { type: 'number', hint: 'Se aplica sobre el monto de cada adjudicación de la Fase 2.' })}
       </Modal>
 
       <Modal open={!!nuevo} title={nuevo && `Nueva vigencia · ${nuevo.nombre}`} onClose={() => setNuevo(null)}
@@ -441,7 +443,7 @@ export default function Valorizacion() {
           </Field>
         )}
         <Field label="Vigente desde" hint="Si se deja vacío, rige desde hoy.">
-          <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+          <DateField value={desde} onChange={(e) => setDesde(e.target.value)} />
         </Field>
         {(data.usd || data.tm) && Number(precio) > 0 && data.dolar && (
           <div className="dif-live ok">
@@ -536,7 +538,7 @@ export default function Valorizacion() {
           identificado como registro manual, con su nombre.
         </p>
         <Field label="Fecha">
-          <input type="date" value={dolarManual?.fecha ?? ''}
+          <DateField value={dolarManual?.fecha ?? ''}
             onChange={(e) => setDolarManual({ ...dolarManual, fecha: e.target.value })} />
         </Field>
         <Field label="Valor del dólar (CLP)">

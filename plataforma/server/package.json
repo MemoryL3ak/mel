@@ -16,7 +16,8 @@
     "setup:users": "node scripts/setup-users.js",
     "demo:precios": "node scripts/demo-precios.js",
     "dolar:historico": "node scripts/dolar-historico.js",
-    "cargar:contrato": "node scripts/cargar-contrato.js"
+    "cargar:contrato": "node scripts/cargar-contrato.js",
+    "demo:comprador": "node scripts/comprador-demo.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -25,6 +26,7 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.3.0"
+    "multer": "^2.3.0",
+    "nodemailer": "^10.0.12"
   }
 }

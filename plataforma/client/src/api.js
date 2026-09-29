@@ -21,10 +21,15 @@ export async function api(path, { method = 'GET', body } = {}) {
     throw new Error('Sesión expirada');
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `Error ${res.status}`);
+    if (data.detalle) err.detalle = data.detalle;   // p. ej. errores por fila de una carga masiva
+    throw err;
+  }
   return data;
 }
 
 export const fmtCLP = (n) => (n == null ? '—' : '$ ' + Math.round(Number(n)).toLocaleString('es-CL'));
+export const fmtUSD = (n) => (n == null ? '—' : 'US$ ' + Number(n).toLocaleString('en-US'));
 export const fmtKg = (n) => (n == null ? '—' : Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 }));
 export const fmtTon = (n) => (n == null ? '—' : Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' t');

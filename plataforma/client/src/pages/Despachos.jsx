@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
+import { DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
 
 const CHIP = {
   en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'],
@@ -632,9 +632,9 @@ export default function Despachos() {
                   {abierta ? (
                     <>
                       <div className="desc-nuevo">
-                        <select value={dForm.tipo} onChange={(e) => setDForm({ ...dForm, tipo: e.target.value })}>
+                        <Select value={dForm.tipo} onChange={(e) => setDForm({ ...dForm, tipo: e.target.value })}>
                           {TIPO_DESC.map(([id, label, u]) => <option key={id} value={id}>{label} ({u})</option>)}
-                        </select>
+                        </Select>
                         <input type="number" min="0" step={dForm.tipo === 'clp' ? '1' : '0.01'} placeholder="0"
                           value={dForm.valor} onChange={(e) => setDForm({ ...dForm, valor: e.target.value })} />
                         <input placeholder="Motivo del descuento" value={dForm.glosa}
@@ -711,18 +711,18 @@ export default function Despachos() {
             <input value={form.guia_mel} onChange={(e) => setForm({ ...form, guia_mel: e.target.value })} placeholder="458921" />
           </Field>
           <Field label="Fecha del despacho" hint="Se propone hoy; corríjala si la guía es de otro día.">
-            <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />
+            <DateField value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />
           </Field>
         </div>
         <Field label="Patio de origen">
-          <select value={form.patio_id ?? ''} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
+          <Select value={form.patio_id ?? ''} onChange={(e) => setForm({ ...form, patio_id: +e.target.value })}>
             {maestros?.patios.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Categoría de material">
-          <select value={form.categoria_id ?? ''} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
+          <Select value={form.categoria_id ?? ''} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
-          </select>
+          </Select>
         </Field>
         <CampoPeso label="Peso en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
           onValor={(v) => setForm({ ...form, kg_origen: v })}
@@ -891,10 +891,10 @@ export default function Despachos() {
           </div>
         ))}
         <div className="desc-nuevo">
-          <select value={rForm.nuevoDesc.tipo}
+          <Select value={rForm.nuevoDesc.tipo}
             onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, tipo: e.target.value } })}>
             {TIPO_DESC.map(([id, label, u]) => <option key={id} value={id}>{label} ({u})</option>)}
-          </select>
+          </Select>
           <input type="number" min="0" step={rForm.nuevoDesc.tipo === 'clp' ? '1' : '0.01'} placeholder="0"
             value={rForm.nuevoDesc.valor}
             onChange={(e) => setRForm({ ...rForm, nuevoDesc: { ...rForm.nuevoDesc, valor: e.target.value } })} />
@@ -917,10 +917,10 @@ export default function Despachos() {
             }} />
         </Field>
         <Field label="Reclasificación (solo si el material se reduce)" hint="El precio se congela con la categoría final al momento de esta recepción.">
-          <select value={rForm.categoria_final_id} onChange={(e) => setRForm({ ...rForm, categoria_final_id: e.target.value ? +e.target.value : '' })}>
+          <Select value={rForm.categoria_final_id} onChange={(e) => setRForm({ ...rForm, categoria_final_id: e.target.value ? +e.target.value : '' })}>
             <option value="">Mantener {recep?.categoria}</option>
             {maestros?.categorias.filter((c) => c.nombre !== recep?.categoria).map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Observación (opcional)">
           <input value={rForm.observacion} onChange={(e) => setRForm({ ...rForm, observacion: e.target.value })} placeholder="Condición de la carga, mermas, etc." />
@@ -978,9 +978,9 @@ export default function Despachos() {
           <input value="La Negra" readOnly disabled />
         </Field>
         <Field label="Categoría de material">
-          <select value={tForm.categoria_id ?? ''} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
+          <Select value={tForm.categoria_id ?? ''} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
-          </select>
+          </Select>
         </Field>
         <CampoPeso label="Peso despachado desde La Negra" hint="La guía se folia automáticamente (GT-####)."
           valor={tForm.kg} unidad={tForm.unidad}
@@ -1039,18 +1039,18 @@ export default function Despachos() {
             <input value={eForm.guia_mel} onChange={(e) => setEForm({ ...eForm, guia_mel: e.target.value })} placeholder="458921" />
           </Field>
           <Field label="Fecha del despacho">
-            <input type="date" value={eForm.fecha} onChange={(e) => setEForm({ ...eForm, fecha: e.target.value })} />
+            <DateField value={eForm.fecha} onChange={(e) => setEForm({ ...eForm, fecha: e.target.value })} />
           </Field>
         </div>
         <Field label="Patio de origen">
-          <select value={eForm.patio_id} onChange={(e) => setEForm({ ...eForm, patio_id: +e.target.value })}>
+          <Select value={eForm.patio_id} onChange={(e) => setEForm({ ...eForm, patio_id: +e.target.value })}>
             {maestros?.patios.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Categoría de material">
-          <select value={eForm.categoria_id} onChange={(e) => setEForm({ ...eForm, categoria_id: +e.target.value })}>
+          <Select value={eForm.categoria_id} onChange={(e) => setEForm({ ...eForm, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
+          </Select>
         </Field>
         <CampoPeso label="Peso en báscula MEL" valor={eForm.kg_origen} unidad={eForm.unidad}
           onValor={(v) => setEForm({ ...eForm, kg_origen: v })}

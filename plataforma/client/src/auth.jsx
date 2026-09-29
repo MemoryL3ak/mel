@@ -6,8 +6,12 @@ export const SCREENS = {
   limpieza:    ['panel', 'programa', 'despachos'],
   vendor:      ['panel', 'despachos', 'estados'],
   ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria'],
-  coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria', 'usuarios'],
+  coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria', 'usuarios',
+                'memos', 'inventario', 'publicaciones', 'ofertas', 'compradores'],
   lampa:       ['panel', 'despachos', 'cuadratura'],
+  // El vendor ve el memo para saber el origen de lo que publica, pero cargarlo
+  // es de MEL: la pantalla filtra las acciones de escritura por rol.
+  admin_venta: ['memos', 'inventario', 'publicaciones', 'ofertas', 'compradores'],
 };
 export const ROL_NOMBRE = {
   limpieza: 'Empresa de limpieza de patios',
@@ -15,6 +19,8 @@ export const ROL_NOMBRE = {
   ito: 'ITO',
   coordinador: 'Coordinador Logístico MEL',
   lampa: 'Responsable de Lampa',
+  admin_venta: 'Administrador Plataforma de Venta',
+  comprador: 'Comprador',
 };
 
 const Ctx = createContext(null);
