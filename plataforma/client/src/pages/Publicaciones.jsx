@@ -28,7 +28,7 @@ function Plazo({ p }) {
 
 export default function Publicaciones() {
   const [rows, setRows] = useState(null);
-  const [disponibles, setDisponibles] = useState([]);
+  const [comps, setComps] = useState([]);
   const [nuevo, setNuevo] = useState(false);
   const [f, setF] = useState({ componente_id: '', oferta_minima: '', plazo_dias: 15, publicado_el: hoyISO() });
   const [convertir, setConvertir] = useState(null);
@@ -37,10 +37,16 @@ export default function Publicaciones() {
 
   const load = () => {
     api('/publicaciones').then(setRows).catch((e) => toast(e.message, true));
-    api('/componentes').then((d) => setDisponibles((d.componentes ?? []).filter((c) => ['planificado', 'chatarra'].includes(c.estado)))).catch(() => {});
+    api('/componentes').then((d) => setComps(d.componentes ?? [])).catch(() => {});
   };
   useEffect(() => { load(); }, []);
   if (!rows) return <div className="loading">Cargando publicaciones…</div>;
+
+  // Solo se publica lo confirmado en terreno. Lo que sigue "por identificar" no
+  // esta disponible, y el vacio tiene que decir por que: antes mandaba a
+  // ingresarlos al inventario, que es justo lo que el usuario ya habia hecho.
+  const disponibles = comps.filter((c) => c.estado === 'planificado');
+  const porIdentificar = comps.filter((c) => c.estado === 'por_identificar').length;
 
   async function publicar() {
     if (!f.componente_id) return toast('Elija el componente a publicar', true);
@@ -67,7 +73,7 @@ export default function Publicaciones() {
   return (
     <div>
       <PageHead eyebrow={EYEBROW} title="Publicaciones"
-        sub="Control automático de tiempos: a los 15 días sin adjudicar, el componente se convierte en chatarra y pasa al flujo de enajenación.">
+        sub="Control automático de tiempos: a los 15 días sin adjudicar, el componente se convierte en chatarra y queda pendiente de clasificar para el programa de limpieza.">
         <a className="btn" href="/portal" target="_blank" rel="noreferrer">Ver portal público ↗</a>
         <button className="btn primary" onClick={() => setNuevo(true)}>+ Publicar componente</button>
       </PageHead>
@@ -101,7 +107,7 @@ export default function Publicaciones() {
       </table></div>
         {rows.length === 0 && <Empty title="Sin publicaciones">Publique un componente del inventario para que aparezca en el portal.</Empty>}
       </div>
-      <div className="audit-note" style={{ marginTop: 12 }}>⚙ Al cumplirse el plazo sin adjudicar, la conversión a chatarra da de baja el activo y crea el registro en el flujo de enajenación (Fase 1).</div>
+      <div className="audit-note" style={{ marginTop: 12 }}>⚙ Al cumplirse el plazo sin adjudicar se cierra la publicación, se descartan las ofertas recibidas —avisando a cada oferente— y el componente queda en el inventario <b>pendiente de clasificar</b>. Entra al programa de limpieza de Fase 1 cuando se le asigna patio, categoría y peso.</div>
 
       <Modal open={nuevo} title="Publicar componente en el portal" onClose={() => setNuevo(false)}
         footer={<>
@@ -114,7 +120,14 @@ export default function Publicaciones() {
             {disponibles.map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
           </Select>
         </Field>
-        {disponibles.length === 0 && <small style={{ color: 'var(--muted)' }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>}
+        {disponibles.length === 0 && (
+          porIdentificar > 0
+            ? <small style={{ color: 'var(--warn-tx)' }}>
+                Hay <b>{porIdentificar} componente(s)</b> esperando confirmación en terreno. Confírmelos en
+                «<a href="/memos" style={{ color: 'inherit' }}>Memos de baja</a>» para poder publicarlos.
+              </small>
+            : <small style={{ color: 'var(--muted)' }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>
+        )}
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="Oferta mínima (USD)" hint="Opcional. Las ofertas bajo este monto se rechazan.">
             <input type="number" min="0" value={f.oferta_minima} onChange={(e) => setF({ ...f, oferta_minima: e.target.value })} placeholder="28500" />

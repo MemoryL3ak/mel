@@ -5,11 +5,12 @@
 // de Venta y el Coordinador; nadie más ve estas pantallas.
 import { Router } from 'express';
 import multer from 'multer';
-import { supa, q, ah, folio, audit, hoy } from '../supa.js';
+import { supa, q, ah, folio, audit, hoy, semanaISO } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { contrato } from '../contrato.js';
 import { enviarCorreo, plantilla } from '../mail.js';
+import { convertirAChatarra } from '../jobs.js';
 
 const r = Router();
 const OP = auth('coordinador', 'admin_venta');
@@ -35,6 +36,9 @@ const subir = multer({
   fileFilter: (_req, f, cb) => cb(null, !!FICHA[f.mimetype]),
 });
 const CAMPOS_COMP = [{ name: 'fotos', maxCount: 4 }, { name: 'ficha', maxCount: 1 }];
+
+// Días que acepta `programa` (no opera domingo), indexados por getDay().
+const DIAS = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 async function subirFotos(componenteId, archivos = []) {
   let n = 0;
@@ -223,9 +227,22 @@ r.get('/componentes', OP, ah(async (_req, res) => {
       valor_referencial: num(c.valor_referencial), estado: c.estado, fotos: c.fotos ?? 0,
       memo_id: c.memo_id ?? null, memo: m?.folio ?? null, area_usuaria: m?.area_usuaria ?? null,
       nota_terreno: c.nota_terreno ?? null,
+      programa_id: c.programa_id ?? null, chatarra_motivo: c.chatarra_motivo ?? null,
       dia: p ? diasDesde(p.publicado_el) : null, plazo: p?.plazo_dias ?? null,
     };
   });
+
+  // Obsoletos que se fueron a chatarra y todavía nadie clasificó: sin patio,
+  // categoría y peso no pueden entrar al programa de limpieza, y mientras tanto
+  // están marcados como chatarra sin que nadie los vaya a buscar.
+  const porClasificar = !tiene.chatarra_obs ? [] : comp
+    .filter((c) => c.estado === 'chatarra' && !c.programa_id)
+    .map((c) => ({
+      id: c.id, codigo: c.codigo, nombre: c.nombre,
+      sitio: sitio.get(c.sitio_id)?.nombre ?? null, ubicacion: c.ubicacion,
+      motivo: c.chatarra_motivo ?? null,
+      desde: c.chatarra_el ? diasDesde(c.chatarra_el.slice(0, 10)) : null,
+    }));
   // Pendientes de entrega: adjudicados sin retiro coordinado.
   const compById = new Map(comp.map((c) => [c.id, c]));
   const pubById = new Map((await q(supa.from('publicaciones').select('id,componente_id'))).map((p) => [p.id, p]));
@@ -242,7 +259,7 @@ r.get('/componentes', OP, ah(async (_req, res) => {
       estado: a.estado,
     };
   });
-  res.json({ componentes, pendientes });
+  res.json({ componentes, pendientes, porClasificar });
 }));
 
 r.post('/componentes', OP, subir.fields(CAMPOS_COMP), ah(async (req, res) => {
@@ -411,6 +428,54 @@ r.post('/componentes/masivo', OP, ah(async (req, res) => {
   res.json({ cargados: rows.length, filas: rows });
 }));
 
+/* ==================== derivación a chatarra (Fase 1) ==================== */
+
+// Clasificación del obsoleto no vendido. Fase 1 mueve kilos de una categoría
+// desde un patio, y el componente no trae ninguno de los tres datos: por eso
+// los pide una persona que fue a mirar la pieza. Con ellos se crea el registro
+// en `programa`, que es lo que manda a la cuadrilla a buscarlo; hasta entonces
+// el componente estaba marcado como chatarra y nadie se enteraba.
+r.post('/componentes/:id/clasificar', OP, ah(async (req, res) => {
+  if (!tiene.chatarra_obs) {
+    return res.status(503).json({ error: 'Esta función requiere aplicar db/0009_chatarra.sql en la base de datos' });
+  }
+  const id = Number(req.params.id) || 0;
+  const c = await q(supa.from('componentes').select('*').eq('id', id).maybeSingle());
+  if (!c) return res.status(404).json({ error: 'Componente no encontrado' });
+  if (c.estado !== 'chatarra') return res.status(409).json({ error: 'Solo se clasifica un componente derivado a chatarra' });
+  if (c.programa_id) return res.status(409).json({ error: 'Este componente ya fue derivado al programa de limpieza' });
+
+  const patio_id = Number(req.body?.patio_id) || 0;
+  const categoria_id = Number(req.body?.categoria_id) || 0;
+  const peso = Number(req.body?.peso_estimado_kg);
+  const fecha = (req.body?.fecha || '').trim() || hoy();
+  if (!patio_id) return res.status(400).json({ error: 'Indique el patio donde se retirará' });
+  if (!categoria_id) return res.status(400).json({ error: 'Indique la categoría de chatarra' });
+  if (!(peso > 0)) return res.status(400).json({ error: 'Indique el peso estimado en kilos' });
+
+  // `programa` planifica en toneladas y exige año, semana y día de la semana.
+  const { anio, semana } = semanaISO(new Date(fecha + 'T12:00:00'));
+  const dia = DIAS[new Date(fecha + 'T12:00:00').getDay()];
+  if (!dia) return res.status(400).json({ error: 'El programa de limpieza no opera los domingos' });
+  const ton = Math.round((peso / 1000) * 10) / 10;
+  if (!(ton > 0)) return res.status(400).json({ error: 'El peso estimado es demasiado bajo: el programa se planifica en toneladas (mínimo 100 kg)' });
+
+  const prog = await q(supa.from('programa').insert({
+    anio, semana, dia, fecha, patio_id, categoria_id, ton_estimadas: ton,
+    observacion: `Obsoleto no vendido · ${c.codigo} · ${c.nombre}`,
+    creado_por: req.user.name,
+  }).select('id').single());
+
+  const row = await q(supa.from('componentes').update({
+    patio_id, categoria_id, peso_estimado_kg: peso, programa_id: prog.id,
+    clasificado_el: new Date().toISOString(), clasificado_por: req.user.name,
+  }).eq('id', id).select().single());
+
+  await audit(req.user.name, req.user.role, 'Derivó obsoleto al programa de chatarra',
+    `${c.codigo} · ${peso} kg · semana ${semana}/${anio}`);
+  res.json({ ...row, programa: { id: prog.id, anio, semana, dia, ton } });
+}));
+
 /* ============================ publicaciones ============================ */
 
 async function vistaPublicacion(p, comp, conteo) {
@@ -467,19 +532,11 @@ r.post('/publicaciones/:id/convertir', OP, ah(async (req, res) => {
   if (!tiene.obsoletos) return sinTabla(res);
   const p = await q(supa.from('publicaciones').select('*').eq('id', req.params.id).single());
   if (p.estado !== 'activa') return res.status(409).json({ error: 'La publicación no está activa' });
-  const comp = await q(supa.from('componentes').select('*').eq('id', p.componente_id).single());
   // Se puede forzar antes de que se cumpla el plazo (es lo que permite probar
-  // el paso sin esperar los 15 días), pero la bitácora tiene que decir cuál de
-  // los dos casos fue: no es lo mismo un plazo cumplido que una baja anticipada.
-  const dia = diasDesde(p.publicado_el);
-  const anticipada = dia < p.plazo_dias;
-  const ofertas = await q(supa.from('ofertas').select('id').eq('publicacion_id', p.id));
-  await q(supa.from('publicaciones').update({ estado: 'convertida', cerrada_el: new Date().toISOString() }).eq('id', p.id).select('id').single());
-  await q(supa.from('componentes').update({ estado: 'chatarra' }).eq('id', comp.id).select('id').single());
-  await audit(req.user.name, req.user.role,
-    anticipada ? 'Convirtió componente a chatarra (forzado antes del plazo)' : 'Convirtió componente a chatarra (plazo cumplido)',
-    `${comp.codigo} · día ${dia} de ${p.plazo_dias}${ofertas.length ? ` · ${ofertas.length} oferta(s) descartada(s)` : ''}`);
-  res.json({ ok: true, anticipada, ofertas: ofertas.length });
+  // el paso sin esperar los 15 días). La conversión es la misma que aplica el
+  // barrido automático, para que no vuelvan a divergir.
+  const r2 = await convertirAChatarra(p, { usuario: req.user.name, rol: req.user.role });
+  res.json({ ok: true, anticipada: r2.anticipada, ofertas: r2.ofertas });
 }));
 
 r.post('/publicaciones/:id/cancelar', OP, ah(async (req, res) => {
