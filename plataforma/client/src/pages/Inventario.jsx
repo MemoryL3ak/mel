@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, fmtUSD } from '../api.js';
-import { Select, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
 
 const EYEBROW = 'Fase 2 · Venta de obsoletos';
 const ESTADO = {
@@ -34,13 +34,21 @@ export default function Inventario() {
   const [memoMasivo, setMemoMasivo] = useState('');
   const [texto, setTexto] = useState('');
   const [verAdj, setVerAdj] = useState(null);
+  const [patios, setPatios] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [clasificar, setClasificar] = useState(null);
+  const [cf, setCf] = useState({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO() });
   const toast = useToast();
 
   const load = () => api('/componentes').then(setData).catch((e) => toast(e.message, true));
   useEffect(() => {
     load();
     // Obsoletos se dan de baja en faena MEL o en La Negra; Lampa no aplica.
-    api('/maestros').then((m) => setSitios((m.sitios ?? []).filter((s) => s.codigo !== 'LP'))).catch(() => {});
+    api('/maestros').then((m) => {
+      setSitios((m.sitios ?? []).filter((s) => s.codigo !== 'LP'));
+      // Patios y categorias son de Fase 1: los pide la derivacion a chatarra.
+      setPatios(m.patios ?? []); setCategorias(m.categorias ?? []);
+    }).catch(() => {});
     // El componente cuelga del memo que autoriza su baja; los cerrados ya no reciben.
     api('/memos').then((ms) => setMemos(ms.filter((m) => m.estado !== 'cerrado'))).catch(() => {});
   }, []);
@@ -64,7 +72,9 @@ export default function Inventario() {
     if (f.ficha) fd.append('ficha', f.ficha);
     try {
       const c = await api('/componentes', { method: 'POST', body: fd });
-      toast(`Componente ${c.codigo} ingresado`);
+      toast(c.estado === 'por_identificar'
+        ? `${c.codigo} ingresado · confírmelo en terreno desde el memo para poder publicarlo`
+        : `Componente ${c.codigo} ingresado`);
       setNuevo(false); setF(vacio); load();
     } catch (e) { toast(e.message, true); }
   });
@@ -95,9 +105,32 @@ export default function Inventario() {
     if (!filas.length) return toast('No hay filas válidas para cargar', true);
     try {
       const r = await api('/componentes/masivo', { method: 'POST', body: { filas, memo_id: memoMasivo || undefined } });
-      toast(`${r.cargados} componente(s) cargado(s)`);
+      toast(`${r.cargados} componente(s) cargado(s) · confírmelos en terreno desde el memo`);
       setMasivo(false); setTexto(''); setMemoMasivo(''); load();
     } catch (e) { toast(e.message + (e.detalle ? ` · ${e.detalle.join(' · ')}` : ''), true); }
+  });
+
+  // Derivacion al programa de limpieza: con patio, categoria y peso el obsoleto
+  // no vendido deja de ser una etiqueta y pasa a existir como carga de Fase 1.
+  const derivar = () => correr(async () => {
+    if (!cf.patio_id) return toast('Indique el patio donde se retirara', true);
+    if (!cf.categoria_id) return toast('Indique la categoria de chatarra', true);
+    if (!(Number(cf.peso_estimado_kg) > 0)) return toast('Indique el peso estimado en kilos', true);
+    try {
+      const r = await api(`/componentes/${clasificar.id}/clasificar`, { method: 'POST', body: {
+        patio_id: Number(cf.patio_id), categoria_id: Number(cf.categoria_id),
+        peso_estimado_kg: Number(cf.peso_estimado_kg), fecha: cf.fecha } });
+      toast(`${clasificar.codigo} derivado al programa · semana ${r.programa.semana}`);
+      setClasificar(null); load();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  const confirmarTerreno = (c) => correr(async () => {
+    try {
+      await api(`/componentes/${c.id}/terreno`, { method: 'POST', body: { encontrado: true } });
+      toast(`${c.codigo} confirmado en terreno · ya se puede publicar`);
+      load();
+    } catch (e) { toast(e.message, true); }
   });
 
   async function abrirAdjuntos(c) {
@@ -113,7 +146,7 @@ export default function Inventario() {
   return (
     <div>
       <PageHead eyebrow={EYEBROW} title="Inventario y logística de obsoletos"
-        sub="Planificación de venta, ubicación en terreno y bandeja de pendientes de entrega.">
+        sub="Los componentes nacen «por identificar»: se publican recién cuando se confirman en terreno desde su memo de baja.">
         <button className="btn" onClick={() => { setMasivo(true); setTexto(''); }}>⇪ Carga masiva</button>
         <button className="btn primary" onClick={() => { setNuevo(true); setF(vacio); }}>+ Ingresar componente</button>
       </PageHead>
@@ -135,6 +168,10 @@ export default function Inventario() {
                 <td><Chip tone={tono}>{txt}{c.estado === 'publicado' && c.dia != null ? ` · día ${c.dia}` : ''}</Chip>
                   {c.nota_terreno && <><br /><small style={{ color: 'var(--muted)' }}>{c.nota_terreno}</small></>}</td>
                 <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                  {['por_identificar', 'no_encontrado'].includes(c.estado) && (
+                    <><button className="btn sm primary" disabled={busy} onClick={() => confirmarTerreno(c)}
+                      title="Marcarlo como encontrado en terreno para poder publicarlo">Confirmar en terreno</button>{' '}</>
+                  )}
                   {c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>}{' '}
                   <button className="btn sm" onClick={() => setEditar({ ...c, especificaciones: c.especificaciones ?? '', ubicacion: c.ubicacion ?? '', sitio_id: c.sitio_id ?? '', valor_referencial: c.valor_referencial ?? '' })}>Editar</button>{' '}
                   {['planificado', 'por_identificar', 'no_encontrado'].includes(c.estado) && <button className="btn sm danger" onClick={() => setEliminar(c)}>Eliminar</button>}
@@ -146,6 +183,37 @@ export default function Inventario() {
       </table></div>
         {data.componentes.length === 0 && <Empty title="Inventario vacío">Ingrese el primer componente obsoleto para planificar su venta.</Empty>}
       </div>
+
+      {data.porClasificar?.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, borderColor: 'var(--warn-line)' }}>
+          <div className="card-h">
+            <h3>Pendientes de clasificar para chatarra</h3>
+            <small>no se vendieron · esperan patio, categoría y peso para entrar al programa</small>
+          </div>
+          <div className="tbl-wrap"><table>
+            <thead><tr><th>Componente</th><th>Ubicación</th><th>Motivo</th><th className="num">Días esperando</th><th className="acc"></th></tr></thead>
+            <tbody>
+              {data.porClasificar.map((c) => (
+                <tr key={c.id}>
+                  <td><b>{c.nombre}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{c.codigo}</small></td>
+                  <td>{[c.sitio, c.ubicacion].filter(Boolean).join(' · ') || '—'}</td>
+                  <td><small style={{ color: 'var(--ink-2)' }}>{c.motivo || '—'}</small></td>
+                  <td className="num">{c.desde ?? '—'}</td>
+                  <td className="num">
+                    <button className="btn sm primary" disabled={busy}
+                      onClick={() => { setClasificar(c); setCf({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO() }); }}>
+                      Clasificar y derivar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+          <div className="audit-note" style={{ marginTop: 10 }}>
+            ⚙ Mientras estén acá, la cuadrilla de limpieza no tiene instrucción de retirarlos. Al clasificarlos se crea el registro en el programa de Fase 1.
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-h"><h3>Pendientes de entrega</h3><small>adjudicados sin retiro coordinado</small></div>
@@ -224,6 +292,42 @@ export default function Inventario() {
             </tbody>
           </table>{previa.length > 8 && <small style={{ color: 'var(--muted)' }}>… y {previa.length - 8} más</small>}</div>
         )}
+      </Modal>
+
+      {/* ---- clasificación para chatarra ---- */}
+      <Modal open={!!clasificar} title={clasificar && `Derivar a chatarra · ${clasificar.codigo}`} onClose={() => setClasificar(null)}
+        footer={<>
+          <button className="btn" onClick={() => setClasificar(null)} disabled={busy}>Cancelar</button>
+          <button className="btn primary" onClick={derivar} disabled={busy}>{busy ? 'Derivando…' : 'Derivar al programa'}</button>
+        </>}>
+        <p style={{ marginTop: 0 }}><b>{clasificar?.nombre}</b> no se vendió y pasó a chatarra.</p>
+        <p style={{ color: 'var(--ink-2)', fontSize: 13.5 }}>
+          Fase 1 mueve <b>kilos de una categoría desde un patio</b>, y el componente no trae ninguno de esos datos:
+          por eso hay que clasificarlo. Con esto se crea el registro en el programa de limpieza.
+        </p>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="Patio de retiro">
+            <Select value={cf.patio_id} onChange={(e) => setCf({ ...cf, patio_id: e.target.value })}>
+              <option value="">— Elija el patio —</option>
+              {patios.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </Select>
+          </Field>
+          <Field label="Categoría de chatarra" hint="Define el precio por kilo.">
+            <Select value={cf.categoria_id} onChange={(e) => setCf({ ...cf, categoria_id: e.target.value })}>
+              <option value="">— Elija la categoría —</option>
+              {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="Peso estimado (kg)" hint="El programa se planifica en toneladas: mínimo 100 kg.">
+            <input type="number" min="0" step="1" value={cf.peso_estimado_kg}
+              onChange={(e) => setCf({ ...cf, peso_estimado_kg: e.target.value })} placeholder="4200" />
+          </Field>
+          <Field label="Fecha de retiro" hint="Define la semana del programa. No opera domingo.">
+            <DateField value={cf.fecha} onChange={(e) => setCf({ ...cf, fecha: e.target.value })} />
+          </Field>
+        </div>
       </Modal>
 
       {/* ---- adjuntos ---- */}

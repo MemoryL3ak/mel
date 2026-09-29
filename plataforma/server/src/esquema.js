@@ -30,6 +30,8 @@ export const tiene = {
   obsoletos: false,      // Fase 2: componentes, publicaciones, ofertas, adjudicaciones
   // db/0008_memos.sql
   memos: false,          // tabla memos + componentes.memo_id/nota_terreno
+  // db/0009_chatarra.sql
+  chatarra_obs: false,   // componentes.programa_id/patio_id/categoria_id/peso_estimado_kg
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -43,6 +45,7 @@ const ORIGEN = {
   cuad_doble: '0006_review.sql', codigo_interno: '0006_review.sql',
   obsoletos: '0007_obsoletos.sql',
   memos: '0008_memos.sql',
+  chatarra_obs: '0009_chatarra.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -87,6 +90,11 @@ export async function detectarEsquema() {
   tiene.memos = tiene.obsoletos
     && (await existe('memos', 'id,folio,area_usuaria'))
     && (await existe('componentes', 'memo_id,nota_terreno'));
+
+  // El puente a Fase 1: sin estas columnas el obsoleto no vendido se marca
+  // chatarra pero no puede derivarse al programa de limpieza.
+  tiene.chatarra_obs = tiene.obsoletos
+    && (await existe('componentes', 'programa_id,patio_id,categoria_id,peso_estimado_kg,chatarra_el'));
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {
