@@ -11,6 +11,10 @@ import { enviarCorreo, plantilla } from './mail.js';
 const diasDesde = (fecha) =>
   Math.floor((new Date(hoy() + 'T12:00:00') - new Date(fecha + 'T12:00:00')) / 86400000);
 
+// Plazo vigente = original + lo ampliado. Sin esto el barrido seguiria
+// convirtiendo a chatarra una publicacion cuyo plazo se acaba de extender.
+const plazoTotal = (p) => Number(p.plazo_dias) + Number(p.plazo_ampliado_dias ?? 0);
+
 // Los oferentes de una publicación que se cierra sin adjudicar quedaban
 // esperando una respuesta que no llegaba nunca.
 async function avisarOferentes(ofertas, comp) {
@@ -35,7 +39,8 @@ async function avisarOferentes(ofertas, comp) {
 export async function convertirAChatarra(p, { usuario = 'Sistema', rol = 'sistema' } = {}) {
   const comp = await q(supa.from('componentes').select('id,codigo,nombre').eq('id', p.componente_id).single());
   const dia = diasDesde(p.publicado_el);
-  const anticipada = dia < p.plazo_dias;
+  const plazo = plazoTotal(p);
+  const anticipada = dia < plazo;
   const ahora = new Date().toISOString();
 
   await q(supa.from('publicaciones').update({ estado: 'convertida', cerrada_el: ahora }).eq('id', p.id).select('id').single());
@@ -44,7 +49,7 @@ export async function convertirAChatarra(p, { usuario = 'Sistema', rol = 'sistem
   if (tiene.chatarra_obs) {
     cambios.chatarra_el = ahora;
     cambios.chatarra_motivo = anticipada
-      ? `Forzado en el día ${dia} de ${p.plazo_dias}`
+      ? `Forzado en el día ${dia} de ${plazo}`
       : 'Plazo cumplido sin adjudicar';
   }
   await q(supa.from('componentes').update(cambios).eq('id', comp.id).select('id').single());
@@ -59,7 +64,7 @@ export async function convertirAChatarra(p, { usuario = 'Sistema', rol = 'sistem
   await audit(usuario, rol,
     anticipada ? 'Convirtió componente a chatarra (forzado antes del plazo)'
                : 'Convirtió componente a chatarra (plazo cumplido)',
-    `${comp.codigo} · día ${dia} de ${p.plazo_dias}${ofertas.length ? ` · ${ofertas.length} oferta(s) descartada(s)` : ''}`);
+    `${comp.codigo} · día ${dia} de ${plazo}${ofertas.length ? ` · ${ofertas.length} oferta(s) descartada(s)` : ''}`);
 
   return { comp, anticipada, ofertas: ofertas.length, dia };
 }
@@ -68,7 +73,7 @@ export async function barrerPublicacionesVencidas() {
   if (!tiene.obsoletos) return 0;
   try {
     const activas = await q(supa.from('publicaciones').select('*').eq('estado', 'activa'));
-    const vencidas = activas.filter((p) => diasDesde(p.publicado_el) >= p.plazo_dias);
+    const vencidas = activas.filter((p) => diasDesde(p.publicado_el) >= plazoTotal(p));
     let n = 0;
     for (const p of vencidas) {
       await convertirAChatarra(p);

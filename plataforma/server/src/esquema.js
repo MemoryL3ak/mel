@@ -32,6 +32,12 @@ export const tiene = {
   memos: false,          // tabla memos + componentes.memo_id/nota_terreno
   // db/0009_chatarra.sql
   chatarra_obs: false,   // componentes.programa_id/patio_id/categoria_id/peso_estimado_kg
+  // db/0010_ofertas.sql
+  cantidades: false,          // componentes.cant_comprometida/encontrada/enviada/recibida
+  plazo_ampliable: false,     // publicaciones.plazo_ampliado_dias
+  ofertas_moneda: false,      // ofertas.moneda/monto_usd/dolar
+  ofertas_solicitante: false, // ofertas.solicitante_* y empresa_*
+  user_email: false,          // users.email (aviso de ofertas al equipo)
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -46,6 +52,9 @@ const ORIGEN = {
   obsoletos: '0007_obsoletos.sql',
   memos: '0008_memos.sql',
   chatarra_obs: '0009_chatarra.sql',
+  cantidades: '0010_ofertas.sql', plazo_ampliable: '0010_ofertas.sql',
+  ofertas_moneda: '0010_ofertas.sql', ofertas_solicitante: '0010_ofertas.sql',
+  user_email: '0010_ofertas.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -95,6 +104,14 @@ export async function detectarEsquema() {
   // chatarra pero no puede derivarse al programa de limpieza.
   tiene.chatarra_obs = tiene.obsoletos
     && (await existe('componentes', 'programa_id,patio_id,categoria_id,peso_estimado_kg,chatarra_el'));
+
+  tiene.cantidades = tiene.obsoletos
+    && (await existe('componentes', 'cant_comprometida,cant_encontrada,cant_enviada,cant_recibida'));
+  tiene.plazo_ampliable = tiene.obsoletos && (await existe('publicaciones', 'plazo_ampliado_dias'));
+  tiene.ofertas_moneda = tiene.obsoletos && (await existe('ofertas', 'moneda,monto_usd,dolar'));
+  tiene.ofertas_solicitante = tiene.obsoletos
+    && (await existe('ofertas', 'solicitante_tipo,solicitante_nombre,solicitante_rut,empresa_rut'));
+  tiene.user_email = await existe('users', 'email');
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {

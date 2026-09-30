@@ -20,9 +20,10 @@ function Plazo({ p }) {
   const texto = p.vencido ? `${p.dia} días — plazo cumplido`
     : p.dias_restantes === 1 ? `Día ${p.dia} de ${p.plazo_dias} — vence mañana`
     : `Día ${p.dia} de ${p.plazo_dias}`;
+  const ampliada = p.ampliado > 0 ? ` · ampliado +${p.ampliado}` : '';
   return (<>
     <div className="bar-track"><div className="bar-fill" style={{ width: `${pct}%`, ...(color ? { background: color } : {}) }} /></div>
-    <small style={{ color: tono === 'bad' ? 'var(--bad-tx)' : 'var(--ink-2)', fontWeight: p.vencido ? 700 : 400 }}>{texto}</small>
+    <small style={{ color: tono === 'bad' ? 'var(--bad-tx)' : 'var(--ink-2)', fontWeight: p.vencido ? 700 : 400 }}>{texto}{ampliada}</small>
   </>);
 }
 
@@ -32,6 +33,8 @@ export default function Publicaciones() {
   const [nuevo, setNuevo] = useState(false);
   const [f, setF] = useState({ componente_id: '', oferta_minima: '', plazo_dias: 15, publicado_el: hoyISO() });
   const [convertir, setConvertir] = useState(null);
+  const [ampliar, setAmpliar] = useState(null);
+  const [dias, setDias] = useState(15);
   const toast = useToast();
   const nav = useNavigate();
 
@@ -57,6 +60,18 @@ export default function Publicaciones() {
         plazo_dias: Number(f.plazo_dias) || 15, publicado_el: f.publicado_el || undefined } });
       toast('Componente publicado en el portal');
       setNuevo(false); setF({ componente_id: '', oferta_minima: '', plazo_dias: 15, publicado_el: hoyISO() }); load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // Ampliar el plazo de una publicacion en curso: una que va en el dia 14 de 15
+  // con ofertas sobre la mesa no deberia morir por calendario.
+  async function ampliarPlazo() {
+    const n = Math.round(Number(dias));
+    if (!(n > 0)) return toast('Indique por cuántos días se amplía', true);
+    try {
+      const r = await api(`/publicaciones/${ampliar.id}/ampliar`, { method: 'POST', body: { dias: n } });
+      toast(`Plazo ampliado a ${r.plazo_dias} días`);
+      setAmpliar(null); load();
     } catch (e) { toast(e.message, true); }
   }
 
@@ -93,6 +108,10 @@ export default function Publicaciones() {
                   {p.estado === 'activa' && p.vencido ? 'Por convertir' : txt}</Chip></td>
                 <td className="num" style={{ whiteSpace: 'nowrap' }}>
                   {p.ofertas > 0 && <button className="btn sm" onClick={() => nav(`/ofertas?pub=${p.id}`)}>Ofertas</button>}{' '}
+                  {p.estado === 'activa' && (
+                    <button className="btn sm" onClick={() => { setAmpliar(p); setDias(15); }}
+                      title="Sumar días al plazo de esta publicación">+ Plazo</button>
+                  )}{' '}
                   {p.estado === 'activa' && (
                     <button className="btn sm danger" onClick={() => setConvertir(p)}
                       title={p.vencido ? 'El plazo se cumplió sin adjudicar' : 'Forzar la conversión antes de que se cumpla el plazo'}>
@@ -139,6 +158,24 @@ export default function Publicaciones() {
         <Field label="Fecha de publicación" hint="Se propone hoy.">
           <DateField value={f.publicado_el} onChange={(e) => setF({ ...f, publicado_el: e.target.value })} />
         </Field>
+      </Modal>
+
+      <Modal open={!!ampliar} title={ampliar && `Ampliar plazo · ${ampliar.codigo}`} onClose={() => setAmpliar(null)}
+        footer={<>
+          <button className="btn" onClick={() => setAmpliar(null)}>Cancelar</button>
+          <button className="btn primary" onClick={ampliarPlazo}>Ampliar plazo</button>
+        </>}>
+        <p style={{ marginTop: 0 }}>
+          <b>{ampliar?.componente}</b> va en el <b>día {ampliar?.dia} de {ampliar?.plazo_dias}</b>
+          {ampliar?.ofertas > 0 && <> y tiene <b>{ampliar.ofertas} oferta(s)</b> recibida(s)</>}.
+        </p>
+        <Field label="Días adicionales" hint="Se suman al plazo actual. El original queda registrado en la bitácora.">
+          <input type="number" min="1" max="90" value={dias} onChange={(e) => setDias(e.target.value)} />
+        </Field>
+        <small style={{ color: 'var(--muted)' }}>
+          Nuevo plazo: {(Number(ampliar?.plazo_dias) || 0) + (Number(dias) || 0)} días
+          · quedarían {(Number(ampliar?.plazo_dias) || 0) + (Number(dias) || 0) - (Number(ampliar?.dia) || 0)} día(s).
+        </small>
       </Modal>
 
       <Modal open={!!convertir} title={convertir?.vencido ? 'Convertir a chatarra' : 'Forzar conversión a chatarra'} onClose={() => setConvertir(null)}

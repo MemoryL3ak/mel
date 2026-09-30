@@ -24,7 +24,7 @@ function ClaveUnica({ username, password }) {
 export default function Usuarios() {
   const [rows, setRows] = useState(null);
   const [nuevo, setNuevo] = useState(false);
-  const [f, setF] = useState({ username: '', nombre: '', role: 'limpieza' });
+  const [f, setF] = useState({ username: '', nombre: '', email: '', role: 'limpieza' });
   const [creada, setCreada] = useState(null);   // {username, password} recién generada
   const { user } = useAuth();
   const toast = useToast();
@@ -37,7 +37,7 @@ export default function Usuarios() {
     try {
       const r = await api('/usuarios', { method: 'POST', body: f });
       setCreada({ username: r.user.username, password: r.password });
-      setF({ username: '', nombre: '', role: 'limpieza' });
+      setF({ username: '', nombre: '', email: '', role: 'limpieza' });
       toast(`Cuenta ${r.user.username} creada`);
       load();
     } catch (e) { toast(e.message, true); }
@@ -104,6 +104,9 @@ export default function Usuarios() {
             </Field>
             <Field label="Nombre completo">
               <input value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} placeholder="Juan Pérez" />
+            </Field>
+            <Field label="Correo (opcional)" hint="Solo para recibir el aviso cuando entra una oferta. No se usa para iniciar sesión.">
+              <input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="nombre@empresa.cl" />
             </Field>
             <Field label="Perfil">
               <Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>

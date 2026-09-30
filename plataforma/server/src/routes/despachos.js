@@ -127,13 +127,19 @@ async function subirEvidencia(despachoId, tipo, archivos = []) {
 }
 // Documento del certificado de disposición final que emite Lampa. Va en su
 // propia carpeta (CDF/<trasladoId>/) del mismo bucket privado.
+// El nombre lleva marca de tiempo porque el documento puede adjuntarse en
+// varias tandas: con un contador que reinicia en cada llamada, la segunda
+// chocaba con `cdf-1` de la primera y el archivo se perdía en silencio.
 async function subirCDF(trasladoId, archivos = []) {
   let n = 0;
+  const marca = Date.now();
   for (const f of archivos) {
     const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }[f.mimetype];
+    if (!ext) continue;
     const { error } = await supa.storage.from('evidencia')
-      .upload(`CDF/${trasladoId}/cdf-${++n}.${ext}`, f.buffer, { contentType: f.mimetype });
-    if (error) console.error('[GEA] CDF:', error.message);
+      .upload(`CDF/${trasladoId}/cdf-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    if (error) { console.error('[GEA] CDF:', error.message); continue; }
+    n++;
   }
   return n;
 }
@@ -430,7 +436,11 @@ r.delete('/despachos/:id/descuentos/:descId', auth('ito', 'coordinador'), ah(asy
 // Una guía no se borra: se anula con motivo y queda en el libro. El folio
 // sigue consumido, igual que una guía de papel anulada. Opcionalmente se emite
 // en el acto la guía que la reemplaza, copiando los datos del despacho.
-r.post('/despachos/:id/anular', auth('ito', 'coordinador'), ah(async (req, res) => {
+// Limpieza registra el despacho, asi que tambien corrige y anula el suyo: un
+// error de digitacion no deberia necesitar al ITO. Los limites siguen siendo
+// los mismos para todos —no se toca una guia anulada ni una que ya esta en un
+// estado de pago—, y la anulacion siempre exige motivo y queda en bitacora.
+r.post('/despachos/:id/anular', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   if (!tiene.anulacion) return res.status(503).json({ error: 'Esta función requiere aplicar db/0004_operacion.sql en la base de datos' });
   const motivo = (req.body?.motivo || '').trim();
   if (!motivo) return res.status(400).json({ error: 'El motivo de la anulación es obligatorio' });
@@ -494,7 +504,7 @@ r.post('/despachos/:id/resolver', auth('ito', 'coordinador'), ah(async (req, res
 // estado de pago. No se editan los kilos ni el precio de la recepción (eso
 // altera lo valorizado: para eso se anula y se rehace); solo los datos del
 // documento de origen: guía MEL, fecha, patio, categoría, transporte y tara.
-r.patch('/despachos/:id', auth('ito', 'coordinador'), ah(async (req, res) => {
+r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).single());
   if (d.estado === 'anulado') return res.status(409).json({ error: 'La guía está anulada; no se edita' });
   if (d.ep_id) {
@@ -579,6 +589,29 @@ r.post('/traslados/:id/recepcionar', auth('vendor', 'coordinador', 'lampa'),
   await audit(req.user.name, req.user.role, 'Recepcionó en Lampa y emitió certificado de disposición final',
     `${row.guia} → ${cert}${cdfN ? ` · ${cdfN} documento(s)` : ''}`);
   res.json({ ...row, kg: Number(row.kg), kg_lampa: row.kg_lampa == null ? null : Number(row.kg_lampa), categoria: row.categorias?.nombre });
+}));
+
+// Adjunta el documento del CDF a un traslado ya recepcionado. En la práctica el
+// certificado firmado llega después de recibir el material, y antes solo se
+// aceptaba en el mismo instante de recepcionar: si no lo tenías a mano en ese
+// momento, no había ninguna forma de agregarlo nunca.
+r.post('/traslados/:id/cdf', auth('vendor', 'coordinador', 'lampa'),
+  subir.fields([{ name: 'cdf', maxCount: 4 }]), ah(async (req, res) => {
+  const t = await q(supa.from('traslados').select('*').eq('id', req.params.id).single());
+  if (t.estado !== 'recepcionado') {
+    return res.status(409).json({ error: 'El certificado se emite al recepcionar en Lampa: registre primero la recepción.' });
+  }
+  const archivos = req.files?.cdf ?? [];
+  if (!archivos.length) return res.status(400).json({ error: 'Adjunte el documento del certificado (PDF, JPG, PNG o WebP).' });
+  const n = await subirCDF(t.id, archivos);
+  if (!n) return res.status(400).json({ error: 'No se pudo adjuntar el documento. Revise el formato y que pese menos de 5 MB.' });
+  if (tiene.cdf_doc) {
+    await q(supa.from('traslados').update({ cert_fotos: (t.cert_fotos ?? 0) + n })
+      .eq('id', t.id).select('id').single());
+  }
+  await audit(req.user.name, req.user.role, 'Adjuntó documento al certificado de disposición final',
+    `${t.guia} · ${t.cert_folio} · ${n} documento(s)`);
+  res.json({ ok: true, adjuntados: n, cert_fotos: (t.cert_fotos ?? 0) + n });
 }));
 
 // Documento(s) del certificado de disposición final de un traslado.

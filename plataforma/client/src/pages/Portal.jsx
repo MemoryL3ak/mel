@@ -59,7 +59,11 @@ export default function Portal() {
   const [orden, setOrden] = useState('cierre');
   const [rf, setRf] = useState({ razon_social: '', rut: '', email: '', telefono: '', password: '' });
   const [lf, setLf] = useState({ email: '', password: '' });
-  const [of, setOf] = useState({ monto: '', plazo_retiro: '5 días hábiles', forma_pago: 'Transferencia 100%', comentarios: '' });
+  const [of, setOf] = useState({
+    monto: '', moneda: 'USD', plazo_retiro: '5 días hábiles', forma_pago: 'Transferencia 100%', comentarios: '',
+    solicitante_tipo: 'persona', solicitante_nombre: '', solicitante_rut: '',
+    solicitante_telefono: '', solicitante_email: '', empresa_rut: '', empresa_razon_social: '',
+  });
   const toast = useToast();
 
   const cargarPubs = () => api('/portal/publicaciones').then(setPubs).catch(() => setPubs([]));
@@ -94,8 +98,12 @@ export default function Portal() {
     if (!(monto > 0)) return toast('Ingrese el monto de su oferta', true);
     try {
       const r = await api('/portal/ofertas', { method: 'POST', body: {
-        publicacion_id: oferta.id, monto,
-        plazo_retiro: of.plazo_retiro, forma_pago: of.forma_pago, comentarios: of.comentarios } });
+        publicacion_id: oferta.id, monto, moneda: of.moneda,
+        plazo_retiro: of.plazo_retiro, forma_pago: of.forma_pago, comentarios: of.comentarios,
+        solicitante_tipo: of.solicitante_tipo, solicitante_nombre: of.solicitante_nombre,
+        solicitante_rut: of.solicitante_rut, solicitante_telefono: of.solicitante_telefono,
+        solicitante_email: of.solicitante_email,
+        empresa_rut: of.empresa_rut, empresa_razon_social: of.empresa_razon_social } });
       toast(r.mensaje || 'Oferta registrada');
       setOferta(null); setOf({ ...of, monto: '', comentarios: '' });
       api('/portal/mis-ofertas').then(setMisOfertas).catch(() => {});
@@ -362,10 +370,56 @@ export default function Portal() {
 
       <Modal open={!!oferta} title={oferta && `Presentar oferta · ${oferta.componente}`} onClose={() => setOferta(null)}
         footer={<><button className="btn" onClick={() => setOferta(null)}>Cancelar</button><button className="btn primary" onClick={enviarOferta}>Enviar oferta</button></>}>
-        <Field label="Monto ofertado (USD)" hint="Dólares enteros, sin centavos.">
-          <input type="number" min="0" step="1" value={of.monto}
-            onChange={(e) => setOf({ ...of, monto: e.target.value })} placeholder="31500" />
+        <div className="pt-ref">
+          <div><small>Activo de interés</small><b>{oferta?.componente}</b></div>
+          <div style={{ textAlign: 'right' }}><small>Código</small><b className="mono">{oferta?.codigo ?? '—'}</b></div>
+        </div>
+
+        <Field label="Tipo de solicitante" hint="Quién presenta esta oferta: una persona natural o una empresa.">
+          <div className="pt-seg">
+            <button type="button" className={of.solicitante_tipo === 'persona' ? 'on' : ''}
+              onClick={() => setOf({ ...of, solicitante_tipo: 'persona' })}>Persona</button>
+            <button type="button" className={of.solicitante_tipo === 'empresa' ? 'on' : ''}
+              onClick={() => setOf({ ...of, solicitante_tipo: 'empresa' })}>Empresa</button>
+          </div>
         </Field>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="Nombre del solicitante">
+            <input value={of.solicitante_nombre} onChange={(e) => setOf({ ...of, solicitante_nombre: e.target.value })} placeholder="Juan Pérez" />
+          </Field>
+          <Field label="RUT del solicitante">
+            <input value={of.solicitante_rut} onChange={(e) => setOf({ ...of, solicitante_rut: e.target.value })} placeholder="12.345.678-9" />
+          </Field>
+          <Field label="Teléfono de contacto">
+            <input value={of.solicitante_telefono} onChange={(e) => setOf({ ...of, solicitante_telefono: e.target.value })} placeholder="+56 9 8765 4321" />
+          </Field>
+          <Field label="Correo electrónico">
+            <input value={of.solicitante_email} onChange={(e) => setOf({ ...of, solicitante_email: e.target.value })} placeholder="ejemplo@correo.com" />
+          </Field>
+        </div>
+        {of.solicitante_tipo === 'empresa' && (
+          <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+            <Field label="RUT de la empresa">
+              <input value={of.empresa_rut} onChange={(e) => setOf({ ...of, empresa_rut: e.target.value })} placeholder="76.632.059-7" />
+            </Field>
+            <Field label="Razón social">
+              <input value={of.empresa_razon_social} onChange={(e) => setOf({ ...of, empresa_razon_social: e.target.value })} placeholder="Empresa SpA" />
+            </Field>
+          </div>
+        )}
+
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="Monto ofertado" hint="Sin decimales.">
+            <input type="number" min="0" step="1" value={of.monto}
+              onChange={(e) => setOf({ ...of, monto: e.target.value })} placeholder="31500" />
+          </Field>
+          <Field label="Moneda" hint="Las ofertas en pesos se convierten al dólar del día para compararlas.">
+            <Select value={of.moneda} onChange={(e) => setOf({ ...of, moneda: e.target.value })}>
+              <option value="USD">Dólares (USD)</option>
+              <option value="CLP">Pesos (CLP)</option>
+            </Select>
+          </Field>
+        </div>
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="Plazo de retiro comprometido">
             <Select value={of.plazo_retiro} onChange={(e) => setOf({ ...of, plazo_retiro: e.target.value })}>
@@ -380,6 +434,12 @@ export default function Portal() {
         </div>
         <Field label="Comentarios"><textarea rows="2" value={of.comentarios} onChange={(e) => setOf({ ...of, comentarios: e.target.value })} placeholder="Condiciones, equipos de izaje, etc." /></Field>
         {oferta?.oferta_minima != null && <small style={{ color: 'var(--muted)' }}>Oferta mínima de esta publicación: {fmtUSD(oferta.oferta_minima)}.</small>}
+        {detalle?.nota && (
+          <div className="pt-legal">
+            <b>Nota importante</b>
+            <p>{detalle.nota}</p>
+          </div>
+        )}
       </Modal>
     </div>
   );

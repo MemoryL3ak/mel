@@ -8,7 +8,7 @@ const ESTADO = {
   planificado: ['neutral', 'Planificado'], publicado: ['info', 'Publicado'],
   adjudicado: ['ok', 'Adjudicado'], entregado: ['ok', 'Entregado'], chatarra: ['bad', 'Convertido a chatarra'],
 };
-const vacio = { codigo: '', nombre: '', especificaciones: '', sitio_id: '', ubicacion: '', valor_referencial: '', memo_id: '', fotos: [], ficha: null };
+const vacio = { codigo: '', nombre: '', especificaciones: '', sitio_id: '', ubicacion: '', valor_referencial: '', memo_id: '', cant_comprometida: 1, fotos: [], ficha: null };
 const FICHA_ACCEPT = 'application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp,.xls,.xlsx';
 
 // Parsea el pegado de la carga masiva: una línea por componente, columnas
@@ -68,6 +68,7 @@ export default function Inventario() {
     fd.append('ubicacion', f.ubicacion);
     if (f.valor_referencial !== '') fd.append('valor_referencial', Number(f.valor_referencial));
     if (f.memo_id) fd.append('memo_id', f.memo_id);
+    fd.append('cant_comprometida', Math.max(1, Math.round(Number(f.cant_comprometida) || 1)));
     for (const foto of f.fotos) fd.append('fotos', foto);
     if (f.ficha) fd.append('ficha', f.ficha);
     try {
@@ -152,7 +153,7 @@ export default function Inventario() {
       </PageHead>
 
       <div className="card" style={{ marginBottom: 16 }}><div className="tbl-wrap"><table>
-        <thead><tr><th>Componente</th><th>Código SAP</th><th>Memo</th><th>Ubicación en terreno</th><th className="num">Valor referencial</th><th>Estado</th><th className="acc"></th></tr></thead>
+        <thead><tr><th>Componente</th><th>Código SAP</th><th>Memo</th><th>Ubicación en terreno</th><th className="num">Comp/Enc/Env/Rec</th><th className="num">Valor referencial</th><th>Estado</th><th className="acc"></th></tr></thead>
         <tbody>
           {data.componentes.map((c) => {
             const [tono, txt] = ESTADO[c.estado] ?? ['neutral', c.estado];
@@ -164,6 +165,16 @@ export default function Inventario() {
                   ? <><span className="mono">{c.memo}</span><br /><small style={{ color: 'var(--muted)' }}>{c.area_usuaria}</small></>
                   : <small style={{ color: 'var(--muted)' }}>Sin memo</small>}</td>
                 <td>{[c.sitio, c.ubicacion].filter(Boolean).join(' · ') || '—'}</td>
+                <td className="num mono" style={{ whiteSpace: 'nowrap', fontSize: 12.5 }}>
+                  {c.cant_comprometida == null ? '—' : (
+                    <span title="Comprometida / encontrada / enviada / recibida">
+                      {c.cant_comprometida}<span style={{ color: 'var(--muted)' }}>/</span>
+                      {c.cant_encontrada ?? '·'}<span style={{ color: 'var(--muted)' }}>/</span>
+                      {c.cant_enviada ?? '·'}<span style={{ color: 'var(--muted)' }}>/</span>
+                      {c.cant_recibida ?? '·'}
+                    </span>
+                  )}
+                </td>
                 <td className="num">{fmtUSD(c.valor_referencial)}</td>
                 <td><Chip tone={tono}>{txt}{c.estado === 'publicado' && c.dia != null ? ` · día ${c.dia}` : ''}</Chip>
                   {c.nota_terreno && <><br /><small style={{ color: 'var(--muted)' }}>{c.nota_terreno}</small></>}</td>

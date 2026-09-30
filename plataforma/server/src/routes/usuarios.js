@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { supa, q, ah, audit } from '../supa.js';
 import { auth } from '../auth.js';
+import { tiene } from '../esquema.js';
 
 const r = Router();
 const ROLES = ['limpieza', 'vendor', 'ito', 'coordinador', 'lampa', 'admin_venta'];
@@ -28,8 +29,15 @@ r.post('/usuarios', auth('coordinador'), ah(async (req, res) => {
   if (existe.length) return res.status(409).json({ error: `El usuario «${username}» ya existe` });
 
   const password = clave();
+  // El correo es opcional y solo sirve para avisarle de las ofertas: el usuario
+  // interno entra con nombre de usuario, no con direccion.
+  const email = String(req.body?.email || '').trim().toLowerCase() || null;
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return res.status(400).json({ error: 'Ingrese un correo válido o déjelo en blanco' });
+  }
   const row = await q(supa.from('users').insert({
     username, nombre, role, password_hash: await bcrypt.hash(password, 10),
+    ...(tiene.user_email ? { email } : {}),
   }).select('id, username, nombre, role, activo, creado_el').single());
   await audit(req.user.name, req.user.role, 'Creó cuenta de usuario', `${username} (${role})`);
   res.json({ user: row, password });

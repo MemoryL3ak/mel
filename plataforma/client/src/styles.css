@@ -808,3 +808,20 @@ tbody tr.tot:hover{background:var(--surface-2)}
   .pt-stats{gap:22px}
   .pt-f{width:100%}
 }
+
+/* Referencia del activo y control segmentado del formulario de oferta. */
+.pt-ref{display:flex;justify-content:space-between;gap:16px;padding:13px 15px;margin-bottom:14px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-s)}
+.pt-ref small{display:block;font-size:10px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--muted);font-weight:600}
+.pt-ref b{display:block;margin-top:3px;font-size:14.5px}
+.pt-seg{display:inline-flex;padding:3px;gap:3px;background:var(--surface-2);
+  border:1px solid var(--line);border-radius:99px}
+.pt-seg button{font:inherit;font-size:13px;font-weight:600;padding:6px 18px;border-radius:99px;
+  border:none;background:transparent;color:var(--ink-2);cursor:pointer;transition:background .15s,color .15s}
+.pt-seg button:hover{color:var(--ink)}
+.pt-seg button.on{background:var(--copper);color:#fff}
+.pt-legal{margin-top:16px;padding:13px 15px;background:var(--warn-bg);
+  border:1px solid var(--warn-line);border-radius:var(--radius-s)}
+.pt-legal b{display:block;font-size:12px;letter-spacing:.04em;color:var(--warn-tx)}
+.pt-legal p{margin:6px 0 0;font-size:12.5px;line-height:1.55;color:var(--ink-2)}

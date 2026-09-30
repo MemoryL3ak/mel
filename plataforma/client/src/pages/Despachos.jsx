@@ -101,6 +101,7 @@ export default function Despachos() {
   const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
   const [cdfFile, setCdfFile] = useState([]);        // documento(s) del CDF a adjuntar
   const [verCdf, setVerCdf] = useState(null);        // { traslado, archivos } del CDF abierto
+  const [adjCdf, setAdjCdf] = useState(null);        // traslado al que se le adjunta el CDF despues
   const [editar, setEditar] = useState(null);        // guía en edición de datos
   const [eForm, setEForm] = useState(null);
   const [obs, setObs] = useState('');
@@ -130,7 +131,8 @@ export default function Despachos() {
   const puedeTras = ['vendor', 'coordinador'].includes(user.role);
   const puedeRecepTras = ['vendor', 'coordinador', 'lampa'].includes(user.role);
   const puedeResolver = ['ito', 'coordinador'].includes(user.role);
-  const puedeEditar = ['ito', 'coordinador'].includes(user.role);
+  const puedeEditar = ['limpieza', 'ito', 'coordinador'].includes(user.role);
+  const puedeAnular = ['limpieza', 'ito', 'coordinador'].includes(user.role);
 
   const post = (path, body, okMsg, cierra) => async () => {
     try {
@@ -208,6 +210,19 @@ export default function Despachos() {
       setRecepTras(null);
       setCdfFile([]);
       load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // El certificado firmado suele llegar despues de recibir el material, asi que
+  // se puede adjuntar en cualquier momento tras la recepcion.
+  async function adjuntarCdf() {
+    if (!cdfFile.length) return toast('Adjunte el documento del certificado', true);
+    try {
+      const fd = new FormData();
+      for (const f of cdfFile) fd.append('cdf', f);
+      const r = await api(`/traslados/${adjCdf.id}/cdf`, { method: 'POST', body: fd });
+      toast(`${r.adjuntados} documento(s) adjuntado(s) al certificado ${adjCdf.cert_folio}`);
+      setAdjCdf(null); setCdfFile([]); load();
     } catch (e) { toast(e.message, true); }
   }
 
@@ -407,7 +422,7 @@ export default function Despachos() {
                     <button className="btn sm" onClick={() => abrirEditar(d)}>Editar</button>
                   )}{' '}
                   {/* Una guía no se borra: se anula con motivo y queda en el libro. */}
-                  {fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeResolver && (
+                  {fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeAnular && (
                     <button className="btn sm danger" onClick={() => { setAnular(d); setAForm({ motivo: '', reemplazar: false }); }}>Anular</button>
                   )}
                 </td>
@@ -511,6 +526,12 @@ export default function Despachos() {
                   )}
                   {t.estado === 'recepcionado' && t.cert_fotos > 0 && (
                     <button className="btn sm" onClick={() => abrirCdf(t)}>Ver CDF</button>
+                  )}{' '}
+                  {t.estado === 'recepcionado' && puedeRecepTras && (
+                    <button className="btn sm" onClick={() => { setAdjCdf(t); setCdfFile([]); }}
+                      title="Adjuntar el documento firmado del certificado">
+                      {t.cert_fotos > 0 ? 'Agregar documento' : 'Adjuntar CDF'}
+                    </button>
                   )}
                 </td>
               </tr>
@@ -534,7 +555,9 @@ export default function Despachos() {
                 <td>{t.recepcionado_el}</td>
                 <td>{t.cert_fotos > 0
                   ? <button className="btn sm" onClick={() => abrirCdf(t)}>Ver documento</button>
-                  : <span style={{ color: 'var(--muted)' }}>Sin adjunto</span>}</td>
+                  : puedeRecepTras
+                    ? <button className="btn sm primary" onClick={() => { setAdjCdf(t); setCdfFile([]); }}>Adjuntar documento</button>
+                    : <span style={{ color: 'var(--muted)' }}>Sin adjunto</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -945,6 +968,14 @@ export default function Despachos() {
             {aForm.reemplazar ? 'Anular y emitir reemplazo' : 'Anular guía'}
           </button>
         </>}>
+        {anular?.estado === 'recepcionado' && (
+          <div className="aviso" style={{ borderColor: 'var(--bad-line)', background: 'var(--bad-bg)' }}>
+            <b style={{ color: 'var(--bad-tx)' }}>Esta guía ya fue recepcionada en La Negra</b>
+            <p>El vendor ya la pesó y aceptó. Anularla deshace un movimiento que la otra parte
+            dio por bueno, y va a aparecer como diferencia en la cuadratura de la semana.
+            Si es solo un error de digitación, <b>Editar</b> corrige sin anular.</p>
+          </div>
+        )}
         <div className="aviso">
           <b>La guía no se borra</b>
           <p>Queda en el libro marcada como anulada, con su motivo y quién la anuló. El folio
@@ -974,9 +1005,17 @@ export default function Despachos() {
             { categoria_id: tForm.categoria_id, kg: aKg(tForm.kg, tForm.unidad) },
             'Traslado despachado con guía foliada', () => { setNuevoTras(false); setTForm({ ...tForm, kg: '' }); })}>Despachar</button>
         </>}>
-        <Field label="Origen" hint="El traslado siempre sale del patio del vendor en La Negra hacia el destino final en Lampa.">
-          <input value="La Negra" readOnly disabled />
-        </Field>
+        {/* El origen es fijo por diseño: el vendor consolida en La Negra y de ahí
+            re-despacha. Se afirma como dato, no como un control deshabilitado:
+            una caja gris se lee como "no me deja elegir", no como "es así". */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', marginBottom: 14,
+          background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 'var(--radius-s)' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>Origen</span>
+          <b>La Negra</b>
+          <small style={{ color: 'var(--muted)', marginLeft: 'auto', textAlign: 'right' }}>
+            Patio del vendor → destino final en Lampa
+          </small>
+        </div>
         <Field label="Categoría de material">
           <Select value={tForm.categoria_id ?? ''} onChange={(e) => setTForm({ ...tForm, categoria_id: +e.target.value })}>
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
@@ -1011,6 +1050,32 @@ export default function Despachos() {
             {cdfFile.length > 0 && <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>{cdfFile.length} documento(s) adjunto(s).</small>}
           </Field>
         )}
+      </Modal>
+
+      <Modal open={!!adjCdf} title={adjCdf && `Adjuntar documento · ${adjCdf.cert_folio}`}
+        onClose={() => { setAdjCdf(null); setCdfFile([]); }}
+        footer={<>
+          <button className="btn" onClick={() => { setAdjCdf(null); setCdfFile([]); }}>Cancelar</button>
+          <button className="btn primary" onClick={adjuntarCdf}>Adjuntar</button>
+        </>}>
+        <p style={{ marginTop: 0 }}>
+          Certificado <b className="mono">{adjCdf?.cert_folio}</b> del traslado <b className="mono">{adjCdf?.guia}</b>.
+        </p>
+        <p style={{ color: 'var(--ink-2)', fontSize: 13.5 }}>
+          El certificado ya está emitido y foliado. Acá se adjunta el documento firmado, que
+          normalmente llega después de recibir el material.
+          {adjCdf?.cert_fotos > 0 && <> Ya tiene <b>{adjCdf.cert_fotos}</b> documento(s): estos se suman.</>}
+        </p>
+        <Field label="Documento del certificado" hint="PDF o foto · hasta 4 archivos · 5 MB cada uno.">
+          <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
+            onChange={(e) => {
+              const buenas = Array.from(e.target.files).filter((f) => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(f.type));
+              if (buenas.length < e.target.files.length) toast('Solo se aceptan PDF, JPG, PNG o WebP', true);
+              if (!buenas.length) e.target.value = '';
+              setCdfFile(buenas.slice(0, 4));
+            }} />
+          {cdfFile.length > 0 && <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>{cdfFile.length} documento(s) listo(s) para adjuntar.</small>}
+        </Field>
       </Modal>
 
       <Modal open={!!verCdf} title={verCdf && `Certificado ${verCdf.traslado.cert_folio}`} onClose={() => setVerCdf(null)}>
