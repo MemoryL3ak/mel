@@ -98,6 +98,9 @@ async function memoDeLaSolicitud(req, res) {
 const diasDesde = (fecha) =>
   Math.floor((new Date(hoy() + 'T12:00:00') - new Date(fecha + 'T12:00:00')) / 86400000);
 
+// Plazo vigente = original + lo ampliado durante la publicacion.
+const plazoTotal = (p) => Number(p.plazo_dias) + Number(p.plazo_ampliado_dias ?? 0);
+
 /* ============================ memos de baja ============================ */
 
 // Lista de memos con el avance de identificación en terreno de cada uno: el
@@ -123,10 +126,22 @@ r.get('/memos/:id', OP, ah(async (req, res) => {
   if (!tiene.memos) return sinMemos(res);
   const m = await q(supa.from('memos').select('*').eq('id', Number(req.params.id) || 0).maybeSingle());
   if (!m) return res.status(404).json({ error: 'Memo no encontrado' });
-  const comps = await q(supa.from('componentes').select('id,codigo,nombre,estado,nota_terreno,sitio_id')
-    .eq('memo_id', m.id).order('id'));
+  const comps = await q(supa.from('componentes').select('*').eq('memo_id', m.id).order('id'));
   const sitios = new Map((await q(supa.from('sitios').select('id,nombre'))).map((s) => [s.id, s.nombre]));
-  res.json({ ...m, componentes: comps.map((c) => ({ ...c, sitio: sitios.get(c.sitio_id) ?? null })) });
+  const lista = comps.map((c) => ({
+    id: c.id, codigo: c.codigo, nombre: c.nombre, estado: c.estado,
+    nota_terreno: c.nota_terreno ?? null, sitio: sitios.get(c.sitio_id) ?? null,
+    cant_comprometida: c.cant_comprometida ?? null, cant_encontrada: c.cant_encontrada ?? null,
+    cant_enviada: c.cant_enviada ?? null, cant_recibida: c.cant_recibida ?? null,
+  }));
+  // Totales por etapa: lo comprometido en el memo contra lo que realmente
+  // apareció, salió y llegó. La diferencia es lo que hay que explicar.
+  const suma = (k) => lista.reduce((a, c) => a + (Number(c[k]) || 0), 0);
+  const totales = tiene.cantidades ? {
+    comprometida: suma('cant_comprometida'), encontrada: suma('cant_encontrada'),
+    enviada: suma('cant_enviada'), recibida: suma('cant_recibida'),
+  } : null;
+  res.json({ ...m, componentes: lista, totales });
 }));
 
 // URL firmada (1 h) del memo escaneado.
@@ -228,6 +243,8 @@ r.get('/componentes', OP, ah(async (_req, res) => {
       memo_id: c.memo_id ?? null, memo: m?.folio ?? null, area_usuaria: m?.area_usuaria ?? null,
       nota_terreno: c.nota_terreno ?? null,
       programa_id: c.programa_id ?? null, chatarra_motivo: c.chatarra_motivo ?? null,
+      cant_comprometida: c.cant_comprometida ?? null, cant_encontrada: c.cant_encontrada ?? null,
+      cant_enviada: c.cant_enviada ?? null, cant_recibida: c.cant_recibida ?? null,
       dia: p ? diasDesde(p.publicado_el) : null, plazo: p?.plazo_dias ?? null,
     };
   });
@@ -284,6 +301,7 @@ r.post('/componentes', OP, subir.fields(CAMPOS_COMP), ah(async (req, res) => {
     sitio_id: sitio_id ? Number(sitio_id) : null, ubicacion: (ubicacion || '').trim() || null,
     valor_referencial: Number(valor_referencial) >= 0 && valor_referencial !== '' ? Number(valor_referencial) : null,
     ...(tiene.memos ? { memo_id, estado: 'por_identificar' } : {}),
+    ...(tiene.cantidades ? { cant_comprometida: Math.max(1, Math.round(Number(req.body?.cant_comprometida) || 1)) } : {}),
     creado_por: req.user.name,
   }).select().single());
   const nf = await subirFotos(row.id, req.files?.fotos);
@@ -362,7 +380,7 @@ r.delete('/componentes/:id', OP, ah(async (req, res) => {
 r.post('/componentes/:id/terreno', OP, ah(async (req, res) => {
   if (!tiene.memos) return sinMemos(res);
   const id = Number(req.params.id) || 0;
-  const c = await q(supa.from('componentes').select('id,codigo,nombre,estado').eq('id', id).maybeSingle());
+  const c = await q(supa.from('componentes').select('*').eq('id', id).maybeSingle());
   if (!c) return res.status(404).json({ error: 'Componente no encontrado' });
   if (!['por_identificar', 'no_encontrado', 'planificado'].includes(c.estado)) {
     return res.status(409).json({ error: 'El componente ya avanzó en el proceso: no se puede reabrir la identificación en terreno' });
@@ -372,12 +390,56 @@ r.post('/componentes/:id/terreno', OP, ah(async (req, res) => {
   if (!encontrado && !nota) {
     return res.status(400).json({ error: 'Indique por qué el componente no se encontró en terreno' });
   }
-  const row = await q(supa.from('componentes').update({
-    estado: encontrado ? 'planificado' : 'no_encontrado', nota_terreno: nota,
-  }).eq('id', id).select().single());
+  // La cantidad encontrada puede ser menor a la comprometida: el memo declara
+  // 10 y en el patio aparecen 8. Esa diferencia es justamente lo que hay que
+  // poder ver despues.
+  const cambios = { estado: encontrado ? 'planificado' : 'no_encontrado', nota_terreno: nota };
+  if (tiene.cantidades) {
+    const n = Math.round(Number(req.body?.cant_encontrada));
+    cambios.cant_encontrada = encontrado ? (n >= 0 ? n : Number(c.cant_comprometida ?? 1)) : 0;
+  }
+  const row = await q(supa.from('componentes').update(cambios).eq('id', id).select().single());
   await audit(req.user.name, req.user.role,
     encontrado ? 'Confirmó componente en terreno' : 'Registró componente no encontrado en terreno',
     `${c.codigo} · ${c.nombre}${nota ? ` · ${nota}` : ''}`);
+  res.json(row);
+}));
+
+// Traslado al showroom: cuantas piezas salieron y cuantas llegaron. El
+// diagrama del proceso las tiene como pasos propios, y sin registrarlas un
+// faltante entre el patio y el showroom no deja rastro en ninguna parte.
+r.post('/componentes/:id/cantidades', OP, ah(async (req, res) => {
+  if (!tiene.cantidades) {
+    return res.status(503).json({ error: 'Esta función requiere aplicar db/0010_ofertas.sql en la base de datos' });
+  }
+  const c = await q(supa.from('componentes').select('*').eq('id', Number(req.params.id) || 0).maybeSingle());
+  if (!c) return res.status(404).json({ error: 'Componente no encontrado' });
+
+  const cambios = {};
+  const ahora = new Date().toISOString();
+  if (req.body?.cant_enviada !== undefined) {
+    const n = Math.round(Number(req.body.cant_enviada));
+    if (!(n >= 0)) return res.status(400).json({ error: 'Cantidad enviada inválida' });
+    if (c.cant_encontrada != null && n > Number(c.cant_encontrada)) {
+      return res.status(400).json({ error: `No se pueden enviar ${n}: en terreno se encontraron ${c.cant_encontrada}.` });
+    }
+    cambios.cant_enviada = n; cambios.enviado_el = ahora;
+  }
+  if (req.body?.cant_recibida !== undefined) {
+    const n = Math.round(Number(req.body.cant_recibida));
+    if (!(n >= 0)) return res.status(400).json({ error: 'Cantidad recibida inválida' });
+    const enviadas = cambios.cant_enviada ?? c.cant_enviada;
+    if (enviadas != null && n > Number(enviadas)) {
+      return res.status(400).json({ error: `No se pueden recibir ${n}: se enviaron ${enviadas}.` });
+    }
+    cambios.cant_recibida = n; cambios.recibido_el = ahora;
+  }
+  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cantidades que registrar' });
+
+  const row = await q(supa.from('componentes').update(cambios).eq('id', c.id).select().single());
+  await audit(req.user.name, req.user.role, 'Registró traslado de componente al showroom',
+    `${c.codigo}${cambios.cant_enviada != null ? ` · ${cambios.cant_enviada} enviada(s)` : ''}`
+    + `${cambios.cant_recibida != null ? ` · ${cambios.cant_recibida} recibida(s)` : ''}`);
   res.json(row);
 }));
 
@@ -418,6 +480,7 @@ r.post('/componentes/masivo', OP, ah(async (req, res) => {
       sitio_id, ubicacion: String(f.ubicacion ?? '').trim() || null,
       valor_referencial: Number(vr) >= 0 && vr !== '' && vr != null ? Number(vr) : null,
       ...(tiene.memos ? { memo_id, estado: 'por_identificar' } : {}),
+      ...(tiene.cantidades ? { cant_comprometida: Math.max(1, Math.round(Number(f.cantidad) || 1)) } : {}),
       creado_por: req.user.name,
     });
   }
@@ -480,12 +543,14 @@ r.post('/componentes/:id/clasificar', OP, ah(async (req, res) => {
 
 async function vistaPublicacion(p, comp, conteo) {
   const dia = diasDesde(p.publicado_el);
-  const restantes = p.plazo_dias - dia;
+  const plazo = plazoTotal(p);
+  const restantes = plazo - dia;
   return {
     id: p.id, componente_id: p.componente_id,
     componente: comp?.nombre ?? '—', codigo: comp?.codigo ?? null, especificaciones: comp?.especificaciones ?? null,
-    publicado_el: p.publicado_el, plazo_dias: p.plazo_dias, oferta_minima: num(p.oferta_minima),
-    dia, dias_restantes: restantes, vencido: dia >= p.plazo_dias,
+    publicado_el: p.publicado_el, plazo_dias: plazo, oferta_minima: num(p.oferta_minima),
+    plazo_base: Number(p.plazo_dias), ampliado: Number(p.plazo_ampliado_dias ?? 0),
+    dia, dias_restantes: restantes, vencido: dia >= plazo,
     ofertas: conteo ?? 0, estado: p.estado, cerrada_el: p.cerrada_el,
   };
 }
@@ -539,6 +604,30 @@ r.post('/publicaciones/:id/convertir', OP, ah(async (req, res) => {
   res.json({ ok: true, anticipada: r2.anticipada, ofertas: r2.ofertas });
 }));
 
+// Ampliar el plazo de una publicación en curso. Una que va en el día 14 de 15
+// con ofertas sobre la mesa no debería morir por calendario: se suma al plazo
+// original en vez de reemplazarlo, para que la bitácora conserve cuál era.
+r.post('/publicaciones/:id/ampliar', OP, ah(async (req, res) => {
+  if (!tiene.plazo_ampliable) {
+    return res.status(503).json({ error: 'Esta función requiere aplicar db/0010_ofertas.sql en la base de datos' });
+  }
+  const dias = Math.round(Number(req.body?.dias));
+  if (!(dias > 0)) return res.status(400).json({ error: 'Indique por cuántos días se amplía el plazo' });
+  if (dias > 90) return res.status(400).json({ error: 'La ampliación máxima es de 90 días' });
+  const p = await q(supa.from('publicaciones').select('*').eq('id', Number(req.params.id) || 0).maybeSingle());
+  if (!p) return res.status(404).json({ error: 'Publicación no encontrada' });
+  if (p.estado !== 'activa') return res.status(409).json({ error: 'Solo se amplía el plazo de una publicación activa' });
+
+  const ampliado = Number(p.plazo_ampliado_dias ?? 0) + dias;
+  const row = await q(supa.from('publicaciones').update({
+    plazo_ampliado_dias: ampliado, plazo_ampliado_el: new Date().toISOString(),
+  }).eq('id', p.id).select('*').single());
+  const comp = await q(supa.from('componentes').select('codigo').eq('id', p.componente_id).maybeSingle());
+  await audit(req.user.name, req.user.role, 'Amplió el plazo de la publicación',
+    `${comp?.codigo ?? p.id} · +${dias} día(s) · plazo ${p.plazo_dias} + ${ampliado}`);
+  res.json({ ok: true, plazo_dias: Number(row.plazo_dias) + ampliado, ampliado });
+}));
+
 r.post('/publicaciones/:id/cancelar', OP, ah(async (req, res) => {
   if (!tiene.obsoletos) return sinTabla(res);
   const p = await q(supa.from('publicaciones').select('*').eq('id', req.params.id).single());
@@ -565,6 +654,14 @@ r.get('/publicaciones/:id/ofertas', OP, ah(async (req, res) => {
         id: o.id, comprador_id: o.comprador_id, oferente: c?.razon_social ?? '—', dd_estado: c?.dd_estado ?? null,
         monto: num(o.monto), plazo_retiro: o.plazo_retiro, forma_pago: o.forma_pago,
         comentarios: o.comentarios, estado: o.estado,
+        // El monto en dólares es el que hace comparables las ofertas entre sí:
+        // una en pesos y una en dólares no se pueden poner lado a lado sin él.
+        moneda: o.moneda ?? 'USD', monto_usd: num(o.monto_usd) ?? num(o.monto), dolar: num(o.dolar),
+        solicitante_tipo: o.solicitante_tipo ?? null,
+        solicitante: o.empresa_razon_social || o.solicitante_nombre || null,
+        solicitante_rut: o.empresa_rut || o.solicitante_rut || null,
+        solicitante_email: o.solicitante_email ?? null,
+        solicitante_telefono: o.solicitante_telefono ?? null,
       };
     }),
   });
@@ -618,6 +715,10 @@ r.post('/publicaciones/:id/adjudicar', OP, ah(async (req, res) => {
 
   const cfg = await contrato();
   const comisionPct = Number(cfg.comision_vendor_pct) || 0;
+  const monedaGana = ganadora.moneda ?? 'USD';
+  const montoTxt = (n) => (monedaGana === 'CLP'
+    ? '$ ' + Number(n).toLocaleString('es-CL')
+    : usd(n));
   const comisionMonto = Math.round(Number(ganadora.monto) * comisionPct / 100);
   const cert = await folio('CA');
   const comp = await q(supa.from('componentes').select('*').eq('id', p.componente_id).single());
@@ -643,7 +744,7 @@ r.post('/publicaciones/:id/adjudicar', OP, ah(async (req, res) => {
   await q(supa.from('ofertas').update({ estado: 'descartada' }).eq('publicacion_id', p.id).select('id'));
   await q(supa.from('ofertas').update({ estado: 'adjudicada' }).eq('id', ganadora.id).select('id').single());
   await audit(req.user.name, req.user.role, 'Adjudicó publicación y emitió certificado',
-    `${cert} · ${comp.codigo} → ${compradores.get(ganadora.comprador_id)?.razon_social ?? ''} · ${usd(ganadora.monto)}`);
+    `${cert} · ${comp.codigo} → ${compradores.get(ganadora.comprador_id)?.razon_social ?? ''} · ${montoTxt(ganadora.monto)}`);
 
   // Notificación a todos los oferentes: al ganador su adjudicación, al resto el
   // cierre. Un mismo oferente que ofertó dos veces recibe un solo correo.
@@ -658,7 +759,7 @@ r.post('/publicaciones/:id/adjudicar', OP, ah(async (req, res) => {
       subject: gana ? 'Adjudicación · Venta de obsoletos MEL' : 'Resultado de su oferta · Venta de obsoletos MEL',
       html: plantilla(gana ? {
         titulo: `Su oferta fue adjudicada`,
-        cuerpo: `Felicitaciones: <b>${c.razon_social}</b> se adjudicó <b>${comp.nombre}</b> (${comp.codigo}) por <b>${usd(ganadora.monto)}</b>, certificado <b>${cert}</b>. Le contactaremos para coordinar el pago y el retiro.`,
+        cuerpo: `Felicitaciones: <b>${c.razon_social}</b> se adjudicó <b>${comp.nombre}</b> (${comp.codigo}) por <b>${montoTxt(ganadora.monto)}</b>, certificado <b>${cert}</b>. Le contactaremos para coordinar el pago y el retiro.`,
       } : {
         titulo: 'Resultado de la adjudicación',
         cuerpo: `Le informamos que la publicación de <b>${comp.nombre}</b> (${comp.codigo}) fue adjudicada a otro oferente. Agradecemos su participación y lo invitamos a revisar nuevas publicaciones.`,
