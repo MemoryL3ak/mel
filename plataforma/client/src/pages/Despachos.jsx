@@ -93,6 +93,8 @@ export default function Despachos() {
   const [detalle, setDetalle] = useState(null);
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
   const [anular, setAnular] = useState(null);         // guía que se está anulando
+  const [corregir, setCorregir] = useState(null);     // recepción que se está corrigiendo
+  const [cForm, setCForm] = useState({ kg_destino: '', tara_kg: '', ticket_numero: '', vale_numero: '', motivo: '' });
   const [aForm, setAForm] = useState({ motivo: '', reemplazar: false });
   // Descuento que se agrega desde el detalle de una guía ya recepcionada.
   const [dForm, setDForm] = useState({ tipo: 'kg', valor: '', glosa: '' });
@@ -223,6 +225,28 @@ export default function Despachos() {
       const r = await api(`/traslados/${adjCdf.id}/cdf`, { method: 'POST', body: fd });
       toast(`${r.adjuntados} documento(s) adjuntado(s) al certificado ${adjCdf.cert_folio}`);
       setAdjCdf(null); setCdfFile([]); load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // Corregir una recepcion ya aceptada: el error de digitacion en la bascula no
+  // deberia obligar a anular la guia entera y rehacerla.
+  function abrirCorregir(d) {
+    setCorregir(d);
+    setCForm({
+      kg_destino: d.kg_destino ?? '', tara_kg: d.tara_kg ?? '',
+      ticket_numero: d.ticket_numero ?? '', vale_numero: d.vale_numero ?? '', motivo: '',
+    });
+  }
+  async function guardarCorreccion() {
+    if (!cForm.motivo.trim()) return toast('Indique el motivo de la corrección', true);
+    try {
+      await api(`/despachos/${corregir.id}/recepcion`, { method: 'PATCH', body: {
+        kg_destino: cForm.kg_destino === '' ? undefined : Number(cForm.kg_destino),
+        tara_kg: cForm.tara_kg === '' ? undefined : Number(cForm.tara_kg),
+        ticket_numero: cForm.ticket_numero, vale_numero: cForm.vale_numero,
+        motivo: cForm.motivo.trim() } });
+      toast(`Recepción de ${corregir.guia} corregida`);
+      setCorregir(null); load();
     } catch (e) { toast(e.message, true); }
   }
 
@@ -420,6 +444,12 @@ export default function Despachos() {
                   {/* Corrección de datos de digitación, mientras la guía no esté en un EP. */}
                   {puedeEditar && d.estado !== 'anulado' && !d.ep_folio && (
                     <button className="btn sm" onClick={() => abrirEditar(d)}>Editar</button>
+                  )}{' '}
+                  {/* La recepción ya aceptada se corrige con motivo; la hace el ITO,
+                      no quien la digitó. */}
+                  {puedeResolver && ['recepcionado', 'observado'].includes(d.estado) && !d.ep_folio && (
+                    <button className="btn sm" onClick={() => abrirCorregir(d)}
+                      title="Corregir los kilos o el pesaje de la recepción">Corregir recepción</button>
                   )}{' '}
                   {/* Una guía no se borra: se anula con motivo y queda en el libro. */}
                   {fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeAnular && (
@@ -958,6 +988,45 @@ export default function Despachos() {
         <p style={{ marginTop: 0, color: 'var(--ink-2)' }}>{resolver?.obs_recepcion}</p>
         <Field label="Resolución del ITO (obligatoria)" hint="Queda en la guía y en la bitácora de auditoría.">
           <textarea rows="2" value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ej.: diferencia justificada por humedad; se valida el peso de destino." />
+        </Field>
+      </Modal>
+
+      <Modal open={!!corregir} title={corregir && `Corregir recepción · ${corregir.guia}`} onClose={() => setCorregir(null)}
+        footer={<>
+          <button className="btn" onClick={() => setCorregir(null)}>Cancelar</button>
+          <button className="btn primary" onClick={guardarCorreccion}>Guardar corrección</button>
+        </>}>
+        <div className="aviso">
+          <b>El precio no se recalcula</b>
+          <p>Quedó congelado al recepcionar y se mantiene. Corregir el peso cambia los kilos y el
+          valor que resulta de ellos, <b>no lo que valía el material ese día</b>. Si la diferencia
+          contra el peso de origen queda sobre 2%, la guía vuelve a marcarse observada.</p>
+        </div>
+        <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+          <Field label="Kilos recibidos en La Negra" hint={corregir ? `Actual: ${fmtKg(corregir.kg_destino)}` : ''}>
+            <input type="number" min="0" step="0.1" value={cForm.kg_destino}
+              onChange={(e) => setCForm({ ...cForm, kg_destino: e.target.value })} />
+          </Field>
+          {fn.pesaje && (
+            <Field label="Tara (kg)">
+              <input type="number" min="0" step="0.1" value={cForm.tara_kg}
+                onChange={(e) => setCForm({ ...cForm, tara_kg: e.target.value })} />
+            </Field>
+          )}
+        </div>
+        {fn.pesaje && (
+          <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+            <Field label="N° de ticket">
+              <input value={cForm.ticket_numero} onChange={(e) => setCForm({ ...cForm, ticket_numero: e.target.value })} />
+            </Field>
+            <Field label="N° de vale">
+              <input value={cForm.vale_numero} onChange={(e) => setCForm({ ...cForm, vale_numero: e.target.value })} />
+            </Field>
+          </div>
+        )}
+        <Field label="Motivo de la corrección" hint="Obligatorio. Queda en la bitácora junto al antes y el después.">
+          <textarea rows="2" value={cForm.motivo} onChange={(e) => setCForm({ ...cForm, motivo: e.target.value })}
+            placeholder="Error de digitación: el ticket de báscula indica 12.040 kg." />
         </Field>
       </Modal>
 
