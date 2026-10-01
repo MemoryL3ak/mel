@@ -9,6 +9,7 @@
 // de modo que el EP va del día siguiente al corte del mes anterior hasta el
 // corte del mes del período (por ejemplo, del 21-jul al 20-ago).
 import { Router } from 'express';
+import multer from 'multer';
 import { supa, q, ah, audit, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
 import { contrato } from '../contrato.js';
@@ -90,12 +91,19 @@ r.get('/eps', auth('vendor', 'ito', 'coordinador'), ah(async (_req, res) => {
     q(supa.from('estados_pago').select('*').order('periodo')),
     contrato(),
   ]);
-  // Los acumulados del formato se calculan recorriendo la serie en orden.
+  // Los acumulados del formato se calculan recorriendo la serie en orden, y
+  // se REINICIAN en cada año calendario: MEL necesita el acumulado del año en
+  // curso, no el del contrato completo. El periodo es 'AAAA-MM'.
   let acumulado = 0;
+  let anioCorriente = null;
   const out = [];
   for (const ep of eps) {
-    const previo = acumulado;
-    acumulado += Number(ep.total);
+    const anio = String(ep.periodo ?? '').slice(0, 4);
+    if (anio !== anioCorriente) { anioCorriente = anio; acumulado = 0; }
+    // Un ajuste manual reemplaza el arrastre calculado desde ese EDP en
+    // adelante: sirve cuando lo que trae la contabilidad no calza con la serie.
+    const previo = ep.acumulado_manual != null ? Number(ep.acumulado_manual) : acumulado;
+    acumulado = previo + Number(ep.total);
     out.push({ ...pub(ep, cfg, previo), ...(await detalleEP(ep)) });
   }
   res.json({ eps: out.reverse(), contrato: cfg });
@@ -146,8 +154,37 @@ async function recalcular(epId) {
 const editable = (ep) => ['generado', 'con_ajustes'].includes(ep.estado);
 
 const SIN_MIGRACION = 'Esta función requiere aplicar db/0003_ep_contrato.sql en la base de datos';
+const SIN_EDP = 'Esta función requiere aplicar db/0011_edp.sql en la base de datos';
 
-r.post('/eps/:id/descuentos', auth('ito', 'coordinador'), ah(async (req, res) => {
+// Respaldo de un descuento: foto, PDF o Word. Quien revisa el EDP tiene que
+// poder verificar de donde sale cada descuento, no solo leer su glosa.
+const RESPALDO = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+};
+const subir = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 4, fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, f, cb) => cb(null, !!RESPALDO[f.mimetype]),
+});
+
+async function subirRespaldos(descuentoId, archivos = []) {
+  let n = 0;
+  const marca = Date.now();
+  for (const f of archivos) {
+    const ext = RESPALDO[f.mimetype];
+    if (!ext) continue;
+    const { error } = await supa.storage.from('evidencia')
+      .upload(`EPD/${descuentoId}/resp-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    if (error) { console.error('[GEA] respaldo de descuento:', error.message); continue; }
+    n++;
+  }
+  return n;
+}
+
+r.post('/eps/:id/descuentos', auth('ito', 'coordinador'),
+  subir.fields([{ name: 'respaldo', maxCount: 4 }]), ah(async (req, res) => {
   if (!tiene.descuentos) return res.status(503).json({ error: SIN_MIGRACION });
   const { glosa, monto } = req.body || {};
   if (!glosa || !(Number(monto) > 0)) return res.status(400).json({ error: 'Glosa y monto válido son obligatorios' });
@@ -156,11 +193,48 @@ r.post('/eps/:id/descuentos', auth('ito', 'coordinador'), ah(async (req, res) =>
   if (Number(monto) > Number(ep.bruto) - Number(ep.descuentos ?? 0)) {
     return res.status(400).json({ error: 'El descuento no puede dejar el estado de pago en negativo' });
   }
-  await q(supa.from('ep_descuentos').insert({ ep_id: ep.id, glosa, monto: Number(monto), creado_por: req.user.name }).select());
+  const fila = await q(supa.from('ep_descuentos')
+    .insert({ ep_id: ep.id, glosa, monto: Number(monto), creado_por: req.user.name })
+    .select('id').single());
+  const nResp = await subirRespaldos(fila.id, req.files?.respaldo);
+  if (nResp && tiene.edp_respaldo) {
+    await q(supa.from('ep_descuentos').update({ respaldos: nResp }).eq('id', fila.id).select('id').single());
+  }
   const upd = await recalcular(ep.id);
   const cfg = await contrato();
-  await audit(req.user.name, req.user.role, 'Registró descuento en EP', `${ep.folio} · ${glosa} · $${monto}`);
+  await audit(req.user.name, req.user.role, 'Registró descuento en EP',
+    `${ep.folio} · ${glosa} · $${monto}${nResp ? ` · ${nResp} respaldo(s)` : ' · sin respaldo'}`);
   res.json({ ...pub(upd, cfg), ...(await detalleEP(upd)) });
+}));
+
+// Ajuste manual del acumulado del año que sale impreso. Se guarda por EDP y no
+// en el contrato: es el número de ESE documento, y corregirlo después no debe
+// cambiar lo que ya se imprimió y se firmó.
+r.patch('/eps/:id/acumulado', auth('ito', 'coordinador'), ah(async (req, res) => {
+  if (!tiene.edp_acumulado) return res.status(503).json({ error: SIN_EDP });
+  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).single());
+  const limpiar = req.body?.acumulado_manual === null || req.body?.acumulado_manual === '';
+  const monto = limpiar ? null : Math.round(Number(req.body?.acumulado_manual));
+  if (!limpiar && !(monto >= 0)) return res.status(400).json({ error: 'Ingrese un monto acumulado válido' });
+  const upd = await q(supa.from('estados_pago').update({
+    acumulado_manual: monto,
+    acumulado_nota: (req.body?.acumulado_nota || '').trim() || null,
+  }).eq('id', ep.id).select().single());
+  const cfg = await contrato();
+  await audit(req.user.name, req.user.role,
+    limpiar ? 'Volvió al acumulado calculado del EP' : 'Ajustó a mano el acumulado del EP',
+    `${ep.folio}${limpiar ? '' : ` · $${monto}`}`);
+  res.json({ ...pub(upd, cfg), ...(await detalleEP(upd)) });
+}));
+
+// Respaldos de un descuento, con URL firmada (1 h).
+r.get('/eps/:id/descuentos/:descId/respaldos', auth('vendor', 'ito', 'coordinador'), ah(async (req, res) => {
+  const carpeta = `EPD/${Number(req.params.descId) || 0}`;
+  const { data: lista } = await supa.storage.from('evidencia').list(carpeta);
+  if (!lista?.length) return res.json({ archivos: [] });
+  const { data: firmadas } = await supa.storage.from('evidencia')
+    .createSignedUrls(lista.map((f) => `${carpeta}/${f.name}`), 3600);
+  res.json({ archivos: (firmadas ?? []).filter((f) => f.signedUrl).map((f) => ({ url: f.signedUrl })) });
 }));
 
 r.delete('/eps/:id/descuentos/:descId', auth('ito', 'coordinador'), ah(async (req, res) => {

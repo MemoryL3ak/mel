@@ -63,6 +63,39 @@ export default function EstadosPago() {
     } catch (e) { toast(e.message, true); }
   };
 
+  // El descuento viaja como formulario porque puede llevar su respaldo adjunto.
+  async function registrarDescuento() {
+    if (!(f.glosa || '').trim()) return toast('Indique la glosa del descuento', true);
+    if (!(Number(f.monto) > 0)) return toast('Indique un monto válido', true);
+    try {
+      const fd = new FormData();
+      fd.append('glosa', f.glosa.trim());
+      fd.append('monto', Number(f.monto));
+      for (const a of f.respaldo ?? []) fd.append('respaldo', a);
+      const r = await api(`/eps/${sel.id}/descuentos`, { method: 'POST', body: fd });
+      toast(f.respaldo?.length ? 'Descuento registrado con respaldo' : 'Descuento registrado');
+      setModal(null); setF({}); load(r.id);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  const ajustarAcumulado = (limpiar) => async () => {
+    try {
+      const r = await api(`/eps/${sel.id}/acumulado`, { method: 'PATCH', body: {
+        acumulado_manual: limpiar ? null : Number(f.acumulado_manual),
+        acumulado_nota: limpiar ? '' : (f.acumulado_nota || '') } });
+      toast(limpiar ? 'Se volvió al acumulado calculado' : 'Acumulado ajustado');
+      setModal(null); setF({}); load(r.id);
+    } catch (e) { toast(e.message, true); }
+  };
+
+  async function verRespaldos(d) {
+    try {
+      const r = await api(`/eps/${sel.id}/descuentos/${d.id}/respaldos`);
+      if (!r.archivos?.length) return toast('Este descuento no tiene respaldo adjunto', true);
+      for (const a of r.archivos) window.open(a.url, '_blank', 'noreferrer');
+    } catch (e) { toast(e.message, true); }
+  }
+
   const mesAnterior = () => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
@@ -199,6 +232,9 @@ export default function EstadosPago() {
                       <Chip tone="bad">Descuento</Chip>
                       <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small></span>
                       <span className="go" style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmtCLP(d.monto)}</span>
+                      {d.respaldos > 0
+                        ? <button className="btn sm" onClick={() => verRespaldos(d)}>Respaldo ({d.respaldos})</button>
+                        : <small style={{ color: 'var(--warn-tx)' }}>Sin respaldo</small>}
                       {esIto && editable && (
                         <button className="btn sm danger" onClick={async () => {
                           try {
@@ -261,6 +297,11 @@ export default function EstadosPago() {
       <Modal open={modal === 'documento'} title={sel && `Estado de pago N° ${sel.numero ?? '—'}`} onClose={() => setModal(null)}
         footer={<>
           <button className="btn" onClick={() => setModal(null)}>Cerrar</button>
+          {esIto && (
+            <button className="btn" onClick={() => { setF({ acumulado_manual: sel?.acumulado_manual ?? '', acumulado_nota: sel?.acumulado_nota ?? '' }); setModal('acumulado'); }}>
+              Ajustar acumulado
+            </button>
+          )}
           <button className="btn primary" onClick={() => window.print()}>Imprimir</button>
         </>}>
         {sel && contrato && <DocumentoEP ep={sel} contrato={contrato} />}
@@ -298,13 +339,39 @@ export default function EstadosPago() {
       <Modal open={modal === 'descuento'} title={sel && `Registrar descuento · EP N° ${sel.numero ?? ''}`} onClose={() => setModal(null)}
         footer={<>
           <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
-          <button className="btn primary" onClick={accion(`/eps/${sel?.id}/descuentos`, { glosa: f.glosa, monto: +f.monto }, 'Descuento registrado')}>Registrar</button>
+          <button className="btn primary" onClick={registrarDescuento}>Registrar</button>
         </>}>
         <Field label="Glosa" hint="Queda visible en el EP y en la bitácora de auditoría.">
           <input value={f.glosa || ''} onChange={(e) => setF({ ...f, glosa: e.target.value })} placeholder="Ej.: merma guía GD-1007" />
         </Field>
         <Field label="Monto a descontar (CLP)">
           <input type="number" min="1" value={f.monto || ''} onChange={(e) => setF({ ...f, monto: e.target.value })} />
+        </Field>
+        <Field label="Respaldo del descuento" hint="Foto, PDF o Word · hasta 4 archivos. Quien revisa el EDP necesita poder verificar de dónde sale.">
+          <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx"
+            onChange={(e) => setF({ ...f, respaldo: Array.from(e.target.files).slice(0, 4) })} />
+          {f.respaldo?.length > 0 && <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>{f.respaldo.length} archivo(s) listo(s).</small>}
+        </Field>
+      </Modal>
+
+      <Modal open={modal === 'acumulado'} title={sel && `Acumulado del año · EP N° ${sel.numero ?? ''}`} onClose={() => setModal(null)}
+        footer={<>
+          <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
+          {sel?.acumulado_manual != null && (
+            <button className="btn danger" onClick={ajustarAcumulado(true)}>Volver al calculado</button>
+          )}
+          <button className="btn primary" onClick={ajustarAcumulado(false)}>Guardar ajuste</button>
+        </>}>
+        <div className="aviso">
+          <b>El acumulado reinicia en enero</b>
+          <p>Se calcula sumando los EDP del año en curso, no los de todo el contrato. Acá se puede
+          reemplazar ese arrastre cuando lo que trae la contabilidad no calza con la serie.</p>
+        </div>
+        <Field label="Acumulado al EDP anterior (CLP)" hint={sel ? `Calculado: ${fmtCLP(sel.acumulado_anterior)}` : ''}>
+          <input type="number" min="0" value={f.acumulado_manual ?? ''} onChange={(e) => setF({ ...f, acumulado_manual: e.target.value })} />
+        </Field>
+        <Field label="Nota del ajuste" hint="Por qué se reemplaza el calculado.">
+          <input value={f.acumulado_nota || ''} onChange={(e) => setF({ ...f, acumulado_nota: e.target.value })} placeholder="Arrastre validado con contabilidad al 31-dic." />
         </Field>
       </Modal>
 

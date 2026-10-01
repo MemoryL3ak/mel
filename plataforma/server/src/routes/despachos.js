@@ -504,6 +504,82 @@ r.post('/despachos/:id/resolver', auth('ito', 'coordinador'), ah(async (req, res
 // estado de pago. No se editan los kilos ni el precio de la recepción (eso
 // altera lo valorizado: para eso se anula y se rehace); solo los datos del
 // documento de origen: guía MEL, fecha, patio, categoría, transporte y tara.
+// Corrección de la recepción ya aceptada. Es el otro lado de la observación de
+// MEL: el despacho se podía corregir, la recepción no, y la única salida era
+// anular la guía entera y rehacerla por un error de digitación en la báscula.
+//
+// Mueve plata, así que es más estricta que la corrección del despacho: la hace
+// el ITO o el coordinador (no el vendor que la digitó), exige motivo, y todo
+// queda en bitácora con el antes y el después.
+//
+// El precio y el dólar NO se recalculan: quedaron congelados al recepcionar y
+// se reusan tal cual. Corregir un peso cambia los kilos, no lo que valía el
+// material ese día.
+r.patch('/despachos/:id/recepcion', auth('ito', 'coordinador'), ah(async (req, res) => {
+  const motivo = (req.body?.motivo || '').trim();
+  if (!motivo) return res.status(400).json({ error: 'El motivo de la corrección es obligatorio' });
+
+  const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).single());
+  if (d.estado === 'anulado') return res.status(409).json({ error: 'La guía está anulada; no se corrige' });
+  if (!['recepcionado', 'observado'].includes(d.estado)) {
+    return res.status(409).json({ error: 'Esta guía todavía no se recepciona: no hay recepción que corregir' });
+  }
+  if (d.ep_id) {
+    const ep = await q(supa.from('estados_pago').select('folio,estado').eq('id', d.ep_id).single());
+    return res.status(409).json({ error: `La guía está en el estado de pago ${ep.folio} (${ep.estado}). Sáquela de ese EP antes de corregirla.` });
+  }
+
+  const cambios = {};
+  const bitacora = [];
+  const kg = req.body?.kg_destino !== undefined ? Number(req.body.kg_destino) : Number(d.kg_destino);
+  if (req.body?.kg_destino !== undefined) {
+    if (!(kg > 0)) return res.status(400).json({ error: 'El peso recibido debe ser mayor que cero' });
+    if (kg !== Number(d.kg_destino)) bitacora.push(`kg recibidos ${d.kg_destino} → ${kg}`);
+    cambios.kg_destino = kg;
+  }
+  if (tiene.pesaje) {
+    for (const campo of ['ticket_numero', 'vale_numero']) {
+      if (req.body?.[campo] !== undefined) {
+        cambios[campo] = (req.body[campo] || '').trim() || null;
+        bitacora.push(`${campo.replace('_', ' ')} → ${cambios[campo] ?? '—'}`);
+      }
+    }
+    if (req.body?.tara_kg !== undefined) {
+      const t = Number(req.body.tara_kg);
+      if (req.body.tara_kg && !(t > 0)) return res.status(400).json({ error: 'La tara debe ser un peso mayor que cero' });
+      cambios.tara_kg = t > 0 ? t : null;
+      bitacora.push(`tara → ${cambios.tara_kg ?? '—'}`);
+    }
+  }
+  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
+
+  // Se revaloriza solo si cambiaron los kilos, con el precio y el tipo de
+  // cambio congelados en la guía y los descuentos que ya tenía.
+  if (cambios.kg_destino !== undefined) {
+    const descuentos = tiene.desc_item
+      ? await q(supa.from('despacho_descuentos').select('tipo,valor').eq('despacho_id', d.id))
+      : [];
+    const v = valorizar({
+      kg, precio_usd_tm: num(d.precio_usd_tm), precio_usd: num(d.precio_usd),
+      precio_kg: num(d.precio_kg), dolar: num(d.dolar), descuentos,
+    });
+    cambios.valor = v.valor;
+    if (tiene.usd) cambios.valor_usd = v.valor_usd;
+    bitacora.push(`valor ${d.valor} → ${v.valor}`);
+
+    // La marca de observado depende de la diferencia contra el peso de origen:
+    // una corrección puede dejarla dentro de tolerancia, o sacarla de ella.
+    const dif = Math.abs((kg - Number(d.kg_origen)) / Number(d.kg_origen));
+    cambios.estado = dif > 0.02 ? 'observado' : 'recepcionado';
+    if (cambios.estado !== d.estado) bitacora.push(`estado → ${cambios.estado}`);
+  }
+
+  const row = await q(supa.from('despachos').update(cambios).eq('id', d.id).select(DESP_SEL).single());
+  await audit(req.user.name, req.user.role, 'Corrigió la recepción de una guía',
+    `${d.guia} · ${bitacora.join(' · ')} · motivo: ${motivo}`);
+  res.json(view(row));
+}));
+
 r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
   const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).single());
   if (d.estado === 'anulado') return res.status(409).json({ error: 'La guía está anulada; no se edita' });

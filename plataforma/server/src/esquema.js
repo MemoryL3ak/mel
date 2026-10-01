@@ -38,6 +38,9 @@ export const tiene = {
   ofertas_moneda: false,      // ofertas.moneda/monto_usd/dolar
   ofertas_solicitante: false, // ofertas.solicitante_* y empresa_*
   user_email: false,          // users.email (aviso de ofertas al equipo)
+  // db/0011_edp.sql
+  edp_respaldo: false,        // ep_descuentos.respaldos
+  edp_acumulado: false,       // estados_pago.acumulado_manual/acumulado_nota
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -55,6 +58,7 @@ const ORIGEN = {
   cantidades: '0010_ofertas.sql', plazo_ampliable: '0010_ofertas.sql',
   ofertas_moneda: '0010_ofertas.sql', ofertas_solicitante: '0010_ofertas.sql',
   user_email: '0010_ofertas.sql',
+  edp_respaldo: '0011_edp.sql', edp_acumulado: '0011_edp.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -112,6 +116,9 @@ export async function detectarEsquema() {
   tiene.ofertas_solicitante = tiene.obsoletos
     && (await existe('ofertas', 'solicitante_tipo,solicitante_nombre,solicitante_rut,empresa_rut'));
   tiene.user_email = await existe('users', 'email');
+
+  tiene.edp_respaldo  = await existe('ep_descuentos', 'respaldos');
+  tiene.edp_acumulado = await existe('estados_pago', 'acumulado_manual,acumulado_nota');
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {
