@@ -25,21 +25,15 @@ const descTexto = (d) => d.tipo === 'pct' ? `${d.valor} %`
 // Precio vigente de una categoría, en la unidad en que esté pactado. Va al
 // lado del nombre en los desplegables, como referencia de quien elige.
 const usd = (v) => Number(v).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// El contrato fija dos precios por categoria —con y sin madera— y la alternativa
-// la declara quien recibe en La Negra. Se muestran los dos, con el de madera
-// primero porque es el caso habitual; cuando coinciden se muestra uno solo.
-const precioRef = (c) => {
-  if (c?.precio_usd_tm != null) {
-    const conM = c.precio_usd_tm_madera;
-    if (conM != null && Number(conM) !== Number(c.precio_usd_tm)) {
-      return ` · USD ${usd(conM)} c/madera · ${usd(c.precio_usd_tm)} s/madera · TM`;
-    }
-    return ` · USD ${usd(c.precio_usd_tm)}/TM`;
-  }
-  if (c?.precio_usd != null) return ` · USD ${c.precio_usd}/kg`;
-  if (c?.precio_kg) return ` · $${Number(c.precio_kg).toLocaleString('es-CL')}/kg`;
-  return '';
-};
+// Referencia de precio para el traslado a Lampa, que no valoriza y no tiene
+// tarjetas de alternativa debajo. En el despacho y en la reclasificacion NO se
+// usa: alli las dos tarjetas ya muestran ambos precios, y repetirlos en el
+// desplegable lo volvia ilegible.
+const precioRef = (c) =>
+  c?.precio_usd_tm != null ? ` · USD ${usd(c.precio_usd_tm)}/TM`
+  : c?.precio_usd != null ? ` · USD ${c.precio_usd}/kg`
+  : c?.precio_kg ? ` · $${Number(c.precio_kg).toLocaleString('es-CL')}/kg`
+  : '';
 
 // El servidor solo guarda imágenes y hasta 5 MB. Si el navegador deja elegir
 // otra cosa —basta con poner «todos los archivos» en el diálogo—, el archivo
@@ -787,7 +781,7 @@ export default function Despachos() {
         </Field>
         <Field label="Categoría de material">
           <Select value={form.categoria_id ?? ''} onChange={(e) => setForm({ ...form, categoria_id: +e.target.value })}>
-            {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
+            {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </Select>
         </Field>
         {/* La alternativa del contrato la declara quien despacha, que es quien ve
@@ -1008,7 +1002,7 @@ export default function Despachos() {
         <Field label="Reclasificación (solo si el material se reduce)" hint="El precio se congela con la categoría final al momento de esta recepción.">
           <Select value={rForm.categoria_final_id} onChange={(e) => setRForm({ ...rForm, categoria_final_id: e.target.value ? +e.target.value : '' })}>
             <option value="">Mantener {recep?.categoria}</option>
-            {maestros?.categorias.filter((c) => c.nombre !== recep?.categoria).map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
+            {maestros?.categorias.filter((c) => c.nombre !== recep?.categoria).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </Select>
         </Field>
         <Field label="Observación (opcional)">
