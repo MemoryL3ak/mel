@@ -37,6 +37,7 @@ r.post('/usuarios', auth('coordinador'), ah(async (req, res) => {
   }
   const row = await q(supa.from('users').insert({
     username, nombre, role, password_hash: await bcrypt.hash(password, 10),
+    ...(tiene.clave_inicial ? { clave_inicial: true } : {}),
     ...(tiene.user_email ? { email } : {}),
   }).select('id, username, nombre, role, activo, creado_el').single());
   await audit(req.user.name, req.user.role, 'Creó cuenta de usuario', `${username} (${role})`);
@@ -46,7 +47,8 @@ r.post('/usuarios', auth('coordinador'), ah(async (req, res) => {
 r.post('/usuarios/:id/reset', auth('coordinador'), ah(async (req, res) => {
   const password = clave();
   const row = await q(supa.from('users')
-    .update({ password_hash: await bcrypt.hash(password, 10) })
+    .update({ password_hash: await bcrypt.hash(password, 10),
+             ...(tiene.clave_inicial ? { clave_inicial: true } : {}) })
     .eq('id', req.params.id).select('id, username').single());
   await audit(req.user.name, req.user.role, 'Restableció contraseña', row.username);
   res.json({ username: row.username, password });

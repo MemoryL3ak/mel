@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { env } from './env.js';
-import { login, auth } from './auth.js';
+import { login, cambiarClave, auth } from './auth.js';
 import { ah } from './supa.js';
 import maestros from './routes/maestros.js';
 import programa from './routes/programa.js';
@@ -66,6 +66,8 @@ const portalLimiter = rateLimit({
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 2 }));
 app.post('/api/auth/login', loginLimiter, ah(login));
+// Cada quien cambia su propia contraseña; no requiere rol.
+app.post('/api/auth/password', auth(), ah(cambiarClave));
 app.get('/api/auth/me', auth(), (req, res) => res.json({ user: req.user }));
 
 app.use('/api/portal', portalLimiter);

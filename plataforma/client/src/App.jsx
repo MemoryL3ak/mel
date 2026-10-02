@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, ROL_NOMBRE, SCREENS } from './auth.jsx';
 import { ToastProvider, Logo, Avatar } from './ui.jsx';
+import CambiarClave from './CambiarClave.jsx';
 import Login from './pages/Login.jsx';
 import Panel from './pages/Panel.jsx';
 import Programa from './pages/Programa.jsx';
@@ -66,6 +67,8 @@ const RUTA = Object.fromEntries(NAV.flatMap(([, items]) => items.map(([id, to]) 
 
 function Shell({ children }) {
   const { user, logout, can } = useAuth();
+  // Se ofrece al entrar cuando la clave sigue siendo la entregada.
+  const [clave, setClave] = useState(() => !!user?.clave_inicial);
   const [open, setOpen] = useState(false);
   const [rail, setRail] = useState(() => localStorage.getItem('gea_nav') === '1');
   const loc = useLocation();
@@ -107,9 +110,13 @@ function Shell({ children }) {
             <b>{user.name}</b>
             <small>{ROL_NOMBRE[user.role]}</small>
           </div>
+          <button onClick={() => setClave(true)} title="Cambiar mi contraseña" aria-label="Cambiar contraseña">
+            {user.clave_inicial ? '🔑 Clave' : '🔑'}
+          </button>
           <button onClick={logout} title="Cerrar sesión">Salir</button>
         </div>
       </aside>
+      <CambiarClave open={clave} inicial={!!user.clave_inicial} onClose={() => setClave(false)} />
       <div className="main">
         <header className="topbar">
           <button className="hamb" onClick={() => setOpen(!open)} aria-label="Menú">☰</button>
