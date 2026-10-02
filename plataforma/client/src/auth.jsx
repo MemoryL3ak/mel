@@ -50,5 +50,11 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
   const can = (screen) => !!user && SCREENS[user.role]?.includes(screen);
-  return <Ctx.Provider value={{ user, login, logout, can }}>{children}</Ctx.Provider>;
+  // setUser se expone para que el cambio de contraseña pueda apagar el aviso de
+  // "clave inicial" sin obligar a cerrar sesion y volver a entrar.
+  const guardarUser = (u) => {
+    try { localStorage.setItem(llaves().user, JSON.stringify(u)); } catch { /* sin almacenamiento */ }
+    setUser(u);
+  };
+  return <Ctx.Provider value={{ user, login, logout, can, setUser: guardarUser }}>{children}</Ctx.Provider>;
 }
