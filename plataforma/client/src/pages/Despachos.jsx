@@ -25,11 +25,21 @@ const descTexto = (d) => d.tipo === 'pct' ? `${d.valor} %`
 // Precio vigente de una categoría, en la unidad en que esté pactado. Va al
 // lado del nombre en los desplegables, como referencia de quien elige.
 const usd = (v) => Number(v).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const precioRef = (c) =>
-  c?.precio_usd_tm != null ? ` · USD ${usd(c.precio_usd_tm)}/TM`
-  : c?.precio_usd != null ? ` · USD ${c.precio_usd}/kg`
-  : c?.precio_kg ? ` · $${Number(c.precio_kg).toLocaleString('es-CL')}/kg`
-  : '';
+// El contrato fija dos precios por categoria —con y sin madera— y la alternativa
+// la declara quien recibe en La Negra. Se muestran los dos, con el de madera
+// primero porque es el caso habitual; cuando coinciden se muestra uno solo.
+const precioRef = (c) => {
+  if (c?.precio_usd_tm != null) {
+    const conM = c.precio_usd_tm_madera;
+    if (conM != null && Number(conM) !== Number(c.precio_usd_tm)) {
+      return ` · USD ${usd(conM)} c/madera · ${usd(c.precio_usd_tm)} s/madera · TM`;
+    }
+    return ` · USD ${usd(c.precio_usd_tm)}/TM`;
+  }
+  if (c?.precio_usd != null) return ` · USD ${c.precio_usd}/kg`;
+  if (c?.precio_kg) return ` · $${Number(c.precio_kg).toLocaleString('es-CL')}/kg`;
+  return '';
+};
 
 // El servidor solo guarda imágenes y hasta 5 MB. Si el navegador deja elegir
 // otra cosa —basta con poner «todos los archivos» en el diálogo—, el archivo
@@ -81,12 +91,12 @@ export default function Despachos() {
   const formVacio = () => ({
     ...porDefecto, kg_origen: '', unidad: unidadGuardada(),
     tara_origen: '', unidad_tara: unidadGuardada(),
-    guia_mel: '', fecha: hoyISO(), ev: {},
+    guia_mel: '', fecha: hoyISO(), ev: {}, con_madera: true,
     transportista: '', transportista_rut: '', patente_tracto: '', patente_rampla: '',
   });
   const recepVacia = () => ({
     kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [],
-    ticket_numero: '', vale_numero: '', tara: '', unidad_tara: unidadGuardada(), con_madera: false,
+    ticket_numero: '', vale_numero: '', tara: '', unidad_tara: unidadGuardada(), con_madera: true,
     descuentos: [], nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
   });
   const [form, setForm] = useState(formVacio);
@@ -158,6 +168,7 @@ export default function Despachos() {
       if (taraOrigen) fd.append('tara_origen_kg', taraOrigen);
       fd.append('guia_mel', form.guia_mel.trim());
       fd.append('fecha', form.fecha);
+      if (fn.tm) fd.append('con_madera', form.con_madera ? 'true' : 'false');
       for (const k of ['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla']) {
         if (form[k]?.trim()) fd.append(k, form[k].trim());
       }
@@ -435,7 +446,9 @@ export default function Despachos() {
                       setRecep(d);
                       // El peso parte VACÍO: la recepción es una declaración
                       // independiente, no la confirmación de lo que dijo MEL.
-                      setRForm(recepVacia());
+                      // La alternativa del contrato sí llega preseleccionada con
+                      // lo que declaró el patio, para confirmarla o corregirla.
+                      setRForm({ ...recepVacia(), con_madera: d.con_madera ?? true });
                     }}>Recepcionar</button>
                   )}
                   {d.estado === 'observado' && puedeResolver && (
@@ -777,6 +790,29 @@ export default function Despachos() {
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}{precioRef(c)}</option>)}
           </Select>
         </Field>
+        {/* La alternativa del contrato la declara quien despacha, que es quien ve
+            como sale la carga del patio. La Negra la confirma al recibir. */}
+        {fn.tm && (() => {
+          const cat = maestros?.categorias?.find((c) => c.id === form.categoria_id);
+          const precioTm = (v) => v == null ? 'sin precio vigente' : `USD ${usd(v)}/TM`;
+          return (
+            <Field label="¿La carga lleva madera?"
+              hint="Define qué alternativa del contrato se aplica. La Negra la confirma o la corrige al recibir.">
+              <div className="alternativas">
+                {[[false, 'Sin madera', 'Alternativa A', cat?.precio_usd_tm],
+                  [true, 'Con madera', 'Alternativa B', cat?.precio_usd_tm_madera]].map(([val, tit, alt, precio]) => (
+                  <button key={String(val)} type="button"
+                    className={`alt${form.con_madera === val ? ' sel' : ''}`}
+                    onClick={() => setForm({ ...form, con_madera: val })}>
+                    <b>{tit}</b>
+                    <small>{alt}</small>
+                    <span className="mono">{precioTm(precio)}</span>
+                  </button>
+                ))}
+              </div>
+            </Field>
+          );
+        })()}
         <CampoPeso label="Peso en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
           onValor={(v) => setForm({ ...form, kg_origen: v })}
           onUnidad={(u) => setForm({ ...form, unidad: u })} />

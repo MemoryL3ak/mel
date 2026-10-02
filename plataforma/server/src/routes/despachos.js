@@ -264,9 +264,14 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
   const archivos = Object.entries(req.files ?? {})
     .flatMap(([tipo, lista]) => lista.map((f, i) => ({ tipo, n: i + 1, f })));
   const guia = await folioInterno();
+  // Alternativa del contrato (A sin madera / B con madera): la declara quien
+  // despacha, porque es quien ve como sale la carga del patio. Quien recibe en
+  // La Negra la confirma o la corrige, y recien ahi se congela el precio.
+  const conMaderaOrigen = ['true', '1', 'on', 'si', 'sí'].includes(String(req.body?.con_madera ?? '').toLowerCase());
   const row = await q(supa.from('despachos').insert({
     guia, patio_id: Number(patio_id), categoria_id: Number(categoria_id), kg_origen: Number(kg_origen),
     ...(tiene.guia_mel ? { guia_mel: (guia_mel || '').trim() || null } : {}),
+    ...(tiene.tm ? { con_madera: conMaderaOrigen } : {}),
     ...(fecha ? { fecha } : {}),
     ...(tiene.tara_origen && taraOrigen > 0 ? { tara_origen_kg: taraOrigen } : {}),
     ...transporteDe(req.body || {}),
