@@ -11,13 +11,31 @@ const ESTADO = {
 const vacio = { codigo: '', nombre: '', especificaciones: '', sitio_id: '', ubicacion: '', valor_referencial: '', memo_id: '', cant_comprometida: 1, fotos: [], ficha: null };
 const FICHA_ACCEPT = 'application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp,.xls,.xlsx';
 
-// Parsea el pegado de la carga masiva: una línea por componente, columnas
-// separadas por tabulación (pegado desde Excel) o punto y coma.
-// Orden: Código (SKU) · Nombre · Especificaciones · Sitio · Ubicación · Valor USD.
+// Columnas de la carga masiva, en orden. Se declaran una sola vez: la ayuda de
+// la pantalla, la vista previa y el parser salen todas de aquí, para que no
+// puedan contradecirse entre sí. La cantidad faltaba en el parser aunque el
+// servidor ya la esperaba, así que toda carga masiva entraba con cantidad 1.
+const COLUMNAS = [
+  { campo: 'codigo', titulo: 'Código SAP', ej: '1000234', obligatorio: true },
+  { campo: 'nombre', titulo: 'Nombre', ej: 'Motor eléctrico 4.000 HP', obligatorio: true },
+  { campo: 'especificaciones', titulo: 'Especificaciones', ej: 'WEG · 3.300 V' },
+  { campo: 'sitio', titulo: 'Sitio', ej: 'MEL', ayuda: 'MEL o La Negra' },
+  { campo: 'ubicacion', titulo: 'Ubicación', ej: 'Los Colorados B-3' },
+  { campo: 'valor_referencial', titulo: 'Valor USD', ej: '28500', num: true },
+  { campo: 'cantidad', titulo: 'Cantidad', ej: '1', num: true, ayuda: 'por defecto 1' },
+];
+
+// Una línea por componente; columnas separadas por tabulación (pegado desde
+// Excel) o punto y coma.
 function parseMasivo(texto) {
   return texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
     const c = l.split(/\t|;/).map((x) => x.trim());
-    return { codigo: c[0] || '', nombre: c[1] || '', especificaciones: c[2] || '', sitio: c[3] || '', ubicacion: c[4] || '', valor_referencial: (c[5] || '').replace(/[^\d]/g, '') };
+    const fila = {};
+    COLUMNAS.forEach((col, i) => {
+      const v = c[i] || '';
+      fila[col.campo] = col.num ? v.replace(/[^\d]/g, '') : v;
+    });
+    return fila;
   }).filter((f) => (f.codigo || f.nombre) && !/^c[oó]digo$/i.test(f.codigo));
 }
 
@@ -32,12 +50,13 @@ export default function Inventario() {
   const [masivo, setMasivo] = useState(false);
   const [memos, setMemos] = useState([]);
   const [memoMasivo, setMemoMasivo] = useState('');
+  const [errores, setErrores] = useState(null);   // errores por fila de la carga masiva
   const [texto, setTexto] = useState('');
   const [verAdj, setVerAdj] = useState(null);
   const [patios, setPatios] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [clasificar, setClasificar] = useState(null);
-  const [cf, setCf] = useState({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO() });
+  const [cf, setCf] = useState({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO(), crear_despacho: true });
   const toast = useToast();
 
   const load = () => api('/componentes').then(setData).catch((e) => toast(e.message, true));
@@ -104,11 +123,12 @@ export default function Inventario() {
   const cargarMasivo = () => correr(async () => {
     const filas = parseMasivo(texto);
     if (!filas.length) return toast('No hay filas válidas para cargar', true);
+    setErrores(null);
     try {
       const r = await api('/componentes/masivo', { method: 'POST', body: { filas, memo_id: memoMasivo || undefined } });
       toast(`${r.cargados} componente(s) cargado(s) · confírmelos en terreno desde el memo`);
       setMasivo(false); setTexto(''); setMemoMasivo(''); load();
-    } catch (e) { toast(e.message + (e.detalle ? ` · ${e.detalle.join(' · ')}` : ''), true); }
+    } catch (e) { setErrores(e.detalle ?? null); toast(e.message, true); }
   });
 
   // Derivacion al programa de limpieza: con patio, categoria y peso el obsoleto
@@ -120,8 +140,11 @@ export default function Inventario() {
     try {
       const r = await api(`/componentes/${clasificar.id}/clasificar`, { method: 'POST', body: {
         patio_id: Number(cf.patio_id), categoria_id: Number(cf.categoria_id),
-        peso_estimado_kg: Number(cf.peso_estimado_kg), fecha: cf.fecha } });
-      toast(`${clasificar.codigo} derivado al programa · semana ${r.programa.semana}`);
+        peso_estimado_kg: Number(cf.peso_estimado_kg), fecha: cf.fecha,
+        crear_despacho: !!cf.crear_despacho } });
+      toast(r.despacho
+        ? `${clasificar.codigo} derivado · guía ${r.despacho.guia} creada`
+        : `${clasificar.codigo} derivado al programa · semana ${r.programa.semana}`);
       setClasificar(null); load();
     } catch (e) { toast(e.message, true); }
   });
@@ -212,7 +235,7 @@ export default function Inventario() {
                   <td className="num">{c.desde ?? '—'}</td>
                   <td className="num">
                     <button className="btn sm primary" disabled={busy}
-                      onClick={() => { setClasificar(c); setCf({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO() }); }}>
+                      onClick={() => { setClasificar(c); setCf({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO(), crear_despacho: true }); }}>
                       Clasificar y derivar
                     </button>
                   </td>
@@ -274,15 +297,48 @@ export default function Inventario() {
       </Modal>
 
       {/* ---- carga masiva ---- */}
-      <Modal open={masivo} title="Carga masiva de componentes" onClose={() => setMasivo(false)} ancho
+      <Modal open={masivo} title="Carga masiva de componentes" onClose={() => { setMasivo(false); setErrores(null); }} ancho
         footer={<>
-          <button className="btn" onClick={() => setMasivo(false)} disabled={busy}>Cancelar</button>
+          <button className="btn" onClick={() => { setMasivo(false); setErrores(null); }} disabled={busy}>Cancelar</button>
           <button className="btn primary" onClick={cargarMasivo} disabled={busy || !previa.length}>{busy ? 'Cargando…' : `Cargar ${previa.length || ''}`}</button>
         </>}>
         <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
-          Pega una fila por componente (desde Excel o separadas por <b>;</b>), en este orden:
-          <br /><b>Código SAP · Nombre · Especificaciones · Sitio (MEL/La Negra) · Ubicación · Valor referencial (USD)</b>
+          Pega una fila por componente, copiada desde Excel o con las columnas separadas por <b>;</b>.
+          Este es el orden exacto que espera la carga:
         </p>
+        <div className="tbl-wrap" style={{ margin: '10px 0 4px' }}><table>
+          <thead><tr>
+            <th style={{ width: 28 }}>#</th><th>Columna</th><th>Ejemplo</th>
+          </tr></thead>
+          <tbody>
+            {COLUMNAS.map((c, i) => (
+              <tr key={c.campo}>
+                <td className="mono" style={{ color: 'var(--muted)' }}>{i + 1}</td>
+                <td>
+                  <b>{c.titulo}</b>
+                  {c.obligatorio
+                    ? <small style={{ color: 'var(--bad-tx)' }}> · obligatoria</small>
+                    : <small style={{ color: 'var(--muted)' }}> · opcional{c.ayuda ? ` · ${c.ayuda}` : ''}</small>}
+                </td>
+                <td className="mono" style={{ color: 'var(--muted)' }}>{c.ej}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+        <p style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>
+          Las columnas opcionales pueden ir vacías, pero <b>su lugar debe respetarse</b>: si no pones
+          especificaciones, deja el separador igual. Si la primera fila es el encabezado, se descarta sola.
+        </p>
+        {errores?.length > 0 && (
+          <div className="aviso" style={{ borderColor: 'var(--bad-line)', background: 'var(--bad-bg)' }}>
+            <b style={{ color: 'var(--bad-tx)' }}>La carga no entró · {errores.length} problema(s)</b>
+            <p>Se revisa toda la planilla antes de cargar: o entran todas las filas, o no entra ninguna.
+            Corrige lo siguiente y vuelve a pegar.</p>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13 }}>
+              {errores.map((e, i) => <li key={i} style={{ marginTop: 3 }}>{e}</li>)}
+            </ul>
+          </div>
+        )}
         <Field label="Memo de baja" hint="Toda la carga queda respaldada por este memo: es la lista que declara.">
           <Select value={memoMasivo} onChange={(e) => setMemoMasivo(e.target.value)}>
             <option value="">— Elija el memo —</option>
@@ -295,10 +351,16 @@ export default function Inventario() {
         </Field>
         {previa.length > 0 && (
           <div className="tbl-wrap" style={{ marginTop: 4 }}><table>
-            <thead><tr><th>Código</th><th>Nombre</th><th>Sitio</th><th>Ubicación</th><th className="num">Valor ref.</th></tr></thead>
+            <thead><tr><th>Código</th><th>Nombre</th><th>Sitio</th><th>Ubicación</th><th className="num">Valor ref.</th><th className="num">Cant.</th></tr></thead>
             <tbody>
               {previa.slice(0, 8).map((r, i) => (
-                <tr key={i}><td className="mono">{r.codigo || '—'}</td><td>{r.nombre}</td><td>{r.sitio || '—'}</td><td>{r.ubicacion || '—'}</td><td className="num">{r.valor_referencial ? fmtUSD(r.valor_referencial) : '—'}</td></tr>
+                <tr key={i}>
+                  <td className="mono">{r.codigo || <span style={{ color: 'var(--bad-tx)' }}>falta</span>}</td>
+                  <td>{r.nombre || <span style={{ color: 'var(--bad-tx)' }}>falta</span>}</td>
+                  <td>{r.sitio || '—'}</td><td>{r.ubicacion || '—'}</td>
+                  <td className="num">{r.valor_referencial ? fmtUSD(r.valor_referencial) : '—'}</td>
+                  <td className="num">{r.cantidad || 1}</td>
+                </tr>
               ))}
             </tbody>
           </table>{previa.length > 8 && <small style={{ color: 'var(--muted)' }}>… y {previa.length - 8} más</small>}</div>
@@ -339,6 +401,19 @@ export default function Inventario() {
             <DateField value={cf.fecha} onChange={(e) => setCf({ ...cf, fecha: e.target.value })} />
           </Field>
         </div>
+        <Field label="Guía y valorización">
+          <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13.5 }}>
+            <input type="checkbox" checked={!!cf.crear_despacho} style={{ marginTop: 3 }}
+              onChange={(e) => setCf({ ...cf, crear_despacho: e.target.checked })} />
+            <span>
+              <b>Crear además el despacho de Fase 1</b>
+              <br /><small style={{ color: 'var(--muted)' }}>
+                Emite la guía con estos mismos datos. Sin esto el componente entra al programa, pero
+                la guía y la valorización hay que crearlas a mano en Despachos.
+              </small>
+            </span>
+          </label>
+        </Field>
       </Modal>
 
       {/* ---- adjuntos ---- */}

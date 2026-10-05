@@ -18,6 +18,8 @@ export default function Ofertas() {
   const [puntajes, setPuntajes] = useState({});   // { ofertaId: { criterioId: 1..10 } }
   const [ganadorSel, setGanadorSel] = useState('');
   const [pesos, setPesos] = useState({});         // edición de ponderaciones
+  const [nombres, setNombres] = useState({});     // edición del nombre del criterio
+  const [nuevoCrit, setNuevoCrit] = useState({ nombre: '', peso: '' });
   const [pago, setPago] = useState(null);
   const [entrega, setEntrega] = useState(null);
   const [cert, setCert] = useState(null);
@@ -25,7 +27,7 @@ export default function Ofertas() {
 
   const load = () => {
     api('/publicaciones').then((r) => setPubs(r.filter((p) => p.estado === 'activa' && p.ofertas > 0))).catch((e) => toast(e.message, true));
-    api('/criterios').then((c) => { setCriterios(c); setPesos(Object.fromEntries(c.map((x) => [x.id, x.peso]))); }).catch(() => {});
+    api('/criterios').then((c) => { setCriterios(c); setPesos(Object.fromEntries(c.map((x) => [x.id, x.peso]))); setNombres(Object.fromEntries(c.map((x) => [x.id, x.nombre]))); }).catch(() => {});
     api('/adjudicaciones').then(setAdjudicaciones).catch(() => {});
   };
   useEffect(() => { load(); }, []);
@@ -72,8 +74,44 @@ export default function Ofertas() {
 
   async function guardarPesos() {
     try {
-      const c = await api('/criterios', { method: 'PATCH', body: { pesos: criterios.map((x) => ({ id: x.id, peso: Number(pesos[x.id]) })) } });
-      setCriterios(c); toast('Ponderaciones actualizadas');
+      const c = await api('/criterios', { method: 'PATCH', body: {
+        pesos: criterios.map((x) => ({ id: x.id, peso: Number(pesos[x.id]), nombre: nombres[x.id] ?? x.nombre })),
+      } });
+      setCriterios(c); sincronizar(c); toast('Matriz actualizada');
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // La matriz no es fija: se pueden renombrar los criterios, agregar los que
+  // falten y sacar los que no apliquen. Cambiarla no toca lo ya adjudicado,
+  // porque cada certificado guarda su propia copia congelada.
+  const sincronizar = (c) => {
+    setPesos(Object.fromEntries(c.map((x) => [x.id, x.peso])));
+    setNombres(Object.fromEntries(c.map((x) => [x.id, x.nombre])));
+  };
+  async function agregarCriterio() {
+    const nombre = (nuevoCrit.nombre || '').trim();
+    if (!nombre) return toast('Indique el nombre del criterio', true);
+    try {
+      await api('/criterios', { method: 'POST', body: { nombre, peso: Number(nuevoCrit.peso) || 0 } });
+      const c = await api('/criterios');
+      setCriterios(c); sincronizar(c); setNuevoCrit({ nombre: '', peso: '' });
+      toast(`Criterio «${nombre}» agregado`);
+    } catch (e) { toast(e.message, true); }
+  }
+  async function quitarCriterio(x) {
+    try {
+      await api(`/criterios/${x.id}`, { method: 'DELETE' });
+      const c = await api('/criterios');
+      setCriterios(c); sincronizar(c);
+      toast(`Criterio «${x.nombre}» quitado de la matriz`);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function verActa(a) {
+    try {
+      const r = await api(`/adjudicaciones/${a.id}/acta`);
+      if (!r.archivos?.length) return toast('Esta entrega no tiene acta adjunta', true);
+      for (const x of r.archivos) window.open(x.url, '_blank', 'noreferrer');
     } catch (e) { toast(e.message, true); }
   }
 
@@ -85,7 +123,11 @@ export default function Ofertas() {
   }
   async function registrarEntrega() {
     try {
-      await api(`/adjudicaciones/${entrega.id}/entrega`, { method: 'POST', body: { guia_folio: entrega.guia } });
+      // Viaja como formulario para poder adjuntar el acta firmada.
+      const fd = new FormData();
+      fd.append('guia_folio', entrega.guia ?? '');
+      for (const a of entrega.acta ?? []) fd.append('acta', a);
+      await api(`/adjudicaciones/${entrega.id}/entrega`, { method: 'POST', body: fd });
       toast('Entrega registrada'); setEntrega(null); load();
     } catch (e) { toast(e.message, true); }
   }
@@ -190,7 +232,10 @@ export default function Ofertas() {
                   <td><Chip tone={tono}>{txt}</Chip></td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>
                     {a.estado === 'adjudicada' && <button className="btn sm primary" onClick={() => setPago({ id: a.id, ref: '' })}>Registrar pago</button>}
-                    {a.estado === 'pagada' && <button className="btn sm primary" onClick={() => setEntrega({ id: a.id, guia: '' })}>Registrar entrega</button>}
+                    {a.estado === 'pagada' && <button className="btn sm primary" onClick={() => setEntrega({ id: a.id, guia: '', acta: [] })}>Registrar entrega</button>}
+                    {a.estado === 'entregada' && a.entrega_docs > 0 && (
+                      <button className="btn sm" onClick={() => verActa(a)}>Acta ({a.entrega_docs})</button>
+                    )}
                   </td>
                 </tr>
               );
@@ -205,20 +250,37 @@ export default function Ofertas() {
         <div className="card">
           <div className="card-h"><h3>Criterios y ponderaciones</h3><small>suman {sumaPesos}% · configurable</small></div>
           <div className="tbl-wrap"><table>
-            <thead><tr><th>Criterio</th><th className="num">Peso (%)</th></tr></thead>
+            <thead><tr><th>Criterio</th><th className="num">Peso (%)</th><th className="acc"></th></tr></thead>
             <tbody>
               {criterios.map((c) => (
                 <tr key={c.id}>
-                  <td>{c.nombre}</td>
+                  <td><input value={nombres[c.id] ?? c.nombre} style={{ width: '100%' }}
+                    onChange={(e) => setNombres({ ...nombres, [c.id]: e.target.value })} /></td>
                   <td className="num"><input type="number" min="0" max="100" style={{ width: 80 }}
                     value={pesos[c.id] ?? ''} onChange={(e) => setPesos({ ...pesos, [c.id]: e.target.value })} /></td>
+                  <td className="num">
+                    <button className="btn sm danger" onClick={() => quitarCriterio(c)} title="Quitar de la matriz">Quitar</button>
+                  </td>
                 </tr>
               ))}
+              <tr>
+                <td><input value={nuevoCrit.nombre} placeholder="Nuevo criterio…" style={{ width: '100%' }}
+                  onChange={(e) => setNuevoCrit({ ...nuevoCrit, nombre: e.target.value })} /></td>
+                <td className="num"><input type="number" min="0" max="100" style={{ width: 80 }}
+                  value={nuevoCrit.peso} placeholder="0"
+                  onChange={(e) => setNuevoCrit({ ...nuevoCrit, peso: e.target.value })} /></td>
+                <td className="num">
+                  <button className="btn sm" onClick={agregarCriterio} disabled={!nuevoCrit.nombre.trim()}>Agregar</button>
+                </td>
+              </tr>
             </tbody>
           </table></div>
           <div className="card-b" style={{ borderTop: '1px solid var(--line-2)' }}>
-            <button className="btn primary" onClick={guardarPesos}>Guardar ponderaciones</button>
-            <small style={{ color: 'var(--muted)', marginLeft: 12 }}>El puntaje ponderado se calcula sobre la suma de pesos, así que no es obligatorio que sumen 100%.</small>
+            <button className="btn primary" onClick={guardarPesos}>Guardar cambios</button>
+            <small style={{ color: 'var(--muted)', marginLeft: 12 }}>
+              El puntaje se calcula sobre la suma de pesos, así que no es obligatorio que sumen 100%.
+              Cambiar la matriz <b>no altera lo ya adjudicado</b>: cada certificado guarda la suya congelada.
+            </small>
           </div>
         </div>
       )}
@@ -234,6 +296,14 @@ export default function Ofertas() {
         footer={<><button className="btn" onClick={() => setEntrega(null)}>Cancelar</button><button className="btn primary" onClick={registrarEntrega}>Registrar entrega</button></>}>
         <Field label="N° de guía de despacho (opcional)" hint="La guía física con que se coordina el retiro en terreno.">
           <input value={entrega?.guia ?? ''} onChange={(e) => setEntrega({ ...entrega, guia: e.target.value })} placeholder="458…" />
+        </Field>
+        <Field label="Acta de entrega firmada"
+          hint="PDF o foto del documento que firma el comprador al retirar. Es el respaldo de que el activo salió.">
+          <input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp"
+            onChange={(e) => setEntrega({ ...entrega, acta: Array.from(e.target.files).slice(0, 3) })} />
+          {entrega?.acta?.length > 0 && (
+            <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>{entrega.acta.length} documento(s) listo(s).</small>
+          )}
         </Field>
       </Modal>
 

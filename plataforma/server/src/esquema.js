@@ -43,6 +43,9 @@ export const tiene = {
   edp_acumulado: false,       // estados_pago.acumulado_manual/acumulado_nota
   // db/0012_clave.sql
   clave_inicial: false,       // users.clave_inicial
+  // db/0013_fase2_obs.sql
+  acta_entrega: false,        // adjudicaciones.entrega_docs
+  desp_componente: false,     // despachos.componente_id
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -62,6 +65,7 @@ const ORIGEN = {
   user_email: '0010_ofertas.sql',
   edp_respaldo: '0011_edp.sql', edp_acumulado: '0011_edp.sql',
   clave_inicial: '0012_clave.sql',
+  acta_entrega: '0013_fase2_obs.sql', desp_componente: '0013_fase2_obs.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -123,6 +127,9 @@ export async function detectarEsquema() {
   tiene.edp_respaldo  = await existe('ep_descuentos', 'respaldos');
   tiene.edp_acumulado = await existe('estados_pago', 'acumulado_manual,acumulado_nota');
   tiene.clave_inicial = await existe('users', 'clave_inicial');
+
+  tiene.acta_entrega    = tiene.obsoletos && (await existe('adjudicaciones', 'entrega_docs'));
+  tiene.desp_componente = tiene.obsoletos && (await existe('despachos', 'componente_id'));
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {

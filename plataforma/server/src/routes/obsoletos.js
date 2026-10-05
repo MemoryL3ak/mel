@@ -37,6 +37,37 @@ const subir = multer({
 });
 const CAMPOS_COMP = [{ name: 'fotos', maxCount: 4 }, { name: 'ficha', maxCount: 1 }];
 
+// Acta de entrega firmada por el comprador, en evidencia/ENT/<adjudicacion>/.
+const ACTA = { ...IMG, 'application/pdf': 'pdf' };
+const subirActa = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 3, fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, f, cb) => cb(null, !!ACTA[f.mimetype]),
+});
+async function subirDocEntrega(adjId, archivos = []) {
+  let n = 0;
+  const marca = Date.now();
+  for (const f of archivos) {
+    const ext = ACTA[f.mimetype];
+    if (!ext) continue;
+    const { error } = await supa.storage.from('evidencia')
+      .upload(`ENT/${adjId}/acta-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    if (error) { console.error('[GEA] acta de entrega:', error.message); continue; }
+    n++;
+  }
+  return n;
+}
+
+// Folio del codigo interno del despacho. Misma tolerancia que en Fase 1: el
+// tipo es 'CI' desde la migracion 0006 y se cae a 'GD' si la base no migro.
+async function folioInternoChatarra() {
+  try { return await folio('CI'); }
+  catch (e) {
+    if (/tipo de folio desconocido/i.test(e.message || '')) return await folio('GD');
+    throw e;
+  }
+}
+
 // Días que acepta `programa` (no opera domingo), indexados por getDay().
 const DIAS = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
@@ -534,9 +565,24 @@ r.post('/componentes/:id/clasificar', OP, ah(async (req, res) => {
     clasificado_el: new Date().toISOString(), clasificado_por: req.user.name,
   }).eq('id', id).select().single());
 
+  // La linea del programa manda a la cuadrilla a buscarlo, pero la guia y la
+  // valorizacion nacen del despacho de Fase 1. Se crea aqui mismo, con los
+  // datos ya clasificados, para que el obsoleto no quede a medio camino
+  // esperando que alguien lo tipee de nuevo en otra pantalla.
+  let despacho = null;
+  if (req.body?.crear_despacho) {
+    const guia = await folioInternoChatarra();
+    despacho = await q(supa.from('despachos').insert({
+      guia, patio_id, categoria_id, kg_origen: peso, fecha,
+      ...(tiene.desp_componente ? { componente_id: c.id } : {}),
+    }).select('id,guia').single());
+    await audit(req.user.name, req.user.role, 'Creó despacho desde un obsoleto derivado a chatarra',
+      `${despacho.guia} · ${c.codigo} · ${peso} kg`);
+  }
+
   await audit(req.user.name, req.user.role, 'Derivó obsoleto al programa de chatarra',
     `${c.codigo} · ${peso} kg · semana ${semana}/${anio}`);
-  res.json({ ...row, programa: { id: prog.id, anio, semana, dia, ton } });
+  res.json({ ...row, programa: { id: prog.id, anio, semana, dia, ton }, despacho });
 }));
 
 /* ============================ publicaciones ============================ */
@@ -676,16 +722,53 @@ r.get('/criterios', OP, ah(async (_req, res) => {
 
 // Ajuste de ponderaciones (no cambia adjudicaciones ya emitidas: la matriz
 // queda congelada en cada certificado).
+// La matriz queda abierta: antes solo se podía mover el peso de los cuatro
+// criterios sembrados, y no renombrarlos, agregar uno nuevo ni sacar el que no
+// aplica. Cambiarla no toca lo ya adjudicado: cada certificado guarda su propia
+// copia congelada de la matriz con que se decidió.
 r.patch('/criterios', OP, ah(async (req, res) => {
   if (!tiene.obsoletos) return sinTabla(res);
   const filas = Array.isArray(req.body?.pesos) ? req.body.pesos : [];
   if (!filas.length) return res.status(400).json({ error: 'No hay ponderaciones que guardar' });
   for (const f of filas) {
     if (!(Number(f.peso) >= 0 && Number(f.peso) <= 100)) return res.status(400).json({ error: 'Cada peso debe estar entre 0 y 100' });
-    await q(supa.from('criterios').update({ peso: Number(f.peso) }).eq('id', f.id).select('id').single());
+    const cambios = { peso: Number(f.peso) };
+    if (f.nombre !== undefined) {
+      const nombre = String(f.nombre).trim();
+      if (!nombre) return res.status(400).json({ error: 'El criterio no puede quedar sin nombre' });
+      cambios.nombre = nombre;
+    }
+    await q(supa.from('criterios').update(cambios).eq('id', f.id).select('id').single());
   }
-  await audit(req.user.name, req.user.role, 'Ajustó ponderaciones de la matriz de evaluación', `${filas.length} criterio(s)`);
+  await audit(req.user.name, req.user.role, 'Ajustó la matriz de evaluación', `${filas.length} criterio(s)`);
   res.json(await q(supa.from('criterios').select('*').eq('activo', true).order('orden')));
+}));
+
+r.post('/criterios', OP, ah(async (req, res) => {
+  if (!tiene.obsoletos) return sinTabla(res);
+  const nombre = (req.body?.nombre || '').trim();
+  const peso = Number(req.body?.peso);
+  if (!nombre) return res.status(400).json({ error: 'Indique el nombre del criterio' });
+  if (!(peso >= 0 && peso <= 100)) return res.status(400).json({ error: 'El peso debe estar entre 0 y 100' });
+  const ultimos = await q(supa.from('criterios').select('orden').order('orden', { ascending: false }).limit(1));
+  const row = await q(supa.from('criterios').insert({
+    nombre, peso, orden: (ultimos[0]?.orden ?? 0) + 1, activo: true,
+  }).select().single());
+  await audit(req.user.name, req.user.role, 'Agregó criterio a la matriz de evaluación', `${nombre} · ${peso}%`);
+  res.json(row);
+}));
+
+// No se borra: se desactiva. Un criterio borrado dejaría sin sentido la matriz
+// congelada de los certificados que lo usaron para decidir.
+r.delete('/criterios/:id', OP, ah(async (req, res) => {
+  if (!tiene.obsoletos) return sinTabla(res);
+  const c = await q(supa.from('criterios').select('*').eq('id', Number(req.params.id) || 0).maybeSingle());
+  if (!c) return res.status(404).json({ error: 'Criterio no encontrado' });
+  const quedan = await q(supa.from('criterios').select('id').eq('activo', true));
+  if (quedan.length <= 1) return res.status(409).json({ error: 'La matriz no puede quedar sin criterios' });
+  await q(supa.from('criterios').update({ activo: false }).eq('id', c.id).select('id').single());
+  await audit(req.user.name, req.user.role, 'Quitó criterio de la matriz de evaluación', c.nombre);
+  res.json({ ok: true });
 }));
 
 /* ============================ adjudicación ============================ */
@@ -777,6 +860,7 @@ async function vistaAdjudicacion(a, comp, comprador) {
     monto: num(a.monto), comision_pct: num(a.comision_pct), comision_monto: num(a.comision_monto),
     estado: a.estado, matriz: a.matriz,
     pago_el: a.pago_el, pago_ref: a.pago_ref, guia_folio: a.guia_folio, entregado_el: a.entregado_el,
+    entrega_docs: a.entrega_docs ?? 0,
     creado_el: a.creado_el, creado_por: a.creado_por,
   };
 }
@@ -805,18 +889,29 @@ r.post('/adjudicaciones/:id/pago', OP, ah(async (req, res) => {
 }));
 
 // Paso 4: guía de despacho + certificado de entrega, retiro coordinado.
-r.post('/adjudicaciones/:id/entrega', OP, ah(async (req, res) => {
+r.post('/adjudicaciones/:id/entrega', OP, subirActa.fields([{ name: 'acta', maxCount: 3 }]), ah(async (req, res) => {
   if (!tiene.obsoletos) return sinTabla(res);
   const a = await q(supa.from('adjudicaciones').select('*').eq('id', req.params.id).single());
   if (a.estado === 'entregada') return res.status(409).json({ error: 'El retiro ya fue entregado' });
   if (a.estado !== 'pagada') return res.status(409).json({ error: 'Registre el pago antes de coordinar el retiro' });
   const row = await q(supa.from('adjudicaciones').update({
     estado: 'entregada', entregado_el: new Date().toISOString(), guia_folio: (req.body?.guia_folio || '').trim() || null,
+    ...(tiene.acta_entrega ? { entrega_docs: await subirDocEntrega(a.id, req.files?.acta) } : {}),
   }).eq('id', a.id).select('*').single());
   const pub = await q(supa.from('publicaciones').select('componente_id').eq('id', a.publicacion_id).single());
   await q(supa.from('componentes').update({ estado: 'entregado' }).eq('id', pub.componente_id).select('id').single());
   await audit(req.user.name, req.user.role, 'Registró entrega del componente adjudicado', `${a.cert_folio}${row.guia_folio ? ` · guía ${row.guia_folio}` : ''}`);
   res.json(row);
+}));
+
+// Acta(s) de entrega con URL firmada (1 h).
+r.get('/adjudicaciones/:id/acta', OP, ah(async (req, res) => {
+  const carpeta = `ENT/${Number(req.params.id) || 0}`;
+  const { data: lista } = await supa.storage.from('evidencia').list(carpeta);
+  if (!lista?.length) return res.json({ archivos: [] });
+  const { data: firmadas } = await supa.storage.from('evidencia')
+    .createSignedUrls(lista.map((f) => `${carpeta}/${f.name}`), 3600);
+  res.json({ archivos: (firmadas ?? []).filter((f) => f.signedUrl).map((f) => ({ url: f.signedUrl })) });
 }));
 
 /* ============================ compradores (due diligence) ============================ */
@@ -841,7 +936,9 @@ r.post('/compradores/:id/dd', OP, ah(async (req, res) => {
   }).eq('id', req.params.id).select('*').single());
   // La cuenta de acceso se habilita solo con la DD aprobada.
   if (row.user_id) {
-    await q(supa.from('users').update({ activo: estado === 'aprobada' }).eq('id', row.user_id).select('id').single());
+    // Solo el rechazo cierra la cuenta. Mientras la DD está en revisión el
+    // comprador puede entrar: ve el catálogo y en qué va su solicitud.
+    await q(supa.from('users').update({ activo: estado !== 'rechazada' }).eq('id', row.user_id).select('id').single());
   }
   await audit(req.user.name, req.user.role, `Due diligence ${estado}`, `${row.razon_social} (${row.rut})`);
   if (estado === 'aprobada') {
