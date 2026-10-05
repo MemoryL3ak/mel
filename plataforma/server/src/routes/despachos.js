@@ -113,15 +113,24 @@ const subir = multer({
 });
 // Respaldos que se adjuntan al despachar; el de recepción va en su propio paso.
 const CAMPOS_EVIDENCIA = ['guia', 'bascula', 'carga'].map((name) => ({ name, maxCount: 2 }));
+// Al corregir se puede sumar cualquiera de los cuatro, incluido el de recepción
+// si la guía ya pasó por La Negra.
+const CAMPOS_TODOS = Object.keys(EVIDENCIA).map((name) => ({ name, maxCount: 2 }));
 
 // Sube los archivos de un tipo a la carpeta de la guía y devuelve cuántos entraron.
 async function subirEvidencia(despachoId, tipo, archivos = []) {
   let n = 0;
+  // La marca de tiempo permite adjuntar en varias tandas: con un contador que
+  // reinicia en cada llamada, la segunda chocaba con `guia-1` de la primera y
+  // el archivo se perdia en silencio (el error solo se logueaba).
+  const marca = Date.now();
   for (const f of archivos) {
     const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }[f.mimetype];
+    if (!ext) continue;
     const { error } = await supa.storage.from('evidencia')
-      .upload(`GD/${despachoId}/${tipo}-${++n}.${ext}`, f.buffer, { contentType: f.mimetype });
-    if (error) console.error('[GEA] evidencia:', error.message);
+      .upload(`GD/${despachoId}/${tipo}-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    if (error) { console.error('[GEA] evidencia:', error.message); continue; }
+    n++;
   }
   return n;
 }
@@ -585,7 +594,8 @@ r.patch('/despachos/:id/recepcion', auth('ito', 'coordinador'), ah(async (req, r
   res.json(view(row));
 }));
 
-r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'), ah(async (req, res) => {
+r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'),
+  subir.fields(CAMPOS_TODOS), ah(async (req, res) => {
   const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).single());
   if (d.estado === 'anulado') return res.status(409).json({ error: 'La guía está anulada; no se edita' });
   if (d.ep_id) {
@@ -622,10 +632,25 @@ r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'), ah(async (req,
     }
     if (['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla'].some((k) => b[k] !== undefined)) bitacora.push('transporte');
   }
-  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
+  // Respaldos que llegan después. En terreno la foto de la carga o el ticket de
+  // báscula muchas veces aparecen más tarde que la guía, y hasta ahora un
+  // despacho que nació sin respaldo se quedaba sin él para siempre: adjuntar
+  // solo existía en el momento de crear.
+  let nuevos = 0;
+  for (const [tipo, lista] of Object.entries(req.files ?? {})) {
+    if (!EVIDENCIA[tipo] || !lista?.length) continue;
+    const n = await subirEvidencia(d.id, tipo, lista);
+    if (n) { nuevos += n; bitacora.push(`${n} ${EVIDENCIA[tipo].toLowerCase()}`); }
+  }
+  if (nuevos) cambios.fotos = Number(d.fotos ?? 0) + nuevos;
+
+  // Adjuntar sin corregir nada es un uso válido: no se exige cambiar datos.
+  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios ni respaldos que guardar' });
 
   const row = await q(supa.from('despachos').update(cambios).eq('id', req.params.id).select(DESP_SEL).single());
-  await audit(req.user.name, req.user.role, 'Corrigió datos de la guía', `${row.guia} · ${bitacora.join(', ')}`);
+  await audit(req.user.name, req.user.role,
+    nuevos && bitacora.length === 1 ? 'Adjuntó respaldos a la guía' : 'Corrigió datos de la guía',
+    `${row.guia} · ${bitacora.join(', ')}`);
   const desc = await descuentosDe([row.id]);
   res.json(view(row, desc.get(row.id) ?? []));
 }));

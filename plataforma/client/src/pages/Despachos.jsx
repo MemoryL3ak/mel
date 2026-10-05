@@ -275,6 +275,7 @@ export default function Despachos() {
       tara_origen: d.tara_origen_kg != null ? String(d.tara_origen_kg) : '', unidad_tara: 'kg',
       transportista: d.transportista ?? '', transportista_rut: d.transportista_rut ?? '',
       patente_tracto: d.patente_tracto ?? '', patente_rampla: d.patente_rampla ?? '',
+      ev: {},   // respaldos que se suman al corregir
     });
   }
 
@@ -282,15 +283,23 @@ export default function Despachos() {
     const kg = aKg(eForm.kg_origen, eForm.unidad);
     if (!kg) return toast('El peso de origen debe ser mayor que cero', true);
     try {
-      const body = {
-        guia_mel: eForm.guia_mel.trim(), fecha: eForm.fecha,
-        patio_id: eForm.patio_id, categoria_id: eForm.categoria_id, kg_origen: kg,
-        tara_origen_kg: aKg(eForm.tara_origen, eForm.unidad_tara) || '',
-        transportista: eForm.transportista.trim(), transportista_rut: eForm.transportista_rut.trim(),
-        patente_tracto: eForm.patente_tracto.trim(), patente_rampla: eForm.patente_rampla.trim(),
-      };
-      await api(`/despachos/${editar.id}`, { method: 'PATCH', body });
-      toast(`Guía ${editar.guia} corregida`);
+      // Viaja como formulario porque puede traer respaldos adjuntos.
+      const fd = new FormData();
+      fd.append('guia_mel', eForm.guia_mel.trim());
+      fd.append('fecha', eForm.fecha);
+      fd.append('patio_id', eForm.patio_id);
+      fd.append('categoria_id', eForm.categoria_id);
+      fd.append('kg_origen', kg);
+      fd.append('tara_origen_kg', aKg(eForm.tara_origen, eForm.unidad_tara) || '');
+      for (const k of ['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla']) {
+        fd.append(k, eForm[k].trim());
+      }
+      let adj = 0;
+      for (const [tipo, archivos] of Object.entries(eForm.ev ?? {})) {
+        for (const f of archivos) { fd.append(tipo, f); adj++; }
+      }
+      await api(`/despachos/${editar.id}`, { method: 'PATCH', body: fd });
+      toast(adj ? `Guía ${editar.guia} corregida · ${adj} respaldo(s) adjuntado(s)` : `Guía ${editar.guia} corregida`);
       setEditar(null); setEForm(null);
       load();
     } catch (e) { toast(e.message, true); }
@@ -1232,6 +1241,39 @@ export default function Despachos() {
             <Field label="Patente de la rampla o batea"><input value={eForm.patente_rampla} onChange={(e) => setEForm({ ...eForm, patente_rampla: e.target.value.toUpperCase() })} /></Field>
           </div>
         )}
+
+        {/* En terreno la foto de la carga o el ticket de báscula llegan después
+            que la guía. Adjuntar solo existía al crear, así que un despacho que
+            nacía sin respaldo se quedaba sin él para siempre. Acá se suman: no
+            reemplazan los que ya tiene. */}
+        <div className="ev-tit">Agregar respaldos
+          <small>se suman a los que ya tiene{editar?.fotos > 0 ? ` (${editar.fotos})` : ''} · JPG, PNG, WebP o PDF · máx. 5 MB</small>
+        </div>
+        {EVIDENCIA.map(([tipo, etiqueta, ayuda]) => {
+          const puestas = eForm.ev?.[tipo] ?? [];
+          return (
+            <Field key={tipo} label={`${etiqueta}${puestas.length ? ` · ${puestas.length}` : ''}`} hint={ayuda}>
+              <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={(e) => {
+                  const { buenas, malas } = revisarFotos(Array.from(e.target.files));
+                  if (malas.length) toast(malas.join(' · '), true);
+                  if (!buenas.length) e.target.value = '';
+                  setEForm({ ...eForm, ev: { ...(eForm.ev ?? {}), [tipo]: buenas.slice(0, 2) } });
+                }} />
+              {puestas.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                  {puestas.map((f) => (
+                    f.type === 'application/pdf'
+                      ? <span key={f.name} title={f.name}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 48, padding: '0 8px', fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', background: 'var(--surface-2)', borderRadius: 6, border: '1px solid var(--line)' }}>📄 PDF</span>
+                      : <img key={f.name} src={URL.createObjectURL(f)} alt={f.name}
+                          style={{ width: 64, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
+                  ))}
+                </div>
+              )}
+            </Field>
+          );
+        })}
         </>}
       </Modal>
     </div>
