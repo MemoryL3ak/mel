@@ -1,9 +1,9 @@
 // Portal público de venta de obsoletos.
 // - Consulta de publicaciones: sin credenciales.
-// - Registro: crea una cuenta de comprador (rol 'comprador', inactiva) que se
-//   habilita cuando el administrador aprueba la due diligence.
-// - Ofertar: requiere iniciar sesión (cuenta habilitada). El comprador entra
-//   con su correo y contraseña por el mismo /auth/login.
+// - Registro: crea una cuenta de comprador (rol 'comprador') que puede entrar
+//   de inmediato, aunque su due diligence siga en revisión.
+// - Ofertar: exige sesión Y due diligence aprobada. Entrar y ofertar son cosas
+//   distintas: lo primero deja ver el catálogo y el estado de la solicitud.
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { supa, q, ah, hoy, audit } from '../supa.js';
@@ -135,7 +135,7 @@ r.get('/portal/publicaciones/:id', ah(async (req, res) => {
   });
 }));
 
-// Registro de comprador: crea la cuenta (inactiva) + el registro con DD pendiente.
+// Registro de comprador: crea la cuenta + el registro con DD pendiente.
 r.post('/portal/registro', ah(async (req, res) => {
   if (!tiene.obsoletos) return res.status(503).json({ error: 'El portal aún no está disponible' });
   const razon_social = (req.body?.razon_social || '').trim();
@@ -159,10 +159,14 @@ r.post('/portal/registro', ah(async (req, res) => {
   const porEmail = await q(supa.from('users').select('id').eq('username', email));
   if (porEmail.length) return res.status(409).json({ error: 'Ya existe una cuenta con ese correo.' });
 
-  // Cuenta inactiva: no puede iniciar sesión hasta que se apruebe la DD.
+  // La cuenta nace ACTIVA: antes no podía ni iniciar sesión hasta que alguien
+  // revisara su due diligence, así que el comprador se registraba y quedaba
+  // mirando una puerta cerrada sin saber en qué iba su solicitud. Entrar y
+  // ofertar son cosas distintas: lo segundo sigue exigiendo la DD aprobada,
+  // y eso se valida en el endpoint de ofertas.
   const user = await q(supa.from('users').insert({
     username: email, nombre: razon_social, role: 'comprador',
-    password_hash: await bcrypt.hash(password, 10), activo: false,
+    password_hash: await bcrypt.hash(password, 10), activo: true,
   }).select('id').single());
   await q(supa.from('compradores').insert({ user_id: user.id, razon_social, rut, email, telefono }).select('id').single());
 
@@ -174,7 +178,7 @@ r.post('/portal/registro', ah(async (req, res) => {
       cuerpo: `Gracias por registrar a <b>${razon_social}</b>. Su solicitud pasará por verificación y due diligence. Le avisaremos por este medio cuando su cuenta quede habilitada para presentar ofertas.`,
     }),
   });
-  res.json({ ok: true, mensaje: 'Registro recibido. Le avisaremos cuando su due diligence esté aprobada y pueda iniciar sesión para ofertar.' });
+  res.json({ ok: true, mensaje: 'Registro recibido. Le avisaremos cuando su due diligence esté aprobada y pueda presentar ofertas. Ya puede iniciar sesión para ver las publicaciones y el estado de su solicitud.' });
 }));
 
 // Datos de la cuenta del comprador autenticado (para saber si puede ofertar).
