@@ -166,6 +166,7 @@ const view = (d, descuentos = []) => ({
   tara_origen_kg: num(d.tara_origen_kg),
   bruto_origen_kg: d.tara_origen_kg != null ? Number(d.kg_origen) + Number(d.tara_origen_kg) : null,
   dif_pct: d.kg_destino == null ? null : Math.round(((d.kg_destino - d.kg_origen) / d.kg_origen) * 10000) / 100,
+  observacion: d.observacion ?? null,
   precio_kg: num(d.precio_kg),
   valor: num(d.valor),
   obs_recepcion: d.obs_recepcion, recepcionado_el: d.recepcionado_el && fmtFecha(d.recepcionado_el),
@@ -281,6 +282,7 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
     guia, patio_id: Number(patio_id), categoria_id: Number(categoria_id), kg_origen: Number(kg_origen),
     ...(tiene.guia_mel ? { guia_mel: (guia_mel || '').trim() || null } : {}),
     ...(tiene.tm ? { con_madera: conMaderaOrigen } : {}),
+    ...(tiene.desp_obs ? { observacion: (req.body?.observacion || '').trim() || null } : {}),
     ...(fecha ? { fecha } : {}),
     ...(tiene.tara_origen && taraOrigen > 0 ? { tara_origen_kg: taraOrigen } : {}),
     ...transporteDe(req.body || {}),
@@ -624,6 +626,10 @@ r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'),
     const t = Number(b.tara_origen_kg);
     if (b.tara_origen_kg && !(t > 0)) return res.status(400).json({ error: 'La tara debe ser un peso mayor que cero' });
     cambios.tara_origen_kg = t > 0 ? t : null; bitacora.push('tara de origen');
+  }
+  if (tiene.desp_obs && b.observacion !== undefined) {
+    cambios.observacion = (b.observacion || '').trim() || null;
+    bitacora.push('observación');
   }
   if (tiene.transporte) {
     const tr = transporteDe(b);

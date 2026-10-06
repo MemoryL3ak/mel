@@ -53,6 +53,32 @@ const revisarFotos = (lista) => {
 
 // Respaldos que pide el proceso al despachar. El nombre del campo viaja al
 // servidor y define cómo queda etiquetada cada foto en la guía.
+// El neto es lo que se valoriza. Se muestra calculado para que nadie tenga que
+// deducirlo, y para que un bruto sin tara se vea como lo que es.
+function Neto({ bruto, tara }) {
+  const neto = bruto ? Math.max(bruto - (tara || 0), 0) : 0;
+  const malo = bruto && tara && tara >= bruto;
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap',
+      padding: '11px 14px', margin: '0 0 14px',
+      background: malo ? 'var(--bad-bg)' : 'var(--surface-2)',
+      border: `1px solid ${malo ? 'var(--bad-line)' : 'var(--line)'}`, borderRadius: 'var(--radius-s)' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+        Peso neto
+      </span>
+      <b style={{ fontSize: 17, color: malo ? 'var(--bad-tx)' : 'var(--ink)' }}>
+        {bruto ? `${fmtKg(neto)} kg` : '—'}
+      </b>
+      <small style={{ color: malo ? 'var(--bad-tx)' : 'var(--muted)', marginLeft: 'auto', textAlign: 'right' }}>
+        {malo ? 'La tara no puede ser mayor o igual al bruto.'
+          : !bruto ? 'Ingrese el peso bruto.'
+          : tara ? `${fmtKg(bruto)} bruto − ${fmtKg(tara)} tara · es el peso que se valoriza`
+          : 'Sin tara: se toma el bruto como neto.'}
+      </small>
+    </div>
+  );
+}
+
 const EVIDENCIA = [
   ['guia', 'Foto de la guía de despacho', 'El documento que viaja con el camión. Es el respaldo que permite cruzar esta guía con la documentación de MEL.'],
   ['bascula', 'Foto del ticket de báscula', 'El pesaje impreso de la romana en el patio, que respalda los kilos declarados.'],
@@ -83,8 +109,8 @@ export default function Despachos() {
   // ya no existir, y la base lo rechaza con un error que nadie entiende.
   const [porDefecto, setPorDefecto] = useState({ patio_id: null, categoria_id: null });
   const formVacio = () => ({
-    ...porDefecto, kg_origen: '', unidad: unidadGuardada(),
-    tara_origen: '', unidad_tara: unidadGuardada(),
+    ...porDefecto, kg_origen: '', bruto_origen: '', unidad: unidadGuardada(),
+    tara_origen: '', unidad_tara: unidadGuardada(), observacion: '',
     guia_mel: '', fecha: hoyISO(), ev: {}, con_madera: true,
     transportista: '', transportista_rut: '', patente_tracto: '', patente_rampla: '',
   });
@@ -150,7 +176,11 @@ export default function Despachos() {
   };
 
   async function crearDespacho() {
-    const kg = aKg(form.kg_origen, form.unidad);
+    // El neto se deriva del bruto menos la tara; sin tara, el bruto ES el neto.
+    const bruto = aKg(form.bruto_origen, form.unidad);
+    const taraO = aKg(form.tara_origen, form.unidad_tara);
+    if (bruto && taraO && taraO >= bruto) return toast('La tara no puede ser mayor o igual al peso bruto', true);
+    const kg = bruto ? Math.max(bruto - (taraO || 0), 0) : aKg(form.kg_origen, form.unidad);
     if (!kg) return toast('Ingrese el peso registrado en la báscula', true);
     if (!form.patio_id || !form.categoria_id) return toast('Elija patio y categoría de material', true);
     try {
@@ -158,8 +188,8 @@ export default function Despachos() {
       fd.append('patio_id', form.patio_id);
       fd.append('categoria_id', form.categoria_id);
       fd.append('kg_origen', kg);
-      const taraOrigen = aKg(form.tara_origen, form.unidad_tara);
-      if (taraOrigen) fd.append('tara_origen_kg', taraOrigen);
+      if (taraO) fd.append('tara_origen_kg', taraO);
+      fd.append('observacion', form.observacion ?? '');
       fd.append('guia_mel', form.guia_mel.trim());
       fd.append('fecha', form.fecha);
       if (fn.tm) fd.append('con_madera', form.con_madera ? 'true' : 'false');
@@ -272,7 +302,10 @@ export default function Despachos() {
       patio_id: maestros?.patios.find((p) => p.codigo === d.patio)?.id ?? '',
       categoria_id: maestros?.categorias.find((c) => c.nombre === d.categoria)?.id ?? '',
       kg_origen: String(d.kg_origen ?? ''), unidad: 'kg',
+      // Se reconstruye el bruto desde lo guardado: la base almacena el neto.
+      bruto_origen: String(d.bruto_origen_kg ?? d.kg_origen ?? ''),
       tara_origen: d.tara_origen_kg != null ? String(d.tara_origen_kg) : '', unidad_tara: 'kg',
+      observacion: d.observacion ?? '',
       transportista: d.transportista ?? '', transportista_rut: d.transportista_rut ?? '',
       patente_tracto: d.patente_tracto ?? '', patente_rampla: d.patente_rampla ?? '',
       ev: {},   // respaldos que se suman al corregir
@@ -280,7 +313,10 @@ export default function Despachos() {
   }
 
   async function guardarEdicion() {
-    const kg = aKg(eForm.kg_origen, eForm.unidad);
+    const brutoE = aKg(eForm.bruto_origen, eForm.unidad);
+    const taraE = aKg(eForm.tara_origen, eForm.unidad_tara);
+    if (brutoE && taraE && taraE >= brutoE) return toast('La tara no puede ser mayor o igual al peso bruto', true);
+    const kg = brutoE ? Math.max(brutoE - (taraE || 0), 0) : aKg(eForm.kg_origen, eForm.unidad);
     if (!kg) return toast('El peso de origen debe ser mayor que cero', true);
     try {
       // Viaja como formulario porque puede traer respaldos adjuntos.
@@ -290,7 +326,8 @@ export default function Despachos() {
       fd.append('patio_id', eForm.patio_id);
       fd.append('categoria_id', eForm.categoria_id);
       fd.append('kg_origen', kg);
-      fd.append('tara_origen_kg', aKg(eForm.tara_origen, eForm.unidad_tara) || '');
+      fd.append('tara_origen_kg', taraE || '');
+      fd.append('observacion', eForm.observacion ?? '');
       for (const k of ['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla']) {
         fd.append(k, eForm[k].trim());
       }
@@ -736,7 +773,8 @@ export default function Despachos() {
                 {detalle.reemplazada_por && <> Fue reemplazada por otra guía del libro.</>}</p>
               </div>
             )}
-            {detalle.obs_recepcion && <div className="audit-note">Observación: {detalle.obs_recepcion}</div>}
+            {detalle.observacion && <div className="audit-note">Observación del despacho: {detalle.observacion}</div>}
+            {detalle.obs_recepcion && <div className="audit-note">Observación de la recepción: {detalle.obs_recepcion}</div>}
             <div className="ev-tit">Respaldos de la guía</div>
             {evidencia == null && <div className="loading" style={{ padding: '18px 0' }}>Cargando respaldos…</div>}
             {evidencia?.length === 0 && (
@@ -816,21 +854,35 @@ export default function Despachos() {
             </Field>
           );
         })()}
-        <CampoPeso label="Peso en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
-          onValor={(v) => setForm({ ...form, kg_origen: v })}
-          onUnidad={(u) => setForm({ ...form, unidad: u })} />
-        {fn.tara_origen && (
-          <CampoPeso label="Tara · peso del camión vacío (opcional)"
-            hint={(() => {
-              const neto = aKg(form.kg_origen, form.unidad);
-              const tara = aKg(form.tara_origen, form.unidad_tara);
-              return neto && tara
-                ? `Bruto en origen: ${fmtKg(neto + tara)} kg (neto ${fmtKg(neto)} + tara ${fmtKg(tara)}).`
-                : 'El peso valorizado sigue siendo el neto declarado por MEL.';
-            })()}
+        {/* La báscula pesa el camión cargado y después vacío: el neto SALE de
+            esos dos, no se digita. Antes el primer campo decía «peso en báscula»
+            y se guardaba como neto, así que quien anotaba el bruto del ticket
+            estaba declarando de más sin que nada lo advirtiera. */}
+        {fn.tara_origen ? (<>
+          <CampoPeso label="Peso bruto · camión cargado en la báscula"
+            hint="El pesaje del camión con la carga, tal como sale del ticket."
+            valor={form.bruto_origen} unidad={form.unidad}
+            onValor={(v) => setForm({ ...form, bruto_origen: v })}
+            onUnidad={(u) => setForm({ ...form, unidad: u })} />
+          <CampoPeso label="Tara · camión vacío"
+            hint="El pesaje del camión sin carga. Si no la tiene, deje el campo vacío."
             valor={form.tara_origen} unidad={form.unidad_tara}
             onValor={(v) => setForm({ ...form, tara_origen: v })}
             onUnidad={(u) => setForm({ ...form, unidad_tara: u })} />
+          <Neto bruto={aKg(form.bruto_origen, form.unidad)} tara={aKg(form.tara_origen, form.unidad_tara)} />
+        </>) : (
+          <CampoPeso label="Peso neto en báscula MEL" valor={form.kg_origen} unidad={form.unidad}
+            onValor={(v) => setForm({ ...form, kg_origen: v })}
+            onUnidad={(u) => setForm({ ...form, unidad: u })} />
+        )}
+
+        {fn.desp_obs && (
+          <Field label="Observaciones del despacho"
+            hint="Lo que se vio al cargar: material mezclado, carga parcial, cualquier cosa que el receptor deba saber.">
+            <textarea rows="2" value={form.observacion}
+              onChange={(e) => setForm({ ...form, observacion: e.target.value })}
+              placeholder="Carga con presencia de madera en la base." />
+          </Field>
         )}
 
         {fn.transporte && <>
@@ -1225,13 +1277,25 @@ export default function Despachos() {
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </Select>
         </Field>
-        <CampoPeso label="Peso en báscula MEL" valor={eForm.kg_origen} unidad={eForm.unidad}
-          onValor={(v) => setEForm({ ...eForm, kg_origen: v })}
-          onUnidad={(u) => setEForm({ ...eForm, unidad: u })} />
-        {fn.tara_origen && (
-          <CampoPeso label="Tara · peso del camión vacío (opcional)" valor={eForm.tara_origen} unidad={eForm.unidad_tara}
+        {fn.tara_origen ? (<>
+          <CampoPeso label="Peso bruto · camión cargado en la báscula"
+            valor={eForm.bruto_origen} unidad={eForm.unidad}
+            onValor={(v) => setEForm({ ...eForm, bruto_origen: v })}
+            onUnidad={(u) => setEForm({ ...eForm, unidad: u })} />
+          <CampoPeso label="Tara · camión vacío" valor={eForm.tara_origen} unidad={eForm.unidad_tara}
             onValor={(v) => setEForm({ ...eForm, tara_origen: v })}
             onUnidad={(u) => setEForm({ ...eForm, unidad_tara: u })} />
+          <Neto bruto={aKg(eForm.bruto_origen, eForm.unidad)} tara={aKg(eForm.tara_origen, eForm.unidad_tara)} />
+        </>) : (
+          <CampoPeso label="Peso neto en báscula MEL" valor={eForm.kg_origen} unidad={eForm.unidad}
+            onValor={(v) => setEForm({ ...eForm, kg_origen: v })}
+            onUnidad={(u) => setEForm({ ...eForm, unidad: u })} />
+        )}
+        {fn.desp_obs && (
+          <Field label="Observaciones del despacho">
+            <textarea rows="2" value={eForm.observacion ?? ''}
+              onChange={(e) => setEForm({ ...eForm, observacion: e.target.value })} />
+          </Field>
         )}
         {fn.transporte && (
           <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
