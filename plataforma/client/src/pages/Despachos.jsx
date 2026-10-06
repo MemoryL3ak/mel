@@ -115,7 +115,7 @@ export default function Despachos() {
     transportista: '', transportista_rut: '', patente_tracto: '', patente_rampla: '',
   });
   const recepVacia = () => ({
-    kg_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [],
+    kg_destino: '', bruto_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [],
     ticket_numero: '', vale_numero: '', tara: '', unidad_tara: unidadGuardada(), con_madera: true,
     descuentos: [], nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
   });
@@ -124,7 +124,7 @@ export default function Despachos() {
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
   const [anular, setAnular] = useState(null);         // guía que se está anulando
   const [corregir, setCorregir] = useState(null);     // recepción que se está corrigiendo
-  const [cForm, setCForm] = useState({ kg_destino: '', tara_kg: '', ticket_numero: '', vale_numero: '', motivo: '' });
+  const [cForm, setCForm] = useState({ bruto_destino: '', kg_destino: '', tara_kg: '', ticket_numero: '', vale_numero: '', motivo: '' });
   const [aForm, setAForm] = useState({ motivo: '', reemplazar: false });
   // Descuento que se agrega desde el detalle de una guía ya recepcionada.
   const [dForm, setDForm] = useState({ tipo: 'kg', valor: '', glosa: '' });
@@ -210,7 +210,12 @@ export default function Despachos() {
 
   // La recepción viaja como formulario para poder adjuntar el ticket de báscula.
   async function recepcionar() {
-    const kg = aKg(rForm.kg_destino, rForm.unidad);
+    // Mismo criterio que el despacho: la bascula pesa cargado y vacio, y el
+    // neto sale de esos dos. Sin tara, el bruto ES el neto.
+    const brutoR = aKg(rForm.bruto_destino, rForm.unidad);
+    const taraR = aKg(rForm.tara, rForm.unidad_tara);
+    if (brutoR && taraR && taraR >= brutoR) return toast('La tara no puede ser mayor o igual al peso bruto', true);
+    const kg = brutoR ? Math.max(brutoR - (taraR || 0), 0) : aKg(rForm.kg_destino, rForm.unidad);
     if (!kg) return toast('Ingrese el peso pesado en la báscula de La Negra', true);
     try {
       const fd = new FormData();
@@ -268,15 +273,20 @@ export default function Despachos() {
   function abrirCorregir(d) {
     setCorregir(d);
     setCForm({
+      // La base guarda el neto; el bruto se reconstruye para poder editarlo.
+      bruto_destino: d.bruto_kg ?? d.kg_destino ?? '',
       kg_destino: d.kg_destino ?? '', tara_kg: d.tara_kg ?? '',
       ticket_numero: d.ticket_numero ?? '', vale_numero: d.vale_numero ?? '', motivo: '',
     });
   }
   async function guardarCorreccion() {
     if (!cForm.motivo.trim()) return toast('Indique el motivo de la corrección', true);
+    const brutoC = Number(cForm.bruto_destino) || 0;
+    const taraC = Number(cForm.tara_kg) || 0;
+    if (brutoC && taraC && taraC >= brutoC) return toast('La tara no puede ser mayor o igual al peso bruto', true);
     try {
       await api(`/despachos/${corregir.id}/recepcion`, { method: 'PATCH', body: {
-        kg_destino: cForm.kg_destino === '' ? undefined : Number(cForm.kg_destino),
+        kg_destino: brutoC ? Math.max(brutoC - taraC, 0) : undefined,
         tara_kg: cForm.tara_kg === '' ? undefined : Number(cForm.tara_kg),
         ticket_numero: cForm.ticket_numero, vale_numero: cForm.vale_numero,
         motivo: cForm.motivo.trim() } });
@@ -944,7 +954,10 @@ export default function Despachos() {
           <button className="btn primary" onClick={recepcionar}>Validar recepción</button>
         </>}>
         {recep && (() => {
-          const kg = aKg(rForm.kg_destino, rForm.unidad);
+          // El neto sale del bruto menos la tara, igual que en el despacho.
+          const brutoR = aKg(rForm.bruto_destino, rForm.unidad);
+          const taraR = aKg(rForm.tara, rForm.unidad_tara);
+          const kg = brutoR ? Math.max(brutoR - (taraR || 0), 0) : null;
           const origen = Number(recep.kg_origen);
           const dif = kg == null ? null : kg - origen;
           const pct = dif == null ? null : (dif / origen) * 100;
@@ -965,11 +978,17 @@ export default function Despachos() {
                     : ' — dentro de la tolerancia del 2%.'}
                 </div>
               )}
-              <CampoPeso label="Peso validado en báscula La Negra"
-                hint="Escriba el peso de su propia romana. El campo parte vacío a propósito: esta es una declaración independiente de la de MEL."
-                valor={rForm.kg_destino} unidad={rForm.unidad}
-                onValor={(v) => setRForm({ ...rForm, kg_destino: v })}
+              <CampoPeso label="Peso bruto · camión cargado en la romana de La Negra"
+                hint="El pesaje de su propia romana. Parte vacío a propósito: esta es una declaración independiente de la de MEL."
+                valor={rForm.bruto_destino} unidad={rForm.unidad}
+                onValor={(v) => setRForm({ ...rForm, bruto_destino: v })}
                 onUnidad={(u) => setRForm({ ...rForm, unidad: u })} />
+              <CampoPeso label="Tara · camión vacío"
+                hint="El pesaje del camión sin carga. Si no la tiene, deje el campo vacío."
+                valor={rForm.tara} unidad={rForm.unidad_tara}
+                onValor={(v) => setRForm({ ...rForm, tara: v })}
+                onUnidad={(u) => setRForm({ ...rForm, unidad_tara: u })} />
+              <Neto bruto={brutoR} tara={taraR} />
             </>
           );
         })()}
@@ -1011,17 +1030,7 @@ export default function Despachos() {
             <input value={rForm.vale_numero} onChange={(e) => setRForm({ ...rForm, vale_numero: e.target.value })} placeholder="8871" />
           </Field>
         </div>
-        <CampoPeso label="Tara · peso del camión vacío"
-          hint={(() => {
-            const neto = aKg(rForm.kg_destino, rForm.unidad);
-            const tara = aKg(rForm.tara, rForm.unidad_tara);
-            return neto && tara
-              ? `Bruto del ticket: ${fmtKg(neto + tara)} kg (neto ${fmtKg(neto)} + tara ${fmtKg(tara)}).`
-              : 'Queda registrada junto al ticket. El peso valorizado sigue siendo el neto.';
-          })()}
-          valor={rForm.tara} unidad={rForm.unidad_tara}
-          onValor={(v) => setRForm({ ...rForm, tara: v })}
-          onUnidad={(u) => setRForm({ ...rForm, unidad_tara: u })} />
+
         </>}
 
         {fn.desc_item && <>
@@ -1094,17 +1103,20 @@ export default function Despachos() {
           contra el peso de origen queda sobre 2%, la guía vuelve a marcarse observada.</p>
         </div>
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
-          <Field label="Kilos recibidos en La Negra" hint={corregir ? `Actual: ${fmtKg(corregir.kg_destino)}` : ''}>
-            <input type="number" min="0" step="0.1" value={cForm.kg_destino}
-              onChange={(e) => setCForm({ ...cForm, kg_destino: e.target.value })} />
+          <Field label="Peso bruto · camión cargado (kg)"
+            hint={corregir?.bruto_kg != null ? `Actual: ${fmtKg(corregir.bruto_kg)}` : 'El pesaje del camión con la carga.'}>
+            <input type="number" min="0" step="0.1" value={cForm.bruto_destino}
+              onChange={(e) => setCForm({ ...cForm, bruto_destino: e.target.value })} />
           </Field>
           {fn.pesaje && (
-            <Field label="Tara (kg)">
+            <Field label="Tara · camión vacío (kg)"
+              hint={corregir?.tara_kg != null ? `Actual: ${fmtKg(corregir.tara_kg)}` : 'Déjela vacía si no la tiene.'}>
               <input type="number" min="0" step="0.1" value={cForm.tara_kg}
                 onChange={(e) => setCForm({ ...cForm, tara_kg: e.target.value })} />
             </Field>
           )}
         </div>
+        <Neto bruto={Number(cForm.bruto_destino) || 0} tara={Number(cForm.tara_kg) || 0} />
         {fn.pesaje && (
           <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
             <Field label="N° de ticket">
