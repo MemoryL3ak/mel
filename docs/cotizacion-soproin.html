@@ -1,0 +1,456 @@
+<title>Cotización GEA · Soproin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root{
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#FAF8F5;
+    --ink:#221D18; --ink-2:#6B6259; --muted:#948B80;
+    --line:#E5E0D8; --line-2:#EFEBE4;
+    --copper:#A4562E; --copper-deep:#83421F; --copper-tint:#F5E8DF; --copper-line:#E2C9B8;
+    --graphite:#232930; --graphite-ink:#EDEAE6; --graphite-mut:#9AA3AC;
+    --sans:'Archivo',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.62;
+    margin:0;font-size:14px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:780px;margin:0 auto;padding:0 28px 48px}
+
+  /* ── portada ─────────────────────────────── */
+  .hero{background:var(--graphite);color:var(--graphite-ink);padding:34px 28px 30px;margin-bottom:30px}
+  .hero .in{max-width:780px;margin:0 auto}
+  .hero .kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--graphite-mut)}
+  .hero h1{margin:12px 0 0;font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.2;max-width:22ch}
+  .hero .sub{margin:10px 0 0;color:var(--graphite-mut);font-size:14.5px}
+  .hero .quien{margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,.12);
+    font-size:12.5px;color:var(--graphite-mut)}
+  .hero .quien b{color:var(--graphite-ink);font-weight:600}
+
+  h2{font-size:18px;font-weight:700;letter-spacing:-.015em;color:var(--copper-deep);
+    margin:30px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--copper-line)}
+  h3{font-size:14.5px;font-weight:700;margin:20px 0 7px}
+  h4{font-size:12px;font-weight:700;margin:16px 0 6px;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--ink-2)}
+  p{margin:0 0 10px}
+  ul{margin:0 0 10px;padding-left:19px}
+  li{margin-bottom:5px}
+  li::marker{color:var(--copper)}
+  strong{font-weight:700}
+
+  table{width:100%;border-collapse:collapse;margin:12px 0 16px;font-size:13px}
+  th{background:var(--graphite);color:var(--graphite-ink);text-align:left;
+    padding:8px 11px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+  td{padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tbody tr.sec td{background:var(--surface-2);font-weight:700}
+  tbody tr.tot td{background:var(--graphite);color:var(--graphite-ink);font-weight:700;border:none}
+  table.marco{border:1px solid var(--line)}
+
+  .ficha{border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:16px 0 22px}
+  .ficha div{display:grid;grid-template-columns:180px 1fr;gap:0;border-bottom:1px solid var(--line-2)}
+  .ficha div:last-child{border-bottom:none}
+  .ficha b{background:var(--surface-2);padding:8px 12px;font-weight:600;font-size:13px}
+  .ficha span{padding:8px 12px;font-size:13px}
+
+  .nota{background:var(--copper-tint);border:1px solid var(--copper-line);
+    border-radius:6px;padding:12px 15px;margin:14px 0;font-size:13px}
+  .nota b{color:var(--copper-deep)}
+  .pie{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);
+    font-size:11.5px;color:var(--muted);line-height:1.55}
+  .mono{font-family:var(--mono);font-size:.92em}
+
+  @page{size:letter;margin:14mm 0}
+  @media print{
+    body{font-size:11.5pt}
+    .hero{margin-bottom:22px}
+    h2{break-after:avoid}
+    table,.ficha,.nota{break-inside:avoid}
+    tr{break-inside:avoid}
+  }
+</style>
+
+<header class="hero">
+  <div class="in">
+    <div class="kicker">Cotización de desarrollo</div>
+    <h1>Plataforma de Control de Enajenación de Chatarra y Venta de Componentes Obsoletos</h1>
+    <p class="sub">Sociedad de Procesamientos Industriales S.A. — Alcance completo, cuatro fases entregables</p>
+    <div class="quien">
+      <b>Ariel Beroíza</b> · Ingeniero de Software — Consultor Senior<br>
+      beroiza.ariel@gmail.com · +56 9 9545 5073 · Santiago, Chile
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="ficha">
+  <div><b>Cliente</b><span>Sociedad de Procesamientos Industriales S.A. — RUT 76.010.722-0</span></div>
+  <div><b>Documento base</b><span>Especificación de Requerimientos (MEL)</span></div>
+  <div><b>Preparado por</b><span>Ariel Beroíza</span></div>
+  <div><b>Fecha de emisión</b><span>16 de septiembre de 2026</span></div>
+  <div><b>Modalidad</b><span>Precio cerrado por fase</span></div>
+  <div><b>Moneda</b><span>Pesos chilenos (CLP). Precio fijo, no reajustable durante la vigencia del proyecto</span></div>
+  <div><b>Versión</b><span>3.0</span></div>
+</div>
+
+<h2>1. Resumen ejecutivo</h2>
+<p>El contrato de enajenación de chatarra entre Minera Escondida Limitada y Sociedad de Procesamientos
+Industriales S.A. requiere una plataforma nueva —no existe un sistema previo a reemplazar— que controle
+de extremo a extremo dos procesos de negocio hoy gestionados de forma fragmentada: la enajenación de
+chatarra industrial y la venta de componentes obsoletos.</p>
+<p>Esta propuesta cubre el alcance funcional descrito en la Especificación de Requerimientos, con las
+exclusiones detalladas en la Sección 10. La Sección 3 entrega la trazabilidad línea por línea entre cada
+requerimiento de la Especificación y la fase que lo implementa.</p>
+<p>La solución es una única aplicación web responsive, accesible desde escritorio y navegador móvil, con
+seis perfiles de usuario diferenciados, repositorio documental con versionado para cada hito del proceso,
+portal público de venta de componentes y paneles de indicadores para ambos procesos.</p>
+<p>El esfuerzo estimado es de <strong>300 horas</strong> distribuidas en cuatro fases entregables de forma
+independiente, con una duración aproximada de <strong>12 semanas calendario</strong>. La inversión total,
+incluida la infraestructura del primer año, es de <strong>$9.280.203</strong>. Los honorarios de desarrollo
+no llevan IVA: el servicio se presta como persona natural y se documenta con boleta de honorarios.</p>
+
+<h2>2. Alcance funcional por fases</h2>
+<p>El proyecto se estructura en cuatro fases consecutivas. Cada fase es un producto funcional que se
+despliega, se valida y se paga antes de iniciar la siguiente, lo que permite a Soproin avanzar por etapas con
+control sobre cada hito.</p>
+<p><strong>Dependencia entre fases:</strong> la Fase 1 construye la base técnica —modelo de datos,
+autenticación, roles, identidad visual y adaptación móvil— sobre la que operan todas las demás. Por eso el
+diseño de interfaz y el responsive no son etapas separadas al final, sino parte del cimiento que se entrega
+desde la primera fase.</p>
+
+<h3>Fase 1 — MVP: Base de plataforma + Proceso de chatarra</h3>
+<p>Entrega la infraestructura del sistema y el proceso de enajenación de chatarra operando de punta a
+punta, desde el retiro en patios hasta el estado de pago aprobado y conciliado.</p>
+<h4>Base técnica y de diseño (transversal a todo el sistema)</h4>
+<ul>
+  <li>Modelo de datos maestro: patios, categorías de material, componentes, contratos, vendors y tabla de precios por categoría.</li>
+  <li>Autenticación con roles y permisos granulares por acción y por módulo, sobre políticas de seguridad a nivel de fila (RLS).</li>
+  <li>Seis perfiles de usuario: Empresa de limpieza de patios, Vendor de chatarra, ITO, Coordinador Logístico MEL, Administrador de Plataforma de Venta Web y Comprador externo autoregistrado.</li>
+  <li>Bitácora de auditoría: registro inmutable de quién hizo qué y cuándo sobre cada documento, despacho y aprobación.</li>
+  <li>Propuesta de identidad visual, sistema de diseño (tipografía, paleta, biblioteca de componentes) y prototipos navegables de las pantallas principales, dado que la Especificación indica que no existe branding previo.</li>
+  <li>Diseño responsive: la aplicación se adapta a escritorio y dispositivo móvil, con compatibilidad en navegadores actuales.</li>
+</ul>
+<h4>Proceso de enajenación de chatarra</h4>
+<ul>
+  <li>Programa de limpieza de patios: planificación semanal, asignación a la empresa contratista y seguimiento de cumplimiento.</li>
+  <li>Registro de despachos y recepciones con evidencia asociada (peso, fotografías, guía vinculada).</li>
+  <li>Valorización automática de la carga por categoría de material, según la tabla de precios vigente del contrato.</li>
+  <li>Generación automática del Estado de Pago mensual a partir de los despachos valorizados del período.</li>
+  <li>Flujo de aprobación multinivel con estados, rechazos con observación y trazabilidad completa.</li>
+  <li>Registro de descuentos aplicados y conciliación de los pagos recibidos desde el vendor contra el estado de pago aprobado.</li>
+</ul>
+
+<h3>Fase 2 — Control documental de chatarra</h3>
+<p>Añade el repositorio documental completo del proceso de chatarra, vinculado a los hitos ya construidos
+en la Fase 1.</p>
+<ul>
+  <li>Repositorio con carga, versionado, control de vencimientos y vinculación al hito de proceso correspondiente.</li>
+  <li>Cubre los nueve tipos documentales de la Especificación: contratos con vendor, guías de despacho, guías de venta, estados de pago, registros de descuentos, facturas de venta, registros de pago desde el vendor, certificados de disposición final y comprobantes de baja del activo (scrap).</li>
+</ul>
+
+<h3>Fase 3 — Componentes obsoletos + Portal público de venta</h3>
+<p>Incorpora el segundo proceso de negocio completo, incluido el portal web público donde los compradores
+externos consultan publicaciones y presentan ofertas.</p>
+<h4>Logística de componentes obsoletos</h4>
+<ul>
+  <li>Planificación de venta y ubicación de cada componente en terreno (patio, sector, coordenada o referencia).</li>
+  <li>Registro de despachos y recepciones, con bandeja de pendientes de entrega y alertas.</li>
+</ul>
+<h4>Portal público y gestión de ofertas</h4>
+<ul>
+  <li>Publicación de componentes en portal web público: ficha técnica, fotografías, condiciones y plazo de la publicación.</li>
+  <li>Control automático de tiempos de publicación.</li>
+  <li>Regla de negocio crítica: todo componente que supere los 15 días publicado sin adjudicar se convierte automáticamente en chatarra y pasa al flujo de enajenación de la Fase 1.</li>
+  <li>Registro de compradores, recepción de ofertas y cuadro comparativo de ofertas.</li>
+  <li>Matriz de evaluación configurable con criterios ponderables y emisión del certificado de adjudicación.</li>
+</ul>
+<h4>Pagos y control documental de obsoletos</h4>
+<ul>
+  <li>Registro de pagos por transferencia, cálculo y control de la comisión de venta al vendor, y baja de los componentes del activo fijo.</li>
+  <li>Repositorio y flujo documental para: memos firmados, due diligence del comprador, registro de ofertas, certificado de adjudicación, matriz de evaluación, guías de despacho, guías de venta, certificado de entrega de componentes, facturas de venta, pagos por transferencia, comisión de venta al vendor, bajas del activo fijo, conversión a chatarra y disposición final.</li>
+</ul>
+
+<h3>Fase 4 — Paneles de indicadores y reportería</h3>
+<p>Cierra el proyecto con los paneles de indicadores de gestión de ambos procesos y la reportería exportable.</p>
+<ul>
+  <li>KPI de Despachos y KPI de Pagos para el proceso de chatarra.</li>
+  <li>Panel de indicadores del proceso de obsoletos: tiempos de publicación, tasa de adjudicación, conversión a chatarra e ingresos por venta.</li>
+  <li>Exportación de todos los reportes a Excel y PDF.</li>
+</ul>
+
+<h2>3. Trazabilidad con la Especificación de Requerimientos</h2>
+<p>Cada requerimiento listado en la Especificación de Requerimientos de MEL, con la fase que lo implementa.</p>
+<table class="marco">
+  <thead><tr><th>Proceso de enajenación de chatarra</th><th class="num">Fase</th></tr></thead>
+  <tbody>
+    <tr><td>Programa de limpieza de patios</td><td class="num">Fase 1</td></tr>
+    <tr><td>Despachos y recepciones</td><td class="num">Fase 1</td></tr>
+    <tr><td>Valorización de carga por categoría</td><td class="num">Fase 1</td></tr>
+    <tr><td>Creación de estados de pago mensual</td><td class="num">Fase 1</td></tr>
+    <tr><td>Flujo de aprobación de estado de pago</td><td class="num">Fase 1</td></tr>
+    <tr><td>Contratos con vendor</td><td class="num">Fase 2</td></tr>
+    <tr><td>Guías de despacho y guías de venta</td><td class="num">Fase 2</td></tr>
+    <tr><td>Estados de pago (documental)</td><td class="num">Fase 2</td></tr>
+    <tr><td>Registros de descuentos</td><td class="num">Fase 1 + Fase 2</td></tr>
+    <tr><td>Facturas de venta</td><td class="num">Fase 2</td></tr>
+    <tr><td>Registros de pagos desde vendor</td><td class="num">Fase 1 + Fase 2</td></tr>
+    <tr><td>Certificados de disposición final</td><td class="num">Fase 2</td></tr>
+    <tr><td>Baja del activo (scrap)</td><td class="num">Fase 2</td></tr>
+    <tr><td>KPI de Despachos</td><td class="num">Fase 4</td></tr>
+    <tr><td>KPI de Pagos</td><td class="num">Fase 4</td></tr>
+  </tbody>
+</table>
+<table class="marco">
+  <thead><tr><th>Proceso de venta de componentes obsoletos</th><th class="num">Fase</th></tr></thead>
+  <tbody>
+    <tr><td>Planificación de venta de componentes obsoletos</td><td class="num">Fase 3</td></tr>
+    <tr><td>Ubicación de componentes en terreno</td><td class="num">Fase 3</td></tr>
+    <tr><td>Despachos y recepciones</td><td class="num">Fase 3</td></tr>
+    <tr><td>Pendientes de entrega</td><td class="num">Fase 3</td></tr>
+    <tr><td>Publicación de componentes en plataforma web</td><td class="num">Fase 3</td></tr>
+    <tr><td>Control de tiempos de publicación</td><td class="num">Fase 3</td></tr>
+    <tr><td>Comparación de ofertas</td><td class="num">Fase 3</td></tr>
+    <tr><td>Memos firmados y due diligence</td><td class="num">Fase 3</td></tr>
+    <tr><td>Registro de ofertas</td><td class="num">Fase 3</td></tr>
+    <tr><td>Certificado de adjudicación de componentes</td><td class="num">Fase 3</td></tr>
+    <tr><td>Matriz de evaluación</td><td class="num">Fase 3</td></tr>
+    <tr><td>Guías de despacho y guías de venta</td><td class="num">Fase 3</td></tr>
+    <tr><td>Certificado de entrega de componentes</td><td class="num">Fase 3</td></tr>
+    <tr><td>Facturas de venta</td><td class="num">Fase 3</td></tr>
+    <tr><td>Pagos por transferencias</td><td class="num">Fase 3</td></tr>
+    <tr><td>Pago de comisión de venta a vendor</td><td class="num">Fase 3</td></tr>
+    <tr><td>Bajas de componentes del activo fijo</td><td class="num">Fase 3</td></tr>
+    <tr><td>Conversión a chatarra (&gt;15 días de publicación)</td><td class="num">Fase 3</td></tr>
+    <tr><td>Disposición final</td><td class="num">Fase 3</td></tr>
+    <tr><td>Panel de indicadores de obsoletos</td><td class="num">Fase 4</td></tr>
+  </tbody>
+</table>
+<table class="marco">
+  <thead><tr><th>Requisitos transversales</th><th class="num">Fase</th></tr></thead>
+  <tbody>
+    <tr><td>Seis roles con niveles de permisos diferenciados</td><td class="num">Fase 1</td></tr>
+    <tr><td>Plataforma web y móvil</td><td class="num">Fase 1 (responsive)</td></tr>
+    <tr><td>Propuesta de branding, mockups y guía de estilo</td><td class="num">Fase 1</td></tr>
+    <tr><td>Modelo de datos (no existe previamente)</td><td class="num">Fase 1</td></tr>
+  </tbody>
+</table>
+
+<h2>4. Roles y perfiles de usuario</h2>
+<p>Control de acceso basado en roles (RBAC), implementado con políticas de seguridad a nivel de fila. Cada
+perfil ve y opera únicamente lo que su función requiere.</p>
+<table class="marco">
+  <thead><tr><th style="width:36%">Rol</th><th>Descripción y alcance en la plataforma</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Empresa limpieza de patios</strong></td><td>Consulta el programa semanal, registra retiros de chatarra y adjunta evidencia de patio.</td></tr>
+    <tr><td><strong>Empresa vendor de chatarra</strong></td><td>Consulta despachos valorizados, revisa el estado de pago y carga comprobantes de pago.</td></tr>
+    <tr><td><strong>ITO</strong></td><td>Controla el proceso completo de enajenación: valida despachos y recepciones, aplica descuentos y prepara el estado de pago.</td></tr>
+    <tr><td><strong>Coordinador logístico MEL</strong></td><td>Dueño del proceso. Aprueba o rechaza estados de pago, autoriza bajas de activo y accede a todos los paneles.</td></tr>
+    <tr><td><strong>Administrador de Plataforma de Venta Web</strong></td><td>Publica componentes en el portal público, gestiona ofertas, aplica la matriz de evaluación y emite el certificado de adjudicación.</td></tr>
+    <tr><td><strong>Comprador</strong></td><td>Usuario externo autoregistrado. Consulta publicaciones, presenta ofertas y sigue el estado de su adjudicación.</td></tr>
+  </tbody>
+</table>
+
+<h2>5. Estimación de horas por fase</h2>
+<p>Valor hora de desarrollo: <strong>$29.750 CLP</strong>. La estimación corresponde a horas de trabajo
+efectivo de arquitectura, diseño, construcción, integración y pruebas, e incluye las instancias de validación
+con Soproin propias de cada fase. Al ser precio cerrado por fase, <strong>estas horas son la base del precio
+y no se refacturan si el esfuerzo real resulta mayor</strong>.</p>
+<table class="marco">
+  <thead><tr><th>Fase / Ítem de desarrollo</th><th class="num">Horas</th><th class="num">Subtotal</th></tr></thead>
+  <tbody>
+    <tr class="sec"><td>FASE 1 — MVP: Base de plataforma + Chatarra</td><td class="num">148</td><td class="num">$ 4.403.000</td></tr>
+    <tr><td>Núcleo, autenticación, seis roles, RBAC y bitácora de auditoría</td><td class="num">30</td><td class="num">$ 892.500</td></tr>
+    <tr><td>Diseño UX/UI, sistema de diseño y prototipos navegables</td><td class="num">24</td><td class="num">$ 714.000</td></tr>
+    <tr><td>Responsive móvil y compatibilidad de navegadores</td><td class="num">8</td><td class="num">$ 238.000</td></tr>
+    <tr><td>Programa de limpieza de patios y seguimiento de cumplimiento</td><td class="num">10</td><td class="num">$ 297.500</td></tr>
+    <tr><td>Despachos y recepciones con evidencia</td><td class="num">18</td><td class="num">$ 535.500</td></tr>
+    <tr><td>Valorización automática por categoría de material</td><td class="num">10</td><td class="num">$ 297.500</td></tr>
+    <tr><td>Estados de pago mensuales y flujo de aprobación multinivel</td><td class="num">24</td><td class="num">$ 714.000</td></tr>
+    <tr><td>Descuentos y conciliación de pagos del vendor</td><td class="num">8</td><td class="num">$ 238.000</td></tr>
+    <tr><td>QA, despliegue y capacitación (Fase 1)</td><td class="num">16</td><td class="num">$ 476.000</td></tr>
+    <tr class="sec"><td>FASE 2 — Control documental de chatarra</td><td class="num">30</td><td class="num">$ 892.500</td></tr>
+    <tr><td>Repositorio documental con versionado y vencimientos (9 tipos)</td><td class="num">24</td><td class="num">$ 714.000</td></tr>
+    <tr><td>QA e integración (Fase 2)</td><td class="num">6</td><td class="num">$ 178.500</td></tr>
+    <tr class="sec"><td>FASE 3 — Componentes obsoletos + Portal público</td><td class="num">98</td><td class="num">$ 2.915.500</td></tr>
+    <tr><td>Logística de componentes obsoletos y pendientes de entrega</td><td class="num">16</td><td class="num">$ 476.000</td></tr>
+    <tr><td>Portal público de venta y control de tiempos de publicación</td><td class="num">28</td><td class="num">$ 833.000</td></tr>
+    <tr><td>Ofertas, cuadro comparativo, matriz de evaluación y adjudicación</td><td class="num">24</td><td class="num">$ 714.000</td></tr>
+    <tr><td>Pagos, comisión al vendor y bajas de activo fijo</td><td class="num">10</td><td class="num">$ 297.500</td></tr>
+    <tr><td>Control documental de obsoletos (14 tipos)</td><td class="num">10</td><td class="num">$ 297.500</td></tr>
+    <tr><td>QA, despliegue y capacitación (Fase 3)</td><td class="num">10</td><td class="num">$ 297.500</td></tr>
+    <tr class="sec"><td>FASE 4 — Paneles de indicadores y reportería</td><td class="num">24</td><td class="num">$ 714.000</td></tr>
+    <tr><td>Paneles de indicadores y reportería (Excel y PDF)</td><td class="num">16</td><td class="num">$ 476.000</td></tr>
+    <tr><td>QA final, puesta en marcha y capacitación de los seis perfiles</td><td class="num">8</td><td class="num">$ 238.000</td></tr>
+    <tr class="tot"><td>TOTAL DESARROLLO</td><td class="num">300</td><td class="num">$ 8.925.000</td></tr>
+  </tbody>
+</table>
+
+<h2>6. Inversión</h2>
+<h3>6.1 Desarrollo, por fase</h3>
+<p>Cada fase se factura y se paga de forma independiente, contra su entrega y validación. Soproin puede
+detener el proyecto entre fases sin penalización, conservando en producción todo lo entregado y pagado
+hasta ese punto.</p>
+<table class="marco">
+  <thead><tr><th>Fase</th><th class="num">Horas</th><th class="num">Monto</th></tr></thead>
+  <tbody>
+    <tr><td>Fase 1 — MVP: Base + Chatarra</td><td class="num">148</td><td class="num">$ 4.403.000</td></tr>
+    <tr><td>Fase 2 — Documental de chatarra</td><td class="num">30</td><td class="num">$ 892.500</td></tr>
+    <tr><td>Fase 3 — Obsoletos + Portal público</td><td class="num">98</td><td class="num">$ 2.915.500</td></tr>
+    <tr><td>Fase 4 — Indicadores y reportería</td><td class="num">24</td><td class="num">$ 714.000</td></tr>
+    <tr class="tot"><td>TOTAL DESARROLLO</td><td class="num">300</td><td class="num">$ 8.925.000</td></tr>
+  </tbody>
+</table>
+
+<h3>6.2 Infraestructura</h3>
+<table class="marco">
+  <thead><tr><th>Concepto</th><th class="num">Monto anual</th><th class="num">Periodicidad</th></tr></thead>
+  <tbody>
+    <tr><td>Registro de dominio y configuración DNS (.cl o .com)</td><td class="num">$ 22.015</td><td class="num">Anual</td></tr>
+    <tr><td>Infraestructura gestionada (base de datos PostgreSQL, autenticación, storage documental, respaldos y aplicación web)</td><td class="num">$ 333.188</td><td class="num">Anual</td></tr>
+    <tr class="tot"><td>SUBTOTAL INFRAESTRUCTURA</td><td class="num">$ 355.203</td><td class="num"></td></tr>
+  </tbody>
+</table>
+
+<h3>6.3 Total de la inversión</h3>
+<table class="marco">
+  <thead><tr><th>Concepto</th><th class="num">Monto</th></tr></thead>
+  <tbody>
+    <tr><td>Desarrollo de la plataforma (300 h × $29.750) — pago único</td><td class="num">$ 8.925.000</td></tr>
+    <tr><td>Infraestructura, primer año (incluye IVA)</td><td class="num">$ 355.203</td></tr>
+    <tr class="tot"><td>TOTAL A PAGAR</td><td class="num">$ 9.280.203</td></tr>
+  </tbody>
+</table>
+<div class="nota"><b>Nota sobre recurrencia:</b> el desarrollo es un pago único. El dominio y la
+infraestructura son servicios anuales que se renuevan cada 12 meses al valor vigente; el primer año está
+incluido en el total indicado. Todos los valores están expresados en pesos chilenos y son <b>fijos y no
+reajustables</b> durante la ejecución del proyecto.</div>
+
+<h2>7. Plazos de entrega</h2>
+<p>El proyecto se ejecuta con un único consultor senior responsable de extremo a extremo: arquitectura,
+modelo de datos, diseño, construcción y puesta en marcha. Esa continuidad elimina el tiempo que en un
+equipo se consume en coordinación, traspasos y alineamiento entre perfiles, y hace que las decisiones
+técnicas se tomen una sola vez y sin intermediarios.</p>
+<p>El calendario se apoya además en la entrega por fases: Soproin no espera al cierre del proyecto para
+obtener valor. Al término de la Fase 1, en la semana 6, el proceso completo de enajenación de chatarra ya
+está operando en producción, y cada fase siguiente construye sobre una plataforma que ya funciona.</p>
+<table class="marco">
+  <thead><tr><th>Fase</th><th>Duración</th><th>Entregable de la fase</th><th class="num">Horas</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Fase 1</strong></td><td>Semanas 1–6</td><td>Base técnica (modelo de datos, autenticación, seis roles, auditoría), identidad visual, sistema de diseño, prototipos, responsive y proceso de chatarra completo hasta el estado de pago aprobado y conciliado. MVP en producción.</td><td class="num">148</td></tr>
+    <tr><td><strong>Fase 2</strong></td><td>Semana 7</td><td>Repositorio documental completo del proceso de chatarra, con versionado y vencimientos, integrado a los hitos de la Fase 1.</td><td class="num">30</td></tr>
+    <tr><td><strong>Fase 3</strong></td><td>Semanas 8–11</td><td>Logística de obsoletos, portal público de venta con control de 15 días y conversión automática a chatarra, gestión de ofertas, matriz de evaluación, pagos y documental de obsoletos.</td><td class="num">98</td></tr>
+    <tr><td><strong>Fase 4</strong></td><td>Semana 12</td><td>Paneles de indicadores de ambos procesos, exportación a Excel y PDF, QA final, despliegue y capacitación de los seis perfiles.</td><td class="num">24</td></tr>
+    <tr class="tot"><td><strong>Total</strong></td><td>≈ 12 semanas</td><td></td><td class="num">300 h</td></tr>
+  </tbody>
+</table>
+<p>El calendario comienza a correr desde la aceptación de la cotización y la recepción de la información
+indicada en la Sección 9, y considera una dedicación semanal comprometida y sostenida durante todo el
+proyecto. Las fases 2 y 3 admiten solapamiento parcial, lo que puede adelantar el cierre. <strong>Las demoras
+en validaciones, aprobaciones o entrega de credenciales por parte de Soproin desplazan el calendario en la
+misma proporción.</strong></p>
+
+<h2>8. Arquitectura y requisitos no funcionales</h2>
+<table class="marco">
+  <tbody>
+    <tr><td style="width:32%"><strong>Base de datos y backend</strong></td><td>PostgreSQL gestionado, con autenticación, políticas de seguridad a nivel de fila (RLS) para los permisos por rol y almacenamiento documental cifrado.</td></tr>
+    <tr><td><strong>Frontend</strong></td><td>Aplicación web en React, responsive, accesible desde escritorio y navegador móvil. Portal público de venta con acceso sin credenciales para consulta y registro de compradores.</td></tr>
+    <tr><td><strong>Seguridad</strong></td><td>Control de acceso por roles, cifrado en tránsito y en reposo, aislamiento del entorno, bitácora de auditoría inmutable sobre pagos, despachos, aprobaciones y bajas de activo.</td></tr>
+    <tr><td><strong>Respaldos</strong></td><td>Respaldo automático diario de base de datos y archivos, con retención configurable y recuperación a punto en el tiempo.</td></tr>
+    <tr><td><strong>Navegadores objetivo</strong></td><td>Versiones actuales de Chrome, Edge, Safari y Firefox. No se da soporte a Internet Explorer.</td></tr>
+    <tr><td><strong>Escalamiento</strong></td><td>La infraestructura gestionada permite escalar cómputo y almacenamiento sin migración ni reinstalación, en función del crecimiento real del volumen de datos y transacciones.</td></tr>
+    <tr><td><strong>Migración de datos</strong></td><td>La Especificación indica que es una solución nueva y no declara migración ni modelo de datos previo. El modelo se diseña desde cero en la Fase 1.</td></tr>
+  </tbody>
+</table>
+<p style="font-size:12px;color:var(--muted)">Los volúmenes de usuarios totales, usuarios concurrentes y
+transacciones no fueron especificados. Se dimensiona la infraestructura para una operación de escala
+corporativa media y se ajusta el plan si los volúmenes reales resultaran significativamente mayores.</p>
+
+<h2>9. Información y accesos requeridos de Soproin</h2>
+<p>Para iniciar el proyecto y sostener el calendario comprometido, se requiere de Soproin lo siguiente.</p>
+<h4>Antes de iniciar la Fase 1</h4>
+<ul>
+  <li>Contraparte técnica y contraparte de negocio designadas, con disponibilidad para validar entregables semanalmente.</li>
+  <li>Contrato vigente con el vendor de chatarra y con la empresa de limpieza de patios, para modelar correctamente las reglas de valorización y los hitos de pago.</li>
+  <li>Tabla de categorías de material y precios por categoría.</li>
+  <li>Definición del flujo de aprobación del estado de pago: quién aprueba, en qué orden, con qué facultades y qué ocurre ante un rechazo.</li>
+  <li>Estructura de la matriz de evaluación de ofertas y sus criterios de ponderación.</li>
+  <li>Volúmenes esperados: usuarios totales, usuarios concurrentes y estimación de transacciones mensuales (la Especificación dejó estos campos en blanco).</li>
+  <li>Criterios de indicadores: qué métricas se esperan en los KPI de despachos y de pagos, y con qué cortes de tiempo.</li>
+</ul>
+<h4>Antes de la Fase 4</h4>
+<ul>
+  <li>Definición de las métricas y cortes de tiempo definitivos de cada panel de indicadores, validados por la contraparte de negocio.</li>
+  <li>Formato esperado de los reportes exportables a Excel y PDF.</li>
+</ul>
+
+<h2>10. Supuestos y exclusiones</h2>
+<h3>10.1 Supuestos</h3>
+<ul>
+  <li>La Fase 1 constituye el producto mínimo funcional. La Especificación no define un MVP; se propone esta división y Soproin puede reordenar, combinar o postergar fases, ajustándose el precio y el plazo en consecuencia.</li>
+  <li>No hay migración de datos históricos. Si existiera un histórico a migrar (planillas Excel o sistema legado), se cotiza por separado.</li>
+  <li>«Web y móvil» se interpreta como aplicación web responsive, accesible desde navegador en escritorio y en dispositivo móvil, sin necesidad de instalar nada. No se contemplan aplicaciones nativas para iOS o Android.</li>
+  <li>El «control de pagos» del proceso de obsoletos y el «panel de indicadores» de obsoletos quedaron sin detallar en la Especificación. Se implementan según lo descrito en las Fases 3 y 4 de esta propuesta, sujeto a confirmación en el kickoff.</li>
+  <li>Volúmenes moderados de usuarios y transacciones, a confirmar según la Sección 9.</li>
+</ul>
+<h3>10.2 Exclusiones</h3>
+<ul>
+  <li>Integración con la API del SII (Acepta). No forma parte de esta etapa. Los documentos tributarios se cargan manualmente al repositorio documental, en el mismo flujo del resto de los documentos del proceso.</li>
+  <li>Certificado digital de autenticación ante el SII y cualquier costo comercial de plataformas de terceros asociadas.</li>
+  <li>Aplicaciones móviles nativas publicadas en App Store o Google Play. La plataforma es una aplicación web responsive, accesible desde navegador en escritorio y en dispositivo móvil.</li>
+  <li>Integración con ERP u otros sistemas internos de MEL. La Especificación no los menciona; si existen, se cotizan aparte.</li>
+  <li>Migración de datos históricos.</li>
+  <li>Producción de contenido: fotografías de componentes, fichas técnicas y textos comerciales del portal público.</li>
+  <li>Soporte y evolución posteriores al período incluido en la Sección 11.</li>
+</ul>
+
+<h2>11. Garantía, soporte y condiciones comerciales</h2>
+<h3>11.1 Garantía</h3>
+<p>Se incluyen <strong>90 días de garantía</strong> desde la puesta en marcha de cada fase, cubriendo la
+corrección sin costo de cualquier defecto o comportamiento que no corresponda a lo especificado en la
+Sección 2. La garantía no cubre nuevas funcionalidades ni cambios de alcance solicitados después de la
+entrega.</p>
+
+<h3>11.2 Soporte y mantención incluidos</h3>
+<p>Se incluyen sin costo adicional <strong>3 meses de soporte y mantención evolutiva</strong> posteriores a
+la puesta en marcha de la Fase 4, con una bolsa de 8 horas mensuales para ajustes, consultas, correcciones
+menores y acompañamiento a los usuarios. Las horas no utilizadas en un mes se acumulan dentro del
+período. Finalizado ese plazo, se puede contratar un plan mensual o trabajar por bolsa de horas al valor
+vigente.</p>
+
+<h3>11.3 Forma de pago</h3>
+<p>El desarrollo se paga por fase. Cada fase se factura en dos momentos: un anticipo para iniciarla y el
+saldo contra su entrega, validación y puesta en producción.</p>
+<ul>
+  <li>Anticipo de cada fase: <strong>40%</strong> al inicio de la fase.</li>
+  <li>Saldo de cada fase: <strong>60%</strong> contra la entrega, validación y puesta en producción de esa fase.</li>
+  <li>Infraestructura (dominio y servicios gestionados): se paga junto con el anticipo de la Fase 1, ya que el MVP se despliega sobre ella.</li>
+</ul>
+<p><strong>Soproin puede detener el proyecto entre fases sin penalización</strong>, conservando en
+producción y en propiedad todo lo entregado y pagado hasta ese punto. Cada fase es un producto funcional
+autónomo.</p>
+
+<h3>11.4 Propiedad intelectual</h3>
+<p>Pagada cada fase, <strong>Sociedad de Procesamientos Industriales S.A. es la única propietaria</strong>
+del código fuente, del modelo de datos y de los activos de diseño de esa fase, sin reserva alguna sobre la
+lógica de negocio ni sobre los componentes desarrollados para el proyecto. Se entrega el repositorio
+completo, la documentación técnica y las credenciales de la infraestructura. La única excepción son las
+librerías de terceros de código abierto, que se rigen por sus propias licencias.</p>
+
+<h3>11.5 Control de cambios</h3>
+<p>Toda solicitud que amplíe el alcance definido en la Sección 2 se documenta, se estima en horas y se
+aprueba por escrito antes de ejecutarse, al valor hora vigente de $29.750. Los ajustes de detalle dentro del
+alcance ya definido no generan cobro adicional.</p>
+
+<h2>12. Próximo paso</h2>
+<p>Se propone una reunión de 45 minutos para cerrar los puntos que la Especificación dejó abiertos: los
+volúmenes de usuarios y transacciones esperados, el detalle del control de pagos del proceso de obsoletos
+y las métricas esperadas en los paneles de indicadores. Con esas respuestas el alcance y el calendario
+quedan cerrados y la Fase 1 puede iniciar de inmediato.</p>
+
+<div class="pie">
+  Ariel Beroíza · Ingeniero de Software — Consultor Senior · beroiza.ariel@gmail.com · +56 9 9545 5073 · Santiago, Chile<br>
+  Cotización v3.0 · 16 de septiembre de 2026 · Sociedad de Procesamientos Industriales S.A. — RUT 76.010.722-0
+</div>
+
+</div>
