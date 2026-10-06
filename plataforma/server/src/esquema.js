@@ -46,6 +46,8 @@ export const tiene = {
   // db/0013_fase2_obs.sql
   acta_entrega: false,        // adjudicaciones.entrega_docs
   desp_componente: false,     // despachos.componente_id
+  // db/0014_despacho_obs.sql
+  desp_obs: false,            // despachos.observacion
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -66,6 +68,7 @@ const ORIGEN = {
   edp_respaldo: '0011_edp.sql', edp_acumulado: '0011_edp.sql',
   clave_inicial: '0012_clave.sql',
   acta_entrega: '0013_fase2_obs.sql', desp_componente: '0013_fase2_obs.sql',
+  desp_obs: '0014_despacho_obs.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -130,6 +133,7 @@ export async function detectarEsquema() {
 
   tiene.acta_entrega    = tiene.obsoletos && (await existe('adjudicaciones', 'entrega_docs'));
   tiene.desp_componente = tiene.obsoletos && (await existe('despachos', 'componente_id'));
+  tiene.desp_obs        = await existe('despachos', 'observacion');
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {
