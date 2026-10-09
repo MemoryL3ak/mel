@@ -11,6 +11,7 @@ import { tiene } from '../esquema.js';
 import { contrato } from '../contrato.js';
 import { enviarCorreo, plantilla } from '../mail.js';
 import { convertirAChatarra } from '../jobs.js';
+import { registrarArchivos } from '../documental.js';
 
 const r = Router();
 const OP = auth('coordinador', 'admin_venta');
@@ -41,19 +42,26 @@ const CAMPOS_COMP = [{ name: 'fotos', maxCount: 4 }, { name: 'ficha', maxCount: 
 const ACTA = { ...IMG, 'application/pdf': 'pdf' };
 const subirActa = multer({
   storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',   // el nombre original pasa al repositorio documental
   limits: { files: 3, fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, f, cb) => cb(null, !!ACTA[f.mimetype]),
 });
-async function subirDocEntrega(adjId, archivos = []) {
+// El acta también queda en el repositorio documental como certificado de entrega.
+async function subirDocEntrega(adjId, archivos = [], quien = null) {
   let n = 0;
   const marca = Date.now();
+  const subidos = [];
   for (const f of archivos) {
     const ext = ACTA[f.mimetype];
     if (!ext) continue;
-    const { error } = await supa.storage.from('evidencia')
-      .upload(`ENT/${adjId}/acta-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    const path = `ENT/${adjId}/acta-${marca}-${n + 1}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
     if (error) { console.error('[GEA] acta de entrega:', error.message); continue; }
+    subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
     n++;
+  }
+  if (subidos.length) {
+    await registrarArchivos({ tipo: 'ob_cert_entrega', hito: 'adjudicacion', refId: adjId, archivos: subidos, quien });
   }
   return n;
 }
@@ -96,16 +104,22 @@ async function subirFicha(componenteId, archivo) {
 const DOC_MEMO = { ...IMG, 'application/pdf': 'pdf' };
 const subirMemo = multer({
   storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',   // el nombre original pasa al repositorio documental
   limits: { files: 1, fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, f, cb) => cb(null, !!DOC_MEMO[f.mimetype]),
 });
 
-async function subirDocMemo(memoId, archivo) {
+// El memo firmado también queda en el repositorio documental.
+async function subirDocMemo(memoId, archivo, quien = null) {
   const ext = archivo && DOC_MEMO[archivo.mimetype];
   if (!ext) return 0;
-  const { error } = await supa.storage.from('evidencia')
-    .upload(`MEMO/${memoId}/memo-${Date.now()}.${ext}`, archivo.buffer, { contentType: archivo.mimetype });
+  const path = `MEMO/${memoId}/memo-${Date.now()}.${ext}`;
+  const { error } = await supa.storage.from('evidencia').upload(path, archivo.buffer, { contentType: archivo.mimetype });
   if (error) { console.error('[GEA] documento del memo:', error.message); return 0; }
+  await registrarArchivos({
+    tipo: 'ob_memo', hito: 'memo', refId: memoId, quien,
+    archivos: [{ bucket: 'evidencia', path, nombre: archivo.originalname, mime: archivo.mimetype, bytes: archivo.size }],
+  });
   return 1;
 }
 
@@ -199,7 +213,7 @@ r.post('/memos', MEL, subirMemo.single('doc'), ah(async (req, res) => {
     observaciones: (req.body?.observaciones || '').trim() || null,
     creado_por: req.user.name,
   }).select().single());
-  const n = await subirDocMemo(row.id, req.file);
+  const n = await subirDocMemo(row.id, req.file, req.user);
   if (n) await q(supa.from('memos').update({ doc: n }).eq('id', row.id).select('id').single());
   await audit(req.user.name, req.user.role, 'Cargó memo de baja',
     `${f} · ${area_usuaria}${n ? ' · documento firmado' : ' · sin documento adjunto'}`);
@@ -896,7 +910,7 @@ r.post('/adjudicaciones/:id/entrega', OP, subirActa.fields([{ name: 'acta', maxC
   if (a.estado !== 'pagada') return res.status(409).json({ error: 'Registre el pago antes de coordinar el retiro' });
   const row = await q(supa.from('adjudicaciones').update({
     estado: 'entregada', entregado_el: new Date().toISOString(), guia_folio: (req.body?.guia_folio || '').trim() || null,
-    ...(tiene.acta_entrega ? { entrega_docs: await subirDocEntrega(a.id, req.files?.acta) } : {}),
+    ...(tiene.acta_entrega ? { entrega_docs: await subirDocEntrega(a.id, req.files?.acta, req.user) } : {}),
   }).eq('id', a.id).select('*').single());
   const pub = await q(supa.from('publicaciones').select('componente_id').eq('id', a.publicacion_id).single());
   await q(supa.from('componentes').update({ estado: 'entregado' }).eq('id', pub.componente_id).select('id').single());

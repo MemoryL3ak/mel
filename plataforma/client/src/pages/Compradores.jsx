@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { Select, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import BotonDocs from '../BotonDocs.jsx';
 
 const EYEBROW = 'Fase 2 · Venta de obsoletos';
 const DD = { aprobada: ['ok', 'Aprobada'], pendiente: ['warn', 'En revisión'], rechazada: ['bad', 'Rechazada'] };
@@ -42,7 +43,10 @@ export default function Compradores() {
                 <td>{c.email}{c.telefono && <><br /><small style={{ color: 'var(--muted)' }}>{c.telefono}</small></>}</td>
                 <td className="num">{c.ofertas}</td>
                 <td><Chip tone={tono}>{txt}</Chip>{c.dd_nota && <><br /><small style={{ color: 'var(--muted)' }}>{c.dd_nota}</small></>}</td>
-                <td className="num"><button className="btn sm" onClick={() => setRev({ c, estado: c.dd_estado, nota: c.dd_nota ?? '' })}>Revisar</button></td>
+                <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                  <button className="btn sm" onClick={() => setRev({ c, estado: c.dd_estado, nota: c.dd_nota ?? '' })}>Revisar</button>{' '}
+                  <BotonDocs hito="comprador" refId={c.id} />
+                </td>
               </tr>
             );
           })}

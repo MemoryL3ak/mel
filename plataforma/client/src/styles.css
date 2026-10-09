@@ -825,3 +825,28 @@ tbody tr.tot:hover{background:var(--surface-2)}
   border:1px solid var(--warn-line);border-radius:var(--radius-s)}
 .pt-legal b{display:block;font-size:12px;letter-spacing:.04em;color:var(--warn-tx)}
 .pt-legal p{margin:6px 0 0;font-size:12.5px;line-height:1.55;color:var(--ink-2)}
+
+/* =================== REPOSITORIO DOCUMENTAL (Fase 3) =================== */
+.doc-busca{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.doc-busca .sel{min-width:230px}
+.doc-busca input{width:230px}
+.doc-versiones{display:grid;gap:9px}
+.doc-version{border:1px solid var(--line);border-radius:var(--radius-s);padding:11px 14px;background:var(--surface)}
+.doc-version.actual{border-color:var(--copper-line);background:var(--copper-tint)}
+.doc-version-h{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
+.doc-version-h small{color:var(--muted);margin-left:auto}
+.doc-version-nota{margin:6px 0 2px;font-size:13px;color:var(--ink-2)}
+.doc-version .btn{margin-top:8px}
+.doc-files{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:5px}
+.doc-files li{display:flex;gap:10px;align-items:baseline;font-size:13px;min-width:0}
+.doc-files li a,.doc-files li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.doc-files a{color:var(--copper-deep);font-weight:600;text-decoration:none}
+.doc-files a:hover{text-decoration:underline}
+.doc-files small{color:var(--muted);flex-shrink:0}
+.checks{display:flex;flex-wrap:wrap;gap:7px 16px}
+.field .checks label{display:inline-flex;align-items:center;gap:7px;margin:0;font-size:13px;font-weight:500;
+  letter-spacing:0;text-transform:none;color:var(--ink);cursor:pointer}
+.checks input{width:auto;margin:0}
+@media (max-width:720px){
+  .doc-busca,.doc-busca .sel,.doc-busca input{width:100%;min-width:0}
+}

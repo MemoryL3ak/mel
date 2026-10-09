@@ -4,6 +4,8 @@ import { Router } from 'express';
 import { supa, q, ah, hoy, semanaISO, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
 import { contrato, venceElPrecio } from '../contrato.js';
+import { tiene } from '../esquema.js';
+import { faltantes, vencimiento, puedeCargar } from '../documental.js';
 
 const r = Router();
 
@@ -98,6 +100,30 @@ r.get('/panel', auth(), ah(async (req, res) => {
   if (['limpieza', 'coordinador'].includes(rol) && !prog.length) {
     pendientes.push({ tipo: 'info', tag: 'Programa', destino: 'programa', texto: `La semana ${semana} no tiene planificación de despachos` });
   }
+
+  // Repositorio documental (Fase 3): cada perfil ve los vencimientos de lo que
+  // le toca renovar y lo exigible que todavía no se carga.
+  if (tiene.documentos && rol !== 'comprador') {
+    const [docs, tipos, falta] = await Promise.all([
+      q(supa.from('documentos').select('id, tipo, vence_el').eq('estado', 'vigente').not('vence_el', 'is', null)),
+      q(supa.from('doc_tipos').select('*')),
+      faltantes(rol),
+    ]);
+    const tipo = new Map(tipos.map((t) => [t.codigo, t]));
+    const claves = docs
+      .filter((d) => tipo.get(d.tipo) && (rol === 'coordinador' || puedeCargar(tipo.get(d.tipo), rol)))
+      .map((d) => vencimiento(d, tipo.get(d.tipo)).clave);
+    const vencidos = claves.filter((c) => c === 'vencido').length;
+    const porVencer = claves.filter((c) => c === 'por_vencer').length;
+    const sinCargar = falta.filter((f) => f.puede_cargar).length;
+    if (vencidos) pendientes.push({ tipo: 'bad', tag: 'Documentos', destino: 'documentos?f=vencido', texto: `${vencidos} documento(s) vencido(s) por renovar` });
+    if (porVencer) pendientes.push({ tipo: 'warn', tag: 'Documentos', destino: 'documentos?f=por_vencer', texto: `${porVencer} documento(s) por vencer` });
+    if (sinCargar) pendientes.push({ tipo: 'info', tag: 'Documentos', destino: 'documentos?t=pendientes', texto: `${sinCargar} documento(s) exigible(s) sin cargar` });
+  }
+  // Lo urgente primero: con el tope de seis, un vencido no puede quedar fuera
+  // por haberse agregado al final. El orden es estable dentro de cada nivel.
+  const nivel = { bad: 0, warn: 1, info: 2 };
+  pendientes.sort((a, b) => (nivel[a.tipo] ?? 3) - (nivel[b.tipo] ?? 3));
 
   const ejec = prog.filter((p) => p.estado === 'ejecutado');
   res.json({

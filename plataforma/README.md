@@ -14,6 +14,15 @@ público** de consulta y oferta (registro + due diligence para ofertar), y
 **adjudicación** con matriz de evaluación ponderada, certificado y comisión de
 venta al vendor, con flujo posterior de pago y entrega.
 
+**Fase 3: repositorio documental.** Los 9 tipos documentales de chatarra y los
+14 de obsoletos, cada documento **vinculado al hito** que respalda (guía,
+traslado, estado de pago, memo, comprador, publicación, adjudicación,
+componente o contrato), con **versiones inmutables**, **control de
+vencimientos** (aviso en el panel y por correo) y bandeja de **pendientes**:
+lo que ya debería estar cargado según el estado de cada hito. El catálogo de
+tipos (quién carga, quién consulta, si vence y cuándo es exigible) lo ajusta
+el coordinador desde la pantalla.
+
 ## Puesta en marcha
 
 1. **Crear el proyecto Supabase** (exclusivo para la plataforma; no compartir
@@ -25,6 +34,13 @@ venta al vendor, con flujo posterior de pago y entrega.
      cuadratura, rol Lampa, código interno, adjunto CDF)
    - `db/0007_obsoletos.sql` (Fase 2: obsoletos, publicaciones, ofertas, adjudicación,
      roles `admin_venta` y `comprador`, comisión al vendor)
+   - `db/0008_memos.sql` … `db/0014_despacho_obs.sql` (ajustes de las fases 1 y 2)
+   - `db/0015_documental.sql` (Fase 3: catálogo de 23 tipos documentales,
+     documentos y versiones)
+
+   Después de aplicar `0015`, desde `server/` correr `npm run indexar:documentos`:
+   registra en el repositorio las guías, certificados, respaldos, actas y memos
+   que se subieron antes. Se puede repetir sin duplicar nada.
 
    El seed carga las vigencias de precio escalonadas respecto del día de la
    carga, para que el semáforo de la pantalla de Valorización se vea con sus
@@ -70,6 +86,9 @@ client/    React + Vite — sistema de diseño GEA
 | `coordinador` | Firma/ajustes del EP, conciliación, precios, obsoletos, todo el proceso |
 | `lampa` | Confirmación (doble control) de la cuadratura, recepción en Lampa |
 | `admin_venta` | Fase 2: inventario, publicaciones, ofertas/adjudicación, compradores |
+
+Todos los perfiles internos entran al repositorio documental, y cada uno ve y
+carga solo los tipos que le asigna el catálogo (`doc_tipos`).
 | `comprador` | Portal público (registro + oferta); reservado para acceso futuro |
 
 ## Reglas de negocio implementadas
@@ -96,3 +115,20 @@ client/    React + Vite — sistema de diseño GEA
 - Adjudicación: puntajes 1–10 por criterio, ponderados por la matriz configurable;
   la matriz queda **congelada** en el certificado. Comisión al vendor = % del
   contrato sobre el monto adjudicado. Flujo posterior: pago → entrega (guía).
+
+### Fase 3 · Repositorio documental
+
+- Folio `DOC` por `next_folio`. Archivos en el bucket privado `documentos`
+  (20 MB por archivo; PDF, imagen, Excel o Word), servidos con URL firmada.
+- Cada carga es una **versión nueva**; las anteriores no se modifican ni se
+  borran. Un documento no se elimina: se **anula** con motivo (coordinador).
+- Vencimiento: vigente / por vencer (dentro del aviso del tipo) / vencido. El
+  barrido de cada 6 h avisa por correo una vez al entrar en «por vencer» y otra
+  al vencer, a quienes cargan ese tipo y al coordinador (`APP_URL` para el enlace).
+- Los flujos que ya adjuntaban archivos (guía al despachar, CDF en Lampa,
+  respaldos de descuentos, acta de entrega, memo firmado) los registran también
+  en el repositorio, sin copiarlos.
+- Pendientes: un tipo es exigible cuando su hito está en los estados que marca
+  el catálogo (p. ej. la factura del EP desde «facturado»).
+- Prueba E2E: `npm run test:documental` (firma sus propias sesiones y borra lo
+  que crea).

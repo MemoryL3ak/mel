@@ -2,16 +2,18 @@ import { createContext, useContext, useState } from 'react';
 import { api, llaves } from './api.js';
 
 // Pantallas visibles por rol — espejo del RBAC del servidor (el servidor manda).
+// El repositorio documental lo ven todos los perfiles internos: cada uno ve en
+// él solo los tipos que carga o consulta, según el catálogo de tipos.
 export const SCREENS = {
-  limpieza:    ['panel', 'programa', 'despachos'],
-  vendor:      ['panel', 'despachos', 'estados'],
-  ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria'],
+  limpieza:    ['panel', 'programa', 'despachos', 'documentos'],
+  vendor:      ['panel', 'despachos', 'estados', 'documentos'],
+  ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'documentos', 'auditoria'],
   coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria', 'usuarios',
-                'memos', 'inventario', 'publicaciones', 'ofertas', 'compradores'],
-  lampa:       ['panel', 'despachos', 'cuadratura'],
+                'memos', 'inventario', 'publicaciones', 'ofertas', 'compradores', 'documentos'],
+  lampa:       ['panel', 'despachos', 'cuadratura', 'documentos'],
   // El vendor ve el memo para saber el origen de lo que publica, pero cargarlo
   // es de MEL: la pantalla filtra las acciones de escritura por rol.
-  admin_venta: ['memos', 'inventario', 'publicaciones', 'ofertas', 'compradores'],
+  admin_venta: ['memos', 'inventario', 'publicaciones', 'ofertas', 'compradores', 'documentos'],
 };
 export const ROL_NOMBRE = {
   limpieza: 'Empresa de limpieza de patios',

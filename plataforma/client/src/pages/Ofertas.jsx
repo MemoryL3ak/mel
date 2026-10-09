@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, fmtUSD } from '../api.js';
 import { Select, Chip, Empty, Field, Modal, PageHead, Tabs, useToast } from '../ui.jsx';
+import BotonDocs from '../BotonDocs.jsx';
 
 const EYEBROW = 'Fase 2 · Venta de obsoletos';
 const DD = { aprobada: ['ok', 'Aprobada'], pendiente: ['warn', 'En revisión'], rechazada: ['bad', 'Rechazada'] };
@@ -235,7 +236,8 @@ export default function Ofertas() {
                     {a.estado === 'pagada' && <button className="btn sm primary" onClick={() => setEntrega({ id: a.id, guia: '', acta: [] })}>Registrar entrega</button>}
                     {a.estado === 'entregada' && a.entrega_docs > 0 && (
                       <button className="btn sm" onClick={() => verActa(a)}>Acta ({a.entrega_docs})</button>
-                    )}
+                    )}{' '}
+                    <BotonDocs hito="adjudicacion" refId={a.id} />
                   </td>
                 </tr>
               );

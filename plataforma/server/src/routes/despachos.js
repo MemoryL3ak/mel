@@ -8,6 +8,7 @@ import { supa, q, ah, folio, audit, precioVigente, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { valorDolar } from '../dolar.js';
+import { registrarArchivos } from '../documental.js';
 
 const r = Router();
 
@@ -108,6 +109,7 @@ export const EVIDENCIA = {
 };
 const subir = multer({
   storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',   // el nombre original pasa al repositorio documental
   limits: { files: 6, fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, f, cb) => cb(null, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(f.mimetype)),
 });
@@ -118,8 +120,11 @@ const CAMPOS_EVIDENCIA = ['guia', 'bascula', 'carga'].map((name) => ({ name, max
 const CAMPOS_TODOS = Object.keys(EVIDENCIA).map((name) => ({ name, maxCount: 2 }));
 
 // Sube los archivos de un tipo a la carpeta de la guía y devuelve cuántos entraron.
-async function subirEvidencia(despachoId, tipo, archivos = []) {
+// La guía de despacho además queda en el repositorio documental (Fase 3); el
+// ticket de báscula y las fotos de la carga son evidencia, no documentos.
+async function subirEvidencia(despachoId, tipo, archivos = [], quien = null) {
   let n = 0;
+  const subidos = [];
   // La marca de tiempo permite adjuntar en varias tandas: con un contador que
   // reinicia en cada llamada, la segunda chocaba con `guia-1` de la primera y
   // el archivo se perdia en silencio (el error solo se logueaba).
@@ -127,10 +132,14 @@ async function subirEvidencia(despachoId, tipo, archivos = []) {
   for (const f of archivos) {
     const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }[f.mimetype];
     if (!ext) continue;
-    const { error } = await supa.storage.from('evidencia')
-      .upload(`GD/${despachoId}/${tipo}-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    const path = `GD/${despachoId}/${tipo}-${marca}-${n + 1}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
     if (error) { console.error('[GEA] evidencia:', error.message); continue; }
+    subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
     n++;
+  }
+  if (tipo === 'guia' && subidos.length) {
+    await registrarArchivos({ tipo: 'ch_guia_despacho', hito: 'despacho', refId: despachoId, archivos: subidos, quien });
   }
   return n;
 }
@@ -139,16 +148,22 @@ async function subirEvidencia(despachoId, tipo, archivos = []) {
 // El nombre lleva marca de tiempo porque el documento puede adjuntarse en
 // varias tandas: con un contador que reinicia en cada llamada, la segunda
 // chocaba con `cdf-1` de la primera y el archivo se perdía en silencio.
-async function subirCDF(trasladoId, archivos = []) {
+// También queda en el repositorio documental como certificado del traslado.
+async function subirCDF(trasladoId, archivos = [], quien = null) {
   let n = 0;
   const marca = Date.now();
+  const subidos = [];
   for (const f of archivos) {
     const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }[f.mimetype];
     if (!ext) continue;
-    const { error } = await supa.storage.from('evidencia')
-      .upload(`CDF/${trasladoId}/cdf-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    const path = `CDF/${trasladoId}/cdf-${marca}-${n + 1}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
     if (error) { console.error('[GEA] CDF:', error.message); continue; }
+    subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
     n++;
+  }
+  if (subidos.length) {
+    await registrarArchivos({ tipo: 'ch_cdf', hito: 'traslado', refId: trasladoId, archivos: subidos, quien });
   }
   return n;
 }
@@ -290,7 +305,7 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
   }).select(DESP_SEL).single());
 
   for (const [tipo, lista] of Object.entries(req.files ?? {})) {
-    await subirEvidencia(row.id, tipo, lista);
+    await subirEvidencia(row.id, tipo, lista, req.user);
   }
   const resumen = Object.keys(req.files ?? {}).map((t) => EVIDENCIA[t]).join(', ');
   await audit(req.user.name, req.user.role, 'Registró despacho a La Negra',
@@ -645,7 +660,7 @@ r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'),
   let nuevos = 0;
   for (const [tipo, lista] of Object.entries(req.files ?? {})) {
     if (!EVIDENCIA[tipo] || !lista?.length) continue;
-    const n = await subirEvidencia(d.id, tipo, lista);
+    const n = await subirEvidencia(d.id, tipo, lista, req.user);
     if (n) { nuevos += n; bitacora.push(`${n} ${EVIDENCIA[tipo].toLowerCase()}`); }
   }
   if (nuevos) cambios.fotos = Number(d.fotos ?? 0) + nuevos;
@@ -692,7 +707,7 @@ r.post('/traslados/:id/recepcionar', auth('vendor', 'coordinador', 'lampa'),
 
   const cert = await folio('CDF');
   // El documento físico del CDF (PDF o foto) es opcional al recepcionar.
-  const cdfN = await subirCDF(t.id, req.files?.cdf);
+  const cdfN = await subirCDF(t.id, req.files?.cdf, req.user);
   const row = await q(supa.from('traslados').update({
     estado: 'recepcionado', kg_lampa: kg, cert_folio: cert,
     recepcionado_el: new Date().toISOString(),
@@ -715,7 +730,7 @@ r.post('/traslados/:id/cdf', auth('vendor', 'coordinador', 'lampa'),
   }
   const archivos = req.files?.cdf ?? [];
   if (!archivos.length) return res.status(400).json({ error: 'Adjunte el documento del certificado (PDF, JPG, PNG o WebP).' });
-  const n = await subirCDF(t.id, archivos);
+  const n = await subirCDF(t.id, archivos, req.user);
   if (!n) return res.status(400).json({ error: 'No se pudo adjuntar el documento. Revise el formato y que pese menos de 5 MB.' });
   if (tiene.cdf_doc) {
     await q(supa.from('traslados').update({ cert_fotos: (t.cert_fotos ?? 0) + n })
