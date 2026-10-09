@@ -18,6 +18,7 @@ import auditoria from './routes/auditoria.js';
 import usuarios from './routes/usuarios.js';
 import obsoletos from './routes/obsoletos.js';
 import portal from './routes/portal.js';
+import documentos from './routes/documentos.js';
 
 const app = express();
 // Detrás del proxy de la plataforma de hosting: el primer X-Forwarded-For es la IP real.
@@ -64,7 +65,7 @@ const portalLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes. Espere unos minutos y vuelva a intentar.' },
 });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 2 }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 3 }));
 app.post('/api/auth/login', loginLimiter, ah(login));
 // Cada quien cambia su propia contraseña; no requiere rol.
 app.post('/api/auth/password', auth(), ah(cambiarClave));
@@ -82,6 +83,7 @@ app.use('/api', auditoria);
 app.use('/api', usuarios);
 app.use('/api', obsoletos);
 app.use('/api', portal);
+app.use('/api', documentos);
 
 // Cliente compilado (producción / revisión local).
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist');
@@ -114,6 +116,10 @@ app.use((err, _req, res, _next) => {
 import { supa } from './supa.js';
 supa.storage.createBucket('evidencia', { public: false, fileSizeLimit: '5MB' })
   .then(({ error }) => { if (error && !/already exists/i.test(error.message)) console.error('[GEA] bucket evidencia:', error.message); });
+// Repositorio documental (Fase 3): contratos, facturas y actas pesan más que
+// una foto de evidencia, por eso tiene su propio bucket con un límite mayor.
+supa.storage.createBucket('documentos', { public: false, fileSizeLimit: '20MB' })
+  .then(({ error }) => { if (error && !/already exists/i.test(error.message)) console.error('[GEA] bucket documentos:', error.message); });
 
 // Migraciones aplicadas (ver src/esquema.js). Se comprueba ANTES de aceptar
 // tráfico, y por eso se espera: lanzarlo en paralelo al listen dejaba un
@@ -126,6 +132,7 @@ await detectarEsquema().catch((e) => console.error('[GEA] esquema:', e.message))
 // Barrido de la regla de 15 días de obsoletos (Fase 2): convierte a chatarra
 // las publicaciones cuyo plazo venció sin adjudicar. Corre al arrancar y cada
 // pocas horas.
+// El mismo ciclo revisa los vencimientos del repositorio documental (Fase 3).
 import { iniciarBarridoObsoletos } from './jobs.js';
 iniciarBarridoObsoletos();
 

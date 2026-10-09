@@ -14,6 +14,7 @@ import { supa, q, ah, audit, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
 import { contrato } from '../contrato.js';
 import { tiene } from '../esquema.js';
+import { registrarArchivos } from '../documental.js';
 
 const r = Router();
 
@@ -109,6 +110,23 @@ r.get('/eps', auth('vendor', 'ito', 'coordinador'), ah(async (_req, res) => {
   res.json({ eps: out.reverse(), contrato: cfg });
 }));
 
+// N° del EP: el correlativo del contrato. La plataforma propone el siguiente
+// de la serie (el mayor + 1), pero se puede fijar a mano: el contrato ya
+// llevaba estados de pago emitidos fuera de la plataforma cuando empezó a
+// usarse, y la numeración tiene que continuar la real. Fijado uno, los
+// siguientes siguen solos desde ahí. Devuelve el número o el error.
+async function numeroEP(valor, excluirId = null) {
+  const previos = await q(supa.from('estados_pago').select('id, numero, folio'));
+  if (valor === undefined || valor === null || valor === '') {
+    return { numero: previos.reduce((max, e) => Math.max(max, Number(e.numero ?? 0)), 0) + 1 };
+  }
+  const n = Number(valor);
+  if (!Number.isInteger(n) || n < 1 || n > 9999) return { error: 'El N° del estado de pago debe ser un entero entre 1 y 9999' };
+  const otro = previos.find((e) => Number(e.numero) === n && e.id !== excluirId);
+  if (otro) return { error: `El N° ${n} ya lo tiene el ${otro.folio}` };
+  return { numero: n };
+}
+
 // Genera el EP del período con todos los despachos recepcionados sin EP.
 r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
   const periodo = String(req.body?.periodo || '').trim();       // YYYY-MM
@@ -125,8 +143,8 @@ r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
     return res.status(400).json({ error: `Entre el ${desde} y el ${hasta} no hay despachos recepcionados pendientes de EP` });
   }
 
-  const previos = await q(supa.from('estados_pago').select('numero'));
-  const numero = previos.reduce((max, e) => Math.max(max, Number(e.numero ?? 0)), 0) + 1;
+  const { numero, error: errNumero } = await numeroEP(req.body?.numero);
+  if (errNumero) return res.status(400).json({ error: errNumero });
   const bruto = desp.reduce((a, d) => a + Number(d.valor ?? 0), 0);
 
   const ep = await q(supa.from('estados_pago').insert({
@@ -165,20 +183,31 @@ const RESPALDO = {
 };
 const subir = multer({
   storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',   // el nombre original pasa al repositorio documental
   limits: { files: 4, fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, f, cb) => cb(null, !!RESPALDO[f.mimetype]),
 });
 
-async function subirRespaldos(descuentoId, archivos = []) {
+// Los respaldos también quedan en el repositorio documental como registro de
+// descuentos del EP, con la glosa del descuento como nota de la versión.
+async function subirRespaldos(descuentoId, archivos = [], { ep, glosa, quien } = {}) {
   let n = 0;
   const marca = Date.now();
+  const subidos = [];
   for (const f of archivos) {
     const ext = RESPALDO[f.mimetype];
     if (!ext) continue;
-    const { error } = await supa.storage.from('evidencia')
-      .upload(`EPD/${descuentoId}/resp-${marca}-${n + 1}.${ext}`, f.buffer, { contentType: f.mimetype });
+    const path = `EPD/${descuentoId}/resp-${marca}-${n + 1}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
     if (error) { console.error('[GEA] respaldo de descuento:', error.message); continue; }
+    subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
     n++;
+  }
+  if (subidos.length && ep) {
+    await registrarArchivos({
+      tipo: 'ch_descuentos', hito: 'estado_pago', refId: ep.id, archivos: subidos, quien,
+      nota: `Respaldo del descuento «${glosa}»`,
+    });
   }
   return n;
 }
@@ -196,7 +225,7 @@ r.post('/eps/:id/descuentos', auth('ito', 'coordinador'),
   const fila = await q(supa.from('ep_descuentos')
     .insert({ ep_id: ep.id, glosa, monto: Number(monto), creado_por: req.user.name })
     .select('id').single());
-  const nResp = await subirRespaldos(fila.id, req.files?.respaldo);
+  const nResp = await subirRespaldos(fila.id, req.files?.respaldo, { ep, glosa, quien: req.user });
   if (nResp && tiene.edp_respaldo) {
     await q(supa.from('ep_descuentos').update({ respaldos: nResp }).eq('id', fila.id).select('id').single());
   }
@@ -255,10 +284,20 @@ r.patch('/eps/:id', auth('ito', 'coordinador'), ah(async (req, res) => {
   if (!editable(ep)) return res.status(409).json({ error: 'El EP ya fue enviado a revisión y no admite cambios' });
   const permitidos = ['presentado_el', 'anticipo', 'no_afecto_iva', 'desde', 'hasta'];
   const cambios = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => permitidos.includes(k)));
+  // El N° se corrige mientras el EP es editable: firmado, ya es el del papel.
+  const detalle = [];
+  if (req.body?.numero !== undefined && Number(req.body.numero) !== Number(ep.numero)) {
+    const { numero, error } = await numeroEP(req.body.numero, ep.id);
+    if (error) return res.status(400).json({ error });
+    cambios.numero = numero;
+    detalle.push(`N° ${ep.numero ?? '—'} → ${numero}`);
+  }
   if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
   const upd = await q(supa.from('estados_pago').update(cambios).eq('id', ep.id).select().single());
   const cfg = await contrato();
-  await audit(req.user.name, req.user.role, 'Actualizó encabezado del EP', `${ep.folio} · ${Object.keys(cambios).join(', ')}`);
+  const otros = Object.keys(cambios).filter((k) => k !== 'numero');
+  await audit(req.user.name, req.user.role, 'Actualizó encabezado del EP',
+    `${ep.folio} · ${[...detalle, ...otros].join(', ')}`);
   res.json({ ...pub(upd, cfg), ...(await detalleEP(upd)) });
 }));
 

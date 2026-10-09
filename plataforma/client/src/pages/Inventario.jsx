@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtUSD } from '../api.js';
 import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
+import BotonDocs from '../BotonDocs.jsx';
 
 const EYEBROW = 'Fase 2 · Venta de obsoletos';
 const ESTADO = {
@@ -207,6 +208,7 @@ export default function Inventario() {
                       title="Marcarlo como encontrado en terreno para poder publicarlo">Confirmar en terreno</button>{' '}</>
                   )}
                   {c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>}{' '}
+                  <BotonDocs hito="componente" refId={c.id} />{' '}
                   <button className="btn sm" onClick={() => setEditar({ ...c, especificaciones: c.especificaciones ?? '', ubicacion: c.ubicacion ?? '', sitio_id: c.sitio_id ?? '', valor_referencial: c.valor_referencial ?? '' })}>Editar</button>{' '}
                   {['planificado', 'por_identificar', 'no_encontrado'].includes(c.estado) && <button className="btn sm danger" onClick={() => setEliminar(c)}>Eliminar</button>}
                 </td>

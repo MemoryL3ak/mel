@@ -48,6 +48,8 @@ export const tiene = {
   desp_componente: false,     // despachos.componente_id
   // db/0014_despacho_obs.sql
   desp_obs: false,            // despachos.observacion
+  // db/0015_documental.sql
+  documentos: false,          // Fase 3: doc_tipos, documentos, documento_versiones
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -69,6 +71,7 @@ const ORIGEN = {
   clave_inicial: '0012_clave.sql',
   acta_entrega: '0013_fase2_obs.sql', desp_componente: '0013_fase2_obs.sql',
   desp_obs: '0014_despacho_obs.sql',
+  documentos: '0015_documental.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -134,6 +137,10 @@ export async function detectarEsquema() {
   tiene.acta_entrega    = tiene.obsoletos && (await existe('adjudicaciones', 'entrega_docs'));
   tiene.desp_componente = tiene.obsoletos && (await existe('despachos', 'componente_id'));
   tiene.desp_obs        = await existe('despachos', 'observacion');
+
+  tiene.documentos = (await existe('doc_tipos', 'codigo,hito,roles_carga,roles_ver,exigible_en'))
+    && (await existe('documentos', 'id,folio,tipo,ref_id,vence_el,aviso_por_vencer_el'))
+    && (await existe('documento_versiones', 'id,documento_id,version,archivos'));
 
   const faltan = Object.entries(tiene).filter(([, ok]) => !ok).map(([k]) => k);
   if (faltan.length) {

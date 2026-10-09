@@ -3,6 +3,7 @@ import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { DateField, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 import DocumentoEP from '../DocumentoEP.jsx';
+import BotonDocs from '../BotonDocs.jsx';
 
 const CHIP = {
   generado: ['neutral', 'Generado'], en_revision: ['warn', 'En revisión'], con_ajustes: ['bad', 'Con ajustes'],
@@ -26,6 +27,8 @@ function Pasos({ estado }) {
     </div>
   );
 }
+
+const HINT_NUMERO = 'Correlativo del contrato. La plataforma propone el siguiente de la serie; si ya hay EDP emitidos fuera de ella, indique el que corresponde y los siguientes continúan solos desde ahí.';
 
 export default function EstadosPago() {
   const [eps, setEps] = useState(null);
@@ -53,6 +56,10 @@ export default function EstadosPago() {
   const esCoord = user.role === 'coordinador';
   const esVendor = ['vendor', 'coordinador'].includes(user.role);
   const editable = sel && ['generado', 'con_ajustes'].includes(sel.estado);
+  // Siguiente N° de la serie. Se puede corregir: si el contrato ya llevaba EDP
+  // emitidos fuera de la plataforma, se fija el que corresponde y los
+  // siguientes continúan desde ahí.
+  const proximoNumero = eps.reduce((max, e) => Math.max(max, Number(e.numero ?? 0)), 0) + 1;
 
   const accion = (path, body, ok, metodo = 'POST') => async () => {
     try {
@@ -106,7 +113,7 @@ export default function EstadosPago() {
     <div>
       <PageHead title="Estados de pago"
         sub="Ciclo completo del EP del período: generación desde los despachos valorizados, revisión y firma del Coordinador, factura del vendor, pago en menos de 15 días y conciliación.">
-        {esIto && <button className="btn primary" onClick={() => { setF({ periodo: mesAnterior() }); setModal('generar'); }}>+ Generar EP del período</button>}
+        {esIto && <button className="btn primary" onClick={() => { setF({ periodo: mesAnterior(), numero: proximoNumero }); setModal('generar'); }}>+ Generar EP del período</button>}
       </PageHead>
 
       <div className="grid" style={{ gridTemplateColumns: '340px 1fr', alignItems: 'start' }}>
@@ -134,9 +141,10 @@ export default function EstadosPago() {
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn sm" onClick={() => setModal('documento')}>Ver documento EP</button>
+                <BotonDocs hito="estado_pago" refId={sel.id} />
                 {esIto && editable && (
                   <>
-                    <button className="btn sm" onClick={() => { setF({ presentado_el: sel.presentado_el ?? '', no_afecto_iva: sel.no_afecto_iva, anticipo: sel.anticipo }); setModal('encabezado'); }}>Encabezado</button>
+                    <button className="btn sm" onClick={() => { setF({ numero: sel.numero ?? '', presentado_el: sel.presentado_el ?? '', no_afecto_iva: sel.no_afecto_iva, anticipo: sel.anticipo }); setModal('encabezado'); }}>Encabezado</button>
                     {/* El botón de descuentos vive junto a la sección que afecta, no aquí. */}
                     <button className="btn sm primary" onClick={accion(`/eps/${sel.id}/enviar`, {}, 'EP enviado a revisión del Coordinador')}>Enviar a revisión</button>
                   </>
@@ -310,11 +318,14 @@ export default function EstadosPago() {
       <Modal open={modal === 'generar'} title="Generar estado de pago del período" onClose={() => setModal(null)}
         footer={<>
           <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
-          <button className="btn primary" onClick={accion('/eps/generar', { periodo: f.periodo }, 'EP generado con los despachos del período')}>Generar</button>
+          <button className="btn primary" onClick={accion('/eps/generar', { periodo: f.periodo, numero: f.numero === '' ? undefined : Number(f.numero) }, 'EP generado con los despachos del período')}>Generar</button>
         </>}>
         <Field label="Período (AAAA-MM)"
           hint={contrato ? `El período corta el día ${contrato.dia_corte}: el EP irá del ${contrato.dia_corte + 1} del mes anterior al ${contrato.dia_corte} del mes indicado.` : ''}>
           <input value={f.periodo || ''} onChange={(e) => setF({ ...f, periodo: e.target.value })} placeholder="2026-09" />
+        </Field>
+        <Field label="N° del estado de pago" hint={HINT_NUMERO}>
+          <input type="number" min="1" step="1" value={f.numero ?? ''} onChange={(e) => setF({ ...f, numero: e.target.value })} />
         </Field>
       </Modal>
 
@@ -322,9 +333,13 @@ export default function EstadosPago() {
         footer={<>
           <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
           <button className="btn primary" onClick={accion(`/eps/${sel?.id}`,
-            { presentado_el: f.presentado_el || null, no_afecto_iva: Number(f.no_afecto_iva) || 0, anticipo: Number(f.anticipo) || 0 },
+            { ...(f.numero !== '' && f.numero != null ? { numero: Number(f.numero) } : {}),
+              presentado_el: f.presentado_el || null, no_afecto_iva: Number(f.no_afecto_iva) || 0, anticipo: Number(f.anticipo) || 0 },
             'Encabezado actualizado', 'PATCH')}>Guardar</button>
         </>}>
+        <Field label="N° del estado de pago" hint={HINT_NUMERO}>
+          <input type="number" min="1" step="1" value={f.numero ?? ''} onChange={(e) => setF({ ...f, numero: e.target.value })} />
+        </Field>
         <Field label="Fecha de presentación" hint="Si se deja vacía, se completa sola al enviar el EP a revisión.">
           <DateField value={f.presentado_el || ''} onChange={(e) => setF({ ...f, presentado_el: e.target.value })} />
         </Field>

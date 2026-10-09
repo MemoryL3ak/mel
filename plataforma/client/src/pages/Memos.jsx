@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
+import BotonDocs from '../BotonDocs.jsx';
 
 // Memo de baja: el documento firmado del área usuaria generadora que autoriza
 // enajenar componentes. Es el origen del inventario obsoleto y la lista contra
@@ -192,7 +193,11 @@ export default function Memos() {
       </Modal>
 
       {/* ---- detalle + conciliación de terreno ---- */}
-      <Modal open={!!detalle} title={detalle && `${detalle.folio} · ${detalle.area_usuaria}`} onClose={() => setDetalle(null)} ancho>
+      <Modal open={!!detalle} title={detalle && `${detalle.folio} · ${detalle.area_usuaria}`} onClose={() => setDetalle(null)} ancho
+        footer={<>
+          <BotonDocs hito="memo" refId={detalle?.id} className="btn" />
+          <button className="btn" onClick={() => setDetalle(null)}>Cerrar</button>
+        </>}>
         {detalle && <>
           <div className="grid g2" style={{ gap: 0, columnGap: 14, marginBottom: 6 }}>
             <Field label="Fecha del memo"><div className="mono">{detalle.fecha_memo}</div></Field>

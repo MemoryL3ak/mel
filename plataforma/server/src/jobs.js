@@ -6,7 +6,9 @@
 // exactamente lo mismo: antes estaban duplicados y ya habían divergido.
 import { supa, q, audit, hoy } from './supa.js';
 import { tiene } from './esquema.js';
+import { env } from './env.js';
 import { enviarCorreo, plantilla } from './mail.js';
+import { diasHasta } from './documental.js';
 
 const diasDesde = (fecha) =>
   Math.floor((new Date(hoy() + 'T12:00:00') - new Date(fecha + 'T12:00:00')) / 86400000);
@@ -87,10 +89,81 @@ export async function barrerPublicacionesVencidas() {
   }
 }
 
+// Vencimientos del repositorio documental (Fase 3). Cada documento avisa dos
+// veces: al entrar en su ventana de "por vencer" y al vencer. Cada aviso sale
+// una sola vez; cargar una versión con otra fecha los rearma. Reciben el aviso
+// quienes cargan ese tipo (son los que deben renovarlo) y el coordinador, en
+// un solo correo por persona con todos sus documentos.
+export async function revisarVencimientos() {
+  if (!tiene.documentos) return 0;
+  try {
+    const [docs, tipos, usuarios] = await Promise.all([
+      q(supa.from('documentos').select('id, folio, titulo, tipo, vence_el, aviso_por_vencer_el, aviso_vencido_el')
+        .eq('estado', 'vigente').not('vence_el', 'is', null)),
+      q(supa.from('doc_tipos').select('codigo, nombre, aviso_dias, roles_carga')),
+      tiene.user_email
+        ? q(supa.from('users').select('nombre, role, email').eq('activo', true).not('email', 'is', null))
+        : [],
+    ]);
+    const tipo = new Map(tipos.map((t) => [t.codigo, t]));
+    const avisos = [];
+    for (const d of docs) {
+      const t = tipo.get(d.tipo);
+      const dias = diasHasta(d.vence_el);
+      if (dias < 0 && !d.aviso_vencido_el) avisos.push({ d, t, vencido: true, dias });
+      else if (dias >= 0 && dias <= (t?.aviso_dias ?? 30) && !d.aviso_por_vencer_el) avisos.push({ d, t, vencido: false, dias });
+    }
+    if (!avisos.length) return 0;
+
+    const porCorreo = new Map();
+    for (const a of avisos) {
+      for (const u of usuarios) {
+        if (u.role !== 'coordinador' && !a.t?.roles_carga?.includes(u.role)) continue;
+        if (!porCorreo.has(u.email)) porCorreo.set(u.email, []);
+        porCorreo.get(u.email).push(a);
+      }
+    }
+    const linea = (a) => `<li><b>${a.d.folio}</b> · ${a.t?.nombre ?? a.d.tipo} — ${a.d.titulo}: `
+      + (a.vencido ? `<span style="color:#B23A2E">venció el ${a.d.vence_el}</span>`
+                   : `vence el ${a.d.vence_el} (${a.dias === 0 ? 'hoy' : `en ${a.dias} día(s)`})`) + '</li>';
+    for (const [email, items] of porCorreo) {
+      const vencidos = items.filter((a) => a.vencido).length;
+      enviarCorreo({
+        to: email,
+        subject: vencidos
+          ? `${vencidos} documento(s) vencido(s) · GEA`
+          : `${items.length} documento(s) por vencer · GEA`,
+        html: plantilla({
+          encabezado: 'Repositorio documental',
+          pie: 'Este es un aviso automático de la plataforma GEA de Minera Escondida.',
+          titulo: 'Documentos que requieren renovación',
+          cuerpo: `Los siguientes documentos del repositorio vencieron o están por vencer. Cargue la versión renovada para mantenerlos vigentes.<ul style="padding-left:18px">${items.map(linea).join('')}</ul>`,
+          cta: env.APP_URL ? 'Abrir el repositorio' : null,
+          url: env.APP_URL ? `${env.APP_URL}/documentos` : null,
+        }),
+      });
+    }
+
+    const ahora = new Date().toISOString();
+    for (const a of avisos) {
+      await q(supa.from('documentos').update(a.vencido ? { aviso_vencido_el: ahora } : { aviso_por_vencer_el: ahora })
+        .eq('id', a.d.id).select('id').single());
+    }
+    await audit('Sistema', 'sistema', 'Avisó vencimientos documentales',
+      `${avisos.length} documento(s) · ${porCorreo.size} destinatario(s)`);
+    return avisos.length;
+  } catch (e) {
+    console.error('[GEA] vencimientos documentales:', e.message);
+    return 0;
+  }
+}
+
 // Arranca el barrido: una vez ahora y luego cada 6 horas. unref() para no
-// impedir que el proceso termine si alguien lo detiene.
+// impedir que el proceso termine si alguien lo detiene. El mismo ciclo revisa
+// los vencimientos del repositorio documental.
 export function iniciarBarridoObsoletos() {
-  barrerPublicacionesVencidas();
-  const t = setInterval(barrerPublicacionesVencidas, 6 * 60 * 60 * 1000);
+  const ciclo = () => { barrerPublicacionesVencidas(); revisarVencimientos(); };
+  ciclo();
+  const t = setInterval(ciclo, 6 * 60 * 60 * 1000);
   if (typeof t.unref === 'function') t.unref();
 }

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
+import BotonDocs from '../BotonDocs.jsx';
 
 const CHIP = {
   en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'],
@@ -625,7 +626,8 @@ export default function Despachos() {
                       title="Adjuntar el documento firmado del certificado">
                       {t.cert_fotos > 0 ? 'Agregar documento' : 'Adjuntar CDF'}
                     </button>
-                  )}
+                  )}{' '}
+                  <BotonDocs hito="traslado" refId={t.id} />
                 </td>
               </tr>
             ))}
@@ -661,7 +663,10 @@ export default function Despachos() {
 
       {/* ---- modales ---- */}
       <Modal open={!!detalle} title={detalle && `Código interno ${detalle.guia}`} onClose={() => setDetalle(null)}
-        footer={<button className="btn" onClick={() => setDetalle(null)}>Cerrar</button>}>
+        footer={<>
+          <BotonDocs hito="despacho" refId={detalle?.id} className="btn" />
+          <button className="btn" onClick={() => setDetalle(null)}>Cerrar</button>
+        </>}>
         {detalle && (
           <>
             <div className="grid g2" style={{ gap: 10, marginBottom: 4 }}>

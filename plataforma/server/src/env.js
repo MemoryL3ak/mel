@@ -37,4 +37,7 @@ export const env = {
   MAIL_FROM: process.env.MAIL_FROM || 'GEA · Venta de obsoletos <no-reply@gea-escondida.cl>',
   // URL pública del portal, para los enlaces dentro de los correos.
   PORTAL_URL: process.env.PORTAL_URL || '',
+  // URL de la plataforma interna, para los avisos al personal (vencimientos
+  // documentales). Si falta, se deduce del portal, que vive en /portal.
+  APP_URL: (process.env.APP_URL || (process.env.PORTAL_URL || '').replace(/\/portal\/?$/, '')).replace(/\/+$/, ''),
 };

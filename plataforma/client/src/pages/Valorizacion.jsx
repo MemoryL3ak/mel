@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { DateField, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import BotonDocs from '../BotonDocs.jsx';
 
 // Carga masiva de vigencias: acepta pegado desde Excel (tabulaciones) o CSV
 // con ";" o ",". Columnas: Categoría | Alt. A | Alt. B | Vigente desde.
@@ -368,11 +369,14 @@ export default function Valorizacion() {
         <div className="card" style={{ marginTop: 16 }}>
           <div className="card-h">
             <h3>Datos del contrato</h3>
-            {user.role !== 'coordinador'
-              ? <small>solo el Coordinador puede modificarlos</small>
-              : contrato.editable
-                ? <button className="btn sm" onClick={() => setEditando({ ...contrato })}>Editar</button>
-                : <small style={{ color: 'var(--warn-tx)' }}>pendiente de aplicar la migración 0003 en la base</small>}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <BotonDocs hito="contrato" refId={1}>Documentos del contrato</BotonDocs>
+              {user.role !== 'coordinador'
+                ? <small>solo el Coordinador puede modificarlos</small>
+                : contrato.editable
+                  ? <button className="btn sm" onClick={() => setEditando({ ...contrato })}>Editar</button>
+                  : <small style={{ color: 'var(--warn-tx)' }}>pendiente de aplicar la migración 0003 en la base</small>}
+            </div>
           </div>
           <div className="card-b">
             <div className="grid g2" style={{ gap: 12 }}>
