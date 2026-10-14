@@ -224,13 +224,14 @@ export default function Valorizacion() {
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-h"><h3>Precios vigentes del contrato</h3>
           <small>{data.tm ? 'USD por tonelada métrica · dos alternativas' : '$/kg por categoría'}</small></div>
-        <div className="tbl-wrap"><table>
+        <div className="tbl-wrap"><table className="densa">
           <thead><tr><th>Categoría</th>
             {data.tm
               ? <><th className="num">Alt. A · sin madera</th><th className="num gsep">Alt. B · con madera</th></>
               : <th className="num">{data.usd ? 'Precio USD/kg' : 'Precio vigente'}</th>}
-            {(data.usd || data.tm) && <th className="num">Referencia $/kg hoy</th>}
-            <th>Desde</th><th>Vigencia</th><th className="num">Kg recepcionados YTD</th><th className="num">Valorizado YTD</th><th></th></tr></thead>
+            {(data.usd || data.tm) && <th className="num" title="Referencia en pesos por kilo con el dólar de hoy">$/kg hoy</th>}
+            <th>Desde</th><th>Vigencia</th><th className="num" title="Kilos recepcionados en el año">Kg YTD</th>
+            <th className="num" title="Valorizado en el año">Valorizado YTD</th><th className="acc"></th></tr></thead>
           <tbody>
             {data.categorias.map((c) => {
               const tono = { vencido: 'bad', por_vencer: 'warn', vigente: 'ok', sin_precio: 'neutral' }[c.estado_precio] ?? 'neutral';
@@ -273,7 +274,7 @@ export default function Valorizacion() {
                   <td><Chip tone={tono}>{texto}</Chip></td>
                   <td className="num">{fmtKg(c.kg_ytd)}</td>
                   <td className="num">{fmtCLP(c.valor_ytd)}</td>
-                  <td className="num">
+                  <td className="num acc">
                     {user.role === 'coordinador' && (
                       <button className={`btn sm ${c.estado_precio === 'vencido' ? 'primary' : ''}`}
                         onClick={() => { setNuevo(c); setPrecio(''); setPrecioB(''); setDesde(''); }}>Nueva vigencia</button>

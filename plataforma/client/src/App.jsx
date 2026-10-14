@@ -110,16 +110,33 @@ function Shell({ children }) {
             );
           })}
         </nav>
+        {/* Dos filas: con el nombre y los botones en una sola, en 260 px el
+            nombre quedaba reducido a «Co…». En la barra contraída los botones
+            quedan solo con su ícono. */}
         <div className="side-user">
-          <Avatar name={user.name} />
-          <div className="who">
-            <b>{user.name}</b>
-            <small>{ROL_NOMBRE[user.role]}</small>
+          <div className="side-id">
+            <Avatar name={user.name} />
+            <div className="who" title={`${user.name} · ${ROL_NOMBRE[user.role]}`}>
+              <b>{user.name}</b>
+              <small>{ROL_NOMBRE[user.role]}</small>
+            </div>
           </div>
-          <button onClick={() => setClave(true)} title="Cambiar mi contraseña" aria-label="Cambiar contraseña">
-            {user.clave_inicial ? '🔑 Clave' : '🔑'}
-          </button>
-          <button onClick={logout} title="Cerrar sesión">Salir</button>
+          <div className="side-acts">
+            <button onClick={() => setClave(true)} className={user.clave_inicial ? 'pide' : undefined}
+              title={user.clave_inicial ? 'Su contraseña es la entregada: cámbiela por una propia' : 'Cambiar mi contraseña'}
+              aria-label="Cambiar contraseña">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="8" cy="15" r="4" /><path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2" />
+              </svg>
+              <span>{user.clave_inicial ? 'Cambiar clave' : 'Clave'}</span>
+            </button>
+            <button onClick={logout} title="Cerrar sesión" aria-label="Cerrar sesión">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" />
+              </svg>
+              <span>Salir</span>
+            </button>
+          </div>
         </div>
       </aside>
       <CambiarClave open={clave} inicial={!!user.clave_inicial} onClose={() => setClave(false)} />
