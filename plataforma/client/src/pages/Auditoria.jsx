@@ -30,10 +30,12 @@ export default function Auditoria() {
             {rows.map((a) => (
               <tr key={a.id}>
                 <td className="mono" style={{ whiteSpace: 'nowrap' }}>{a.fecha}</td>
-                <td><b>{a.usuario}</b></td>
+                <td style={{ minWidth: 140 }}><b>{a.usuario}</b></td>
                 <td style={{ color: 'var(--ink-2)' }}>{ROL_COL[a.rol] ?? a.rol}</td>
                 <td>{a.accion}</td>
-                <td className="mono" style={{ color: 'var(--ink-2)' }}>{a.objeto || '—'}</td>
+                {/* .mono no corta líneas (sirve para folios), pero el objeto de la
+                    bitácora es una frase: en una sola línea estiraba la tabla. */}
+                <td className="mono" style={{ color: 'var(--ink-2)', whiteSpace: 'normal', overflowWrap: 'break-word', minWidth: 180 }}>{a.objeto || '—'}</td>
               </tr>
             ))}
           </tbody>

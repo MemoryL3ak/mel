@@ -110,7 +110,7 @@ export default function Memos() {
         {esMEL && <button className="btn primary" onClick={() => { setNuevo(true); setF({ ...vacio, fecha_memo: hoyISO() }); }}>+ Cargar memo</button>}
       </PageHead>
 
-      <div className="card"><div className="tbl-wrap"><table>
+      <div className="card"><div className="tbl-wrap"><table className="densa">
         <thead><tr>
           <th>Folio</th><th>Área usuaria generadora</th><th>Fecha</th>
           <th className="num">Componentes</th><th>Identificación en terreno</th><th>Estado</th><th className="acc"></th>
@@ -133,12 +133,12 @@ export default function Memos() {
                   </>)}
                 </td>
                 <td><Chip tone={tono}>{txt}</Chip></td>
-                <td className="num" style={{ whiteSpace: 'nowrap' }}>
-                  <button className="btn sm" onClick={() => abrirDetalle(m)}>Ver</button>{' '}
-                  {m.doc > 0 && <button className="btn sm" onClick={() => verDocumento(m)}>Documento</button>}{' '}
-                  {esMEL && <button className="btn sm" onClick={() => setEditar({ ...m, emitido_por: m.emitido_por ?? '', referencia: m.referencia ?? '', observaciones: m.observaciones ?? '' })}>Editar</button>}{' '}
+                <td className="num acc"><div className="acciones">
+                  <button className="btn sm" onClick={() => abrirDetalle(m)}>Ver</button>
+                  {m.doc > 0 && <button className="btn sm" onClick={() => verDocumento(m)}>Documento</button>}
+                  {esMEL && <button className="btn sm" onClick={() => setEditar({ ...m, emitido_por: m.emitido_por ?? '', referencia: m.referencia ?? '', observaciones: m.observaciones ?? '' })}>Editar</button>}
                   {esMEL && m.componentes === 0 && <button className="btn sm danger" onClick={() => setEliminar(m)}>Eliminar</button>}
-                </td>
+                </div></td>
               </tr>
             );
           })}
@@ -217,14 +217,14 @@ export default function Memos() {
                     <td>{c.nombre}{c.nota_terreno && <><br /><small style={{ color: 'var(--muted)' }}>{c.nota_terreno}</small></>}</td>
                     <td>{c.sitio || '—'}</td>
                     <td><Chip tone={tono}>{txt}</Chip></td>
-                    <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                    <td className="num acc"><div className="acciones">
                       {['por_identificar', 'no_encontrado'].includes(c.estado) && (
                         <button className="btn sm" onClick={() => { setTerreno({ componente: c, encontrado: true }); setNota(''); }}>Encontrado</button>
-                      )}{' '}
+                      )}
                       {c.estado === 'por_identificar' && (
                         <button className="btn sm danger" onClick={() => { setTerreno({ componente: c, encontrado: false }); setNota(''); }}>No encontrado</button>
                       )}
-                    </td>
+                    </div></td>
                   </tr>
                 );
               })}

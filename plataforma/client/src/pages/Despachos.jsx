@@ -464,8 +464,8 @@ export default function Despachos() {
             </div>
             <small>{visibles.length} de {rows.length} guía(s)</small>
           </div>
-          <div className="tbl-wrap"><table>
-          <thead><tr><th>Código interno</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th>Estado</th><th>EP</th><th className="acc"></th></tr></thead>
+          <div className="tbl-wrap"><table className="densa">
+          <thead><tr><th title="Código interno">Código</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th title="Estado de la guía y, si ya está en uno, el estado de pago que la incluye">Estado</th><th className="acc"></th></tr></thead>
           <tbody>
             {visibles.map((d) => (
               <tr key={d.id} className={d.estado === 'anulado' ? 'anulada' : undefined}>
@@ -488,9 +488,8 @@ export default function Despachos() {
                     ? <div className="thumbs">{Array.from({ length: Math.min(d.fotos, 3) }).map((_, i) => <i key={i} />)}</div>
                     : <span style={{ color: 'var(--muted)' }}>—</span>}
                 </td>
-                <td><Chip tone={CHIP[d.estado][0]}>{CHIP[d.estado][1]}</Chip></td>
-                <td className="mono">{d.ep_folio || '—'}</td>
-                <td className="num acc" style={{ whiteSpace: 'nowrap' }}>
+                <td><Chip tone={CHIP[d.estado][0]}>{CHIP[d.estado][1]}</Chip>{d.ep_folio && <><br /><small className="mono" style={{ color: 'var(--muted)' }} title="Estado de pago que incluye esta guía">en {d.ep_folio}</small></>}</td>
+                <td className="num acc"><div className="acciones">
                   <button className="btn sm" onClick={() => abrirDetalle(d)}>Detalle</button>{' '}
                   {d.estado === 'en_transito' && puedeRecep && (
                     <button className="btn sm primary" onClick={() => {
@@ -519,7 +518,7 @@ export default function Despachos() {
                   {fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeAnular && (
                     <button className="btn sm danger" onClick={() => { setAnular(d); setAForm({ motivo: '', reemplazar: false }); }}>Anular</button>
                   )}
-                </td>
+                </div></td>
               </tr>
             ))}
           </tbody>

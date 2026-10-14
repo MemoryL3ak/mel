@@ -12,33 +12,96 @@ const ESTADO = {
 const vacio = { codigo: '', nombre: '', especificaciones: '', sitio_id: '', ubicacion: '', valor_referencial: '', memo_id: '', cant_comprometida: 1, fotos: [], ficha: null };
 const FICHA_ACCEPT = 'application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp,.xls,.xlsx';
 
-// Columnas de la carga masiva, en orden. Se declaran una sola vez: la ayuda de
-// la pantalla, la vista previa y el parser salen todas de aquí, para que no
-// puedan contradecirse entre sí. La cantidad faltaba en el parser aunque el
-// servidor ya la esperaba, así que toda carga masiva entraba con cantidad 1.
+// Los campos oficiales del componente son los del formulario de ingreso. La
+// tabla, la carga masiva y su plantilla usan estas mismas etiquetas y este
+// mismo orden: antes cada una tenía las suyas (y la carga masiva y la tabla
+// agregaban una cantidad que el formulario no pide).
+const CAMPO = {
+  memo: 'Memo de baja',
+  codigo: 'Código (SKU SAP)',
+  nombre: 'Nombre del componente',
+  especificaciones: 'Especificaciones',
+  sitio: 'Sitio',
+  ubicacion: 'Ubicación en terreno',
+  valor: 'Valor referencial (USD)',
+  fotos: 'Fotos del componente',
+  ficha: 'Ficha técnica',
+};
+
+// Columnas de la carga masiva, en el orden del formulario. La ayuda de la
+// pantalla, la plantilla, la vista previa y el parser salen todas de aquí.
+// El memo se elige una vez para toda la carga; fotos y ficha técnica no van
+// en una planilla.
 const COLUMNAS = [
-  { campo: 'codigo', titulo: 'Código SAP', ej: '1000234', obligatorio: true },
-  { campo: 'nombre', titulo: 'Nombre', ej: 'Motor eléctrico 4.000 HP', obligatorio: true },
-  { campo: 'especificaciones', titulo: 'Especificaciones', ej: 'WEG · 3.300 V' },
-  { campo: 'sitio', titulo: 'Sitio', ej: 'MEL', ayuda: 'MEL o La Negra' },
-  { campo: 'ubicacion', titulo: 'Ubicación', ej: 'Los Colorados B-3' },
-  { campo: 'valor_referencial', titulo: 'Valor USD', ej: '28500', num: true },
-  { campo: 'cantidad', titulo: 'Cantidad', ej: '1', num: true, ayuda: 'por defecto 1' },
+  { campo: 'codigo', titulo: CAMPO.codigo, ej: '1000234', obligatorio: true },
+  { campo: 'nombre', titulo: CAMPO.nombre, ej: 'Motor eléctrico 4.000 HP', obligatorio: true },
+  { campo: 'especificaciones', titulo: CAMPO.especificaciones, ej: 'WEG · 3.300 V · 50 Hz' },
+  { campo: 'sitio', titulo: CAMPO.sitio, ej: 'MEL', ayuda: 'MEL o La Negra' },
+  { campo: 'ubicacion', titulo: CAMPO.ubicacion, ej: 'Sector B-3 · Fila 2' },
+  { campo: 'valor_referencial', titulo: CAMPO.valor, ej: '28500', num: true },
 ];
 
-// Una línea por componente; columnas separadas por tabulación (pegado desde
-// Excel) o punto y coma.
+// Separa una línea en columnas: tabulación (pegado desde Excel) o punto y
+// coma (la plantilla CSV). Respeta las comillas con que Excel envuelve un
+// texto que trae el separador adentro ("WEG; 3.300 V").
+function columnas(linea) {
+  const sep = linea.includes('\t') ? '\t' : ';';
+  const out = [];
+  let actual = '';
+  let comillas = false;
+  for (let i = 0; i < linea.length; i++) {
+    const ch = linea[i];
+    if (comillas) {
+      if (ch === '"' && linea[i + 1] === '"') { actual += '"'; i++; }
+      else if (ch === '"') comillas = false;
+      else actual += ch;
+    } else if (ch === '"' && actual === '') comillas = true;
+    else if (ch === sep) { out.push(actual.trim()); actual = ''; }
+    else actual += ch;
+  }
+  out.push(actual.trim());
+  return out;
+}
+
+// Una línea por componente. El encabezado de la plantilla (o cualquier fila
+// que empiece con "Código") se descarta solo.
 function parseMasivo(texto) {
-  return texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
-    const c = l.split(/\t|;/).map((x) => x.trim());
+  return texto.split(/\r?\n/).filter((l) => l.trim()).map((l) => {
+    const c = columnas(l);
     const fila = {};
     COLUMNAS.forEach((col, i) => {
       const v = c[i] || '';
       fila[col.campo] = col.num ? v.replace(/[^\d]/g, '') : v;
     });
     return fila;
-  }).filter((f) => (f.codigo || f.nombre) && !/^c[oó]digo$/i.test(f.codigo));
+  }).filter((f) => (f.codigo || f.nombre) && !/^c[oó]digo/i.test(f.codigo));
 }
+
+// Plantilla CSV con el separador ";" que usa Excel en español y BOM UTF-8
+// para que abra con las tildes correctas. Solo trae el encabezado: una fila de
+// ejemplo se cargaría por error si nadie la borra.
+function descargarPlantilla() {
+  const csv = '\ufeff' + COLUMNAS.map((c) => c.titulo).join(';') + '\r\n';
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'plantilla-carga-masiva-componentes.csv' });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Lee la plantilla completada. Excel guarda el CSV en UTF-8 o en el código de
+// página de Windows según la versión: se prueba UTF-8 y, si no calza, 1252.
+async function leerArchivo(archivo) {
+  const buf = await archivo.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\ufeff/, ''); }
+  catch { return new TextDecoder('windows-1252').decode(buf); }
+}
+
+// Los nombres de material vienen de SAP sin espacios ("GASKET,TANK,FUEL,CAT"):
+// un espacio de ancho cero tras cada coma deja cortar la línea ahí, y no a
+// mitad de palabra, cuando la columna es angosta.
+const cortable = (t) => (t ? String(t).replace(/,(?=\S)/g, ',\u200b') : t);
 
 export default function Inventario() {
   const [data, setData] = useState(null);
@@ -176,42 +239,38 @@ export default function Inventario() {
         <button className="btn primary" onClick={() => { setNuevo(true); setF(vacio); }}>+ Ingresar componente</button>
       </PageHead>
 
-      <div className="card" style={{ marginBottom: 16 }}><div className="tbl-wrap"><table>
-        <thead><tr><th>Componente</th><th>Código SAP</th><th>Memo</th><th>Ubicación en terreno</th><th className="num">Comp/Enc/Env/Rec</th><th className="num">Valor referencial</th><th>Estado</th><th className="acc"></th></tr></thead>
+      <div className="card" style={{ marginBottom: 16 }}><div className="tbl-wrap"><table className="densa cabecera-libre">
+        {/* Mismas columnas, en el mismo orden y con las mismas etiquetas que el
+            formulario de ingreso (CAMPO), más el estado del proceso. */}
+        <thead><tr><th>{CAMPO.memo}</th><th>{CAMPO.codigo}</th><th>{CAMPO.nombre}</th><th>{CAMPO.especificaciones}</th>
+          <th>{CAMPO.sitio}</th><th>{CAMPO.ubicacion}</th><th className="num">{CAMPO.valor}</th><th>Estado</th><th className="acc"></th></tr></thead>
         <tbody>
           {data.componentes.map((c) => {
             const [tono, txt] = ESTADO[c.estado] ?? ['neutral', c.estado];
             return (
               <tr key={c.id}>
-                <td><b>{c.nombre}</b>{c.fotos > 0 && <small style={{ color: 'var(--muted)' }}> · 📎 {c.fotos}</small>}{c.especificaciones && <><br /><small style={{ color: 'var(--muted)' }}>{c.especificaciones}</small></>}</td>
-                <td className="mono">{c.codigo}</td>
                 <td>{c.memo
-                  ? <><span className="mono">{c.memo}</span><br /><small style={{ color: 'var(--muted)' }}>{c.area_usuaria}</small></>
+                  ? <><span className="mono">{c.memo}</span><small className="recorte" title={c.area_usuaria}>{c.area_usuaria}</small></>
                   : <small style={{ color: 'var(--muted)' }}>Sin memo</small>}</td>
-                <td>{[c.sitio, c.ubicacion].filter(Boolean).join(' · ') || '—'}</td>
-                <td className="num mono" style={{ whiteSpace: 'nowrap', fontSize: 12.5 }}>
-                  {c.cant_comprometida == null ? '—' : (
-                    <span title="Comprometida / encontrada / enviada / recibida">
-                      {c.cant_comprometida}<span style={{ color: 'var(--muted)' }}>/</span>
-                      {c.cant_encontrada ?? '·'}<span style={{ color: 'var(--muted)' }}>/</span>
-                      {c.cant_enviada ?? '·'}<span style={{ color: 'var(--muted)' }}>/</span>
-                      {c.cant_recibida ?? '·'}
-                    </span>
-                  )}
-                </td>
+                <td className="mono">{c.codigo}</td>
+                <td className="parte"><b>{cortable(c.nombre)}</b>
+                  {c.fotos > 0 && <small style={{ color: 'var(--muted)', display: 'block' }} title="Fotos y ficha técnica adjuntas">📎 {c.fotos} adjunto(s)</small>}</td>
+                <td className="parte" style={{ minWidth: 100 }}><small className="dos-lineas" title={c.especificaciones || undefined}>{cortable(c.especificaciones) || '—'}</small></td>
+                <td>{c.sitio || '—'}</td>
+                <td>{c.ubicacion || '—'}</td>
                 <td className="num">{fmtUSD(c.valor_referencial)}</td>
                 <td><Chip tone={tono}>{txt}{c.estado === 'publicado' && c.dia != null ? ` · día ${c.dia}` : ''}</Chip>
                   {c.nota_terreno && <><br /><small style={{ color: 'var(--muted)' }}>{c.nota_terreno}</small></>}</td>
-                <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                <td className="num acc"><div className="acciones">
                   {['por_identificar', 'no_encontrado'].includes(c.estado) && (
-                    <><button className="btn sm primary" disabled={busy} onClick={() => confirmarTerreno(c)}
-                      title="Marcarlo como encontrado en terreno para poder publicarlo">Confirmar en terreno</button>{' '}</>
+                    <button className="btn sm primary" disabled={busy} onClick={() => confirmarTerreno(c)}
+                      title="Marcarlo como encontrado en terreno para poder publicarlo">Confirmar en terreno</button>
                   )}
-                  {c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>}{' '}
-                  <BotonDocs hito="componente" refId={c.id} />{' '}
-                  <button className="btn sm" onClick={() => setEditar({ ...c, especificaciones: c.especificaciones ?? '', ubicacion: c.ubicacion ?? '', sitio_id: c.sitio_id ?? '', valor_referencial: c.valor_referencial ?? '' })}>Editar</button>{' '}
+                  {c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>}
+                  <BotonDocs hito="componente" refId={c.id} />
+                  <button className="btn sm" onClick={() => setEditar({ ...c, especificaciones: c.especificaciones ?? '', ubicacion: c.ubicacion ?? '', sitio_id: c.sitio_id ?? '', valor_referencial: c.valor_referencial ?? '' })}>Editar</button>
                   {['planificado', 'por_identificar', 'no_encontrado'].includes(c.estado) && <button className="btn sm danger" onClick={() => setEliminar(c)}>Eliminar</button>}
-                </td>
+                </div></td>
               </tr>
             );
           })}
@@ -235,7 +294,7 @@ export default function Inventario() {
                   <td>{[c.sitio, c.ubicacion].filter(Boolean).join(' · ') || '—'}</td>
                   <td><small style={{ color: 'var(--ink-2)' }}>{c.motivo || '—'}</small></td>
                   <td className="num">{c.desde ?? '—'}</td>
-                  <td className="num">
+                  <td className="num acc">
                     <button className="btn sm primary" disabled={busy}
                       onClick={() => { setClasificar(c); setCf({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO(), crear_despacho: true }); }}>
                       Clasificar y derivar
@@ -304,10 +363,27 @@ export default function Inventario() {
           <button className="btn" onClick={() => { setMasivo(false); setErrores(null); }} disabled={busy}>Cancelar</button>
           <button className="btn primary" onClick={cargarMasivo} disabled={busy || !previa.length}>{busy ? 'Cargando…' : `Cargar ${previa.length || ''}`}</button>
         </>}>
-        <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
-          Pega una fila por componente, copiada desde Excel o con las columnas separadas por <b>;</b>.
-          Este es el orden exacto que espera la carga:
-        </p>
+        <div className="masivo-plantilla">
+          <p style={{ margin: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
+            Descargue la plantilla, complétela en Excel (una fila por componente) y súbala aquí. También puede
+            pegar las filas copiadas desde Excel. Las columnas son los campos del formulario de ingreso, en el mismo orden:
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn sm" onClick={descargarPlantilla}>⇩ Descargar plantilla</button>
+            <label className="btn sm" style={{ cursor: 'pointer' }}>
+              ⇪ Subir plantilla completada
+              <input type="file" accept=".csv,.txt,text/csv,text/plain" hidden
+                onChange={async (e) => {
+                  const a = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!a) return;
+                  if (/\.xlsx?$/i.test(a.name)) return toast('Guarde la plantilla como CSV (Archivo › Guardar como › CSV) o copie las filas y péguelas aquí', true);
+                  setTexto(await leerArchivo(a));
+                  setErrores(null);
+                }} />
+            </label>
+          </div>
+        </div>
         <div className="tbl-wrap" style={{ margin: '10px 0 4px' }}><table>
           <thead><tr>
             <th style={{ width: 28 }}>#</th><th>Columna</th><th>Ejemplo</th>
@@ -328,8 +404,9 @@ export default function Inventario() {
           </tbody>
         </table></div>
         <p style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>
-          Las columnas opcionales pueden ir vacías, pero <b>su lugar debe respetarse</b>: si no pones
-          especificaciones, deja el separador igual. Si la primera fila es el encabezado, se descarta sola.
+          Las columnas opcionales pueden ir vacías, pero <b>su lugar debe respetarse</b>. El encabezado de la
+          plantilla se descarta solo. El {CAMPO.memo.toLowerCase()} se elige abajo, una vez para toda la carga;
+          las fotos y la ficha técnica no van en la planilla.
         </p>
         {errores?.length > 0 && (
           <div className="aviso" style={{ borderColor: 'var(--bad-line)', background: 'var(--bad-bg)' }}>
@@ -349,19 +426,19 @@ export default function Inventario() {
         </Field>
         <Field label="Datos">
           <textarea rows="7" value={texto} onChange={(e) => setTexto(e.target.value)}
-            placeholder={'1000234;Motor eléctrico 4000 HP;WEG 3.300V;MEL;Los Colorados B-3;28500\n1000235;Tolva CAEX 930E;Estructura completa;La Negra;Patio A-1;45000'} />
+            placeholder={'1000234;Motor eléctrico 4000 HP;WEG 3.300V;MEL;Sector B-3 · Fila 2;28500\n1000235;Tolva CAEX 930E;Estructura completa;La Negra;Patio A-1;45000'} />
         </Field>
         {previa.length > 0 && (
           <div className="tbl-wrap" style={{ marginTop: 4 }}><table>
-            <thead><tr><th>Código</th><th>Nombre</th><th>Sitio</th><th>Ubicación</th><th className="num">Valor ref.</th><th className="num">Cant.</th></tr></thead>
+            <thead><tr>{COLUMNAS.map((c) => <th key={c.campo} className={c.num ? 'num' : undefined}>{c.titulo}</th>)}</tr></thead>
             <tbody>
               {previa.slice(0, 8).map((r, i) => (
                 <tr key={i}>
                   <td className="mono">{r.codigo || <span style={{ color: 'var(--bad-tx)' }}>falta</span>}</td>
                   <td>{r.nombre || <span style={{ color: 'var(--bad-tx)' }}>falta</span>}</td>
+                  <td>{r.especificaciones || '—'}</td>
                   <td>{r.sitio || '—'}</td><td>{r.ubicacion || '—'}</td>
                   <td className="num">{r.valor_referencial ? fmtUSD(r.valor_referencial) : '—'}</td>
-                  <td className="num">{r.cantidad || 1}</td>
                 </tr>
               ))}
             </tbody>
@@ -438,7 +515,7 @@ export default function Inventario() {
 function Campos({ v, set, sitios, memos, conArchivos }) {
   return (<>
     {memos && (
-      <Field label="Memo de baja"
+      <Field label={CAMPO.memo}
         hint="El memo firmado del área usuaria que autoriza enajenar este componente. Se carga en «Memos de baja».">
         <Select value={v.memo_id} onChange={(e) => set({ ...v, memo_id: e.target.value })}>
           <option value="">— Elija el memo —</option>
@@ -452,33 +529,33 @@ function Campos({ v, set, sitios, memos, conArchivos }) {
       </Field>
     )}
     <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
-      <Field label="Código (SKU SAP)" hint="Se digita: corresponde al SKU del componente en SAP.">
+      <Field label={CAMPO.codigo} hint="Se digita: corresponde al SKU del componente en SAP.">
         <input value={v.codigo} onChange={(e) => set({ ...v, codigo: e.target.value })} placeholder="1000234" />
       </Field>
-      <Field label="Nombre del componente">
+      <Field label={CAMPO.nombre}>
         <input value={v.nombre} onChange={(e) => set({ ...v, nombre: e.target.value })} placeholder="Motor eléctrico 4.000 HP" />
       </Field>
     </div>
-    <Field label="Especificaciones" hint="Marca, características, estado de uso. Se muestran en el portal público.">
+    <Field label={CAMPO.especificaciones} hint="Marca, características, estado de uso. Se muestran en el portal público.">
       <textarea rows="2" value={v.especificaciones} onChange={(e) => set({ ...v, especificaciones: e.target.value })}
         placeholder="WEG · 3.300 V · 50 Hz · usado, operativo al retiro de servicio" />
     </Field>
     <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
-      <Field label="Sitio">
+      <Field label={CAMPO.sitio}>
         <Select value={v.sitio_id} onChange={(e) => set({ ...v, sitio_id: e.target.value })}>
           <option value="">— Sin definir —</option>
           {sitios.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </Select>
       </Field>
-      <Field label="Ubicación en terreno">
+      <Field label={CAMPO.ubicacion}>
         <input value={v.ubicacion} onChange={(e) => set({ ...v, ubicacion: e.target.value })} placeholder="Sector B-3 · Fila 2" />
       </Field>
     </div>
-    <Field label="Valor referencial (USD)" hint="Estimación interna en dólares; no es la oferta mínima de la publicación.">
+    <Field label={CAMPO.valor} hint="Estimación interna en dólares; no es la oferta mínima de la publicación.">
       <input type="number" min="0" value={v.valor_referencial} onChange={(e) => set({ ...v, valor_referencial: e.target.value })} placeholder="28500" />
     </Field>
     {conArchivos && <>
-      <Field label="Fotos del componente" hint="JPG, PNG o WebP · hasta 4 · se muestran en el portal público.">
+      <Field label={CAMPO.fotos} hint="JPG, PNG o WebP · hasta 4 · se muestran en el portal público.">
         <input type="file" multiple accept="image/jpeg,image/png,image/webp"
           onChange={(e) => set({ ...v, fotos: Array.from(e.target.files).slice(0, 4) })} />
         {v.fotos?.length > 0 && (
@@ -490,7 +567,7 @@ function Campos({ v, set, sitios, memos, conArchivos }) {
           </div>
         )}
       </Field>
-      <Field label="Ficha técnica" hint="PDF, planilla Excel o foto. Opcional.">
+      <Field label={CAMPO.ficha} hint="PDF, planilla Excel o foto. Opcional.">
         <input type="file" accept={FICHA_ACCEPT}
           onChange={(e) => set({ ...v, ficha: e.target.files[0] || null })} />
         {v.ficha && <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>📄 {v.ficha.name}</small>}

@@ -192,7 +192,14 @@ a{color:var(--copper-deep)}
 .side-brand b{font-size:20px;letter-spacing:.1em}
 .side-brand small{display:block;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--graphite-mut);margin-top:2px;white-space:nowrap}
 .side-brand small + small{margin-top:1px}
-.nav{flex:1;overflow-y:auto;padding:6px 13px 20px;position:relative;z-index:1}
+.nav{flex:1;overflow-y:auto;padding:6px 13px 20px;position:relative;z-index:1;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent}
+/* En pantallas bajas el menú se desplaza: la barra va oscura y delgada, no la
+   clara del sistema, que cortaba la barra lateral en dos. */
+.nav::-webkit-scrollbar{width:6px}
+.nav::-webkit-scrollbar-track{background:transparent}
+.nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:6px}
+.nav::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.28)}
 .nav-sec{font-size:9.5px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;color:var(--graphite-mut);padding:18px 13px 7px}
 .nav-item{
   display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:none;border:0;
@@ -207,13 +214,22 @@ a{color:var(--copper-deep)}
   box-shadow:0 3px 12px -2px var(--copper-glow), inset 0 1px 0 rgba(255,255,255,.18);
 }
 .nav-item.active svg{opacity:1}
-.side-user{border-top:1px solid rgba(255,255,255,.08);padding:16px 20px;display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+.side-user{border-top:1px solid rgba(255,255,255,.08);padding:14px 18px 16px;display:flex;flex-direction:column;gap:11px;position:relative;z-index:1}
+.side-id{display:flex;align-items:center;gap:11px;min-width:0}
 .side-user .avatar{width:36px;height:36px;flex-shrink:0}
 .side-user .who{min-width:0;flex:1}
-.side-user b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.side-user small{color:var(--graphite-mut);font-size:11px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.side-user button{background:none;border:1px solid rgba(255,255,255,.2);color:#C9CFD5;border-radius:8px;padding:6px 10px;font-size:11.5px;transition:border-color .13s,color .13s}
-.side-user button:hover{border-color:var(--copper-dark);color:var(--copper-dark)}
+/* Hasta dos líneas: un nombre largo se lee entero en vez de cortarse. */
+.side-user b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:13px;line-height:1.3;overflow-wrap:anywhere}
+.side-user small{color:var(--graphite-mut);font-size:11px;display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side-acts{display:flex;gap:6px}
+.side-acts button{
+  flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;
+  background:none;border:1px solid rgba(255,255,255,.2);color:#C9CFD5;border-radius:8px;padding:6px 8px;
+  font-size:11.5px;white-space:nowrap;transition:border-color .13s,color .13s;
+}
+.side-acts button:hover{border-color:var(--copper-dark);color:var(--copper-dark)}
+/* Clave inicial: el botón se destaca para invitar a cambiarla. */
+.side-acts button.pide{border-color:var(--copper-dark);color:var(--copper-dark)}
 
 .avatar{
   display:grid;place-items:center;border-radius:10px;
@@ -238,16 +254,21 @@ a{color:var(--copper-deep)}
 .nav-rail .nav div:first-child .nav-sec{border-top:0;margin-top:4px}
 .nav-rail .nav-item{justify-content:center;padding:11px 0;gap:0}
 .nav-rail .ntxt{display:none}
-.nav-rail .side-user{flex-direction:column;padding:14px 8px;gap:9px}
-.nav-rail .side-user .who{display:none}
+.nav-rail .side-user{align-items:center;padding:14px 8px;gap:9px}
+.nav-rail .side-user .who,.nav-rail .side-acts span{display:none}
+.nav-rail .side-acts{flex-direction:column;width:100%}
+.nav-rail .side-acts button{padding:8px 0}
 @media (max-width:960px){
   .nav-toggle{display:none}
   .nav-rail{grid-template-columns:1fr}
   .nav-rail .btxt,.nav-rail .ntxt,.nav-rail .side-user .who{display:block}
+  .nav-rail .side-acts span{display:inline}
+  .nav-rail .side-acts{flex-direction:row}
+  .nav-rail .side-acts button{padding:6px 8px}
   .nav-rail .nav-item{justify-content:flex-start;padding:9.5px 13px;gap:12px}
   .nav-rail .nav-sec{font-size:9.5px;border-top:0;padding:18px 13px 7px;margin:0}
   .nav-rail .side-brand{justify-content:flex-start;padding:22px 24px 18px}
-  .nav-rail .side-user{flex-direction:row;padding:16px 20px;gap:12px}
+  .nav-rail .side-user{align-items:stretch;padding:14px 18px 16px;gap:11px}
 }
 
 .main{min-width:0;display:flex;flex-direction:column}
@@ -363,6 +384,10 @@ td.mono, td .mono{color:var(--copper-deep)}
 tbody tr{transition:background .1s}
 tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--surface-2)}
+/* Tablas operativas con muchas columnas: menos aire entre columnas para que
+   quepan enteras en un notebook (1366 px) sin desplazarse de lado. */
+table.densa th,table.densa td{padding-left:10px;padding-right:10px}
+table.densa th:first-child,table.densa td:first-child{padding-left:16px}
 /* =============== DOCUMENTO DEL ESTADO DE PAGO ===============
    Reproduce el formulario del contrato; los recuadros amarillos del
    original son los campos que alimenta la plataforma. */
@@ -423,6 +448,23 @@ td.acc, th.acc{
   box-shadow:-9px 0 11px -9px rgba(33,27,21,.22);
 }
 td.acc{background:var(--surface)}
+/* Varios botones en una fila: se acomodan en dos líneas en vez de ensanchar la
+   tabla. Una columna de acciones de 400 px empujaba la tabla fuera de la
+   tarjeta y, como va fija a la derecha, tapaba las columnas anteriores. */
+.acciones{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end;min-width:170px;max-width:250px;margin-left:auto}
+/* Nombres de material: se cortan tras cada coma (ver cortable en Inventario);
+   el mínimo evita que la columna quede reducida a una palabra por línea. */
+td.parte{min-width:120px}
+/* Títulos largos (las etiquetas del formulario) pueden ir en dos líneas. */
+table.cabecera-libre th{white-space:normal;vertical-align:bottom;line-height:1.35}
+/* Texto largo de una celda: hasta dos líneas y el resto con «…». */
+.dos-lineas{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--ink-2)}
+/* Plantilla de la carga masiva: instrucción y botones lado a lado. */
+.masivo-plantilla{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  border:1px solid var(--line);background:var(--surface-2);border-radius:var(--radius-s);padding:12px 14px;margin-bottom:6px}
+.masivo-plantilla p{flex:1;min-width:260px}
+/* Texto secundario de una celda en una sola línea, recortado con «…». */
+.recorte{display:block;max-width:115px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 th.acc{background:var(--surface-2)}
 tbody tr:hover td.acc{background:var(--surface-2)}
 /* Cotejo de pesajes en la recepción: lo declarado por MEL frente a lo pesado */

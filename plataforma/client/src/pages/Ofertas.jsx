@@ -260,7 +260,7 @@ export default function Ofertas() {
                     onChange={(e) => setNombres({ ...nombres, [c.id]: e.target.value })} /></td>
                   <td className="num"><input type="number" min="0" max="100" style={{ width: 80 }}
                     value={pesos[c.id] ?? ''} onChange={(e) => setPesos({ ...pesos, [c.id]: e.target.value })} /></td>
-                  <td className="num">
+                  <td className="num acc">
                     <button className="btn sm danger" onClick={() => quitarCriterio(c)} title="Quitar de la matriz">Quitar</button>
                   </td>
                 </tr>
