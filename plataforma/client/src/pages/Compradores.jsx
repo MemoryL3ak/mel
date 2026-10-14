@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { Select, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
-const EYEBROW = 'Fase 2 · Venta de obsoletos';
+const EYEBROW = 'Venta de obsoletos';
 const DD = { aprobada: ['ok', 'Aprobada'], pendiente: ['warn', 'En revisión'], rechazada: ['bad', 'Rechazada'] };
 
 export default function Compradores() {

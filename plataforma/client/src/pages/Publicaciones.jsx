@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, fmtUSD } from '../api.js';
 import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
 
-const EYEBROW = 'Fase 2 · Venta de obsoletos';
+const EYEBROW = 'Venta de obsoletos';
 const ESTADO = {
   activa: ['info', 'Activa'], adjudicada: ['ok', 'Adjudicada'],
   convertida: ['bad', 'Convertida a chatarra'], cancelada: ['neutral', 'Cancelada'],
@@ -126,7 +126,7 @@ export default function Publicaciones() {
       </table></div>
         {rows.length === 0 && <Empty title="Sin publicaciones">Publique un componente del inventario para que aparezca en el portal.</Empty>}
       </div>
-      <div className="audit-note" style={{ marginTop: 12 }}>⚙ Al cumplirse el plazo sin adjudicar se cierra la publicación, se descartan las ofertas recibidas —avisando a cada oferente— y el componente queda en el inventario <b>pendiente de clasificar</b>. Entra al programa de limpieza de Fase 1 cuando se le asigna patio, categoría y peso.</div>
+      <div className="audit-note" style={{ marginTop: 12 }}>⚙ Al cumplirse el plazo sin adjudicar se cierra la publicación, se descartan las ofertas recibidas —avisando a cada oferente— y el componente queda en el inventario <b>pendiente de clasificar</b>. Entra al programa de limpieza cuando se le asigna patio, categoría y peso.</div>
 
       <Modal open={nuevo} title="Publicar componente en el portal" onClose={() => setNuevo(false)}
         footer={<>

@@ -8,7 +8,7 @@ import BotonDocs from '../BotonDocs.jsx';
 // enajenar componentes. Es el origen del inventario obsoleto y la lista contra
 // la cual se concilia lo que aparece en terreno.
 // Lo carga MEL (coordinador); el vendor lo lee para saber de dónde viene lo que publica.
-const EYEBROW = 'Fase 2 · Venta de obsoletos';
+const EYEBROW = 'Venta de obsoletos';
 const ESTADO = {
   recibido: ['info', 'Recibido'],
   en_identificacion: ['warn', 'En identificación'],
