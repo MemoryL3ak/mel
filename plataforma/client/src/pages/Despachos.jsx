@@ -87,6 +87,27 @@ const EVIDENCIA = [
   ['carga', 'Foto de la carga', 'Estado del material sobre el camión al salir del patio (opcional).'],
 ];
 
+// Alternativa del contrato: A sin madera o B con madera, cada una con su precio
+// por tonelada. La misma elección se ofrece al despachar, al recepcionar y al
+// corregir la guía o la recepción.
+function AlternativaMadera({ categoria, valor, onChange, label, hint }) {
+  const precioTm = (v) => (v == null ? 'sin precio vigente' : `USD ${usd(v)}/TM`);
+  return (
+    <Field label={label} hint={hint}>
+      <div className="alternativas">
+        {[[false, 'Sin madera', 'Alternativa A', categoria?.precio_usd_tm],
+          [true, 'Con madera', 'Alternativa B', categoria?.precio_usd_tm_madera]].map(([val, tit, alt, precio]) => (
+          <button key={String(val)} type="button" className={`alt${valor === val ? ' sel' : ''}`} onClick={() => onChange(val)}>
+            <b>{tit}</b>
+            <small>{alt}</small>
+            <span className="mono">{precioTm(precio)}</span>
+          </button>
+        ))}
+      </div>
+    </Field>
+  );
+}
+
 export default function Despachos() {
   const [rows, setRows] = useState(null);
   const [traslados, setTraslados] = useState([]);
@@ -102,6 +123,7 @@ export default function Despachos() {
   const [resolver, setResolver] = useState(null);
   const [nuevoTras, setNuevoTras] = useState(false);
   const [recepTras, setRecepTras] = useState(null);
+  const [corrTras, setCorrTras] = useState(null);   // corrección de un traslado a Lampa
   const hoyISO = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -164,6 +186,7 @@ export default function Despachos() {
   const puedeRecep = ['vendor', 'ito', 'coordinador'].includes(user.role);
   const puedeTras = ['vendor', 'coordinador'].includes(user.role);
   const puedeRecepTras = ['vendor', 'coordinador', 'lampa'].includes(user.role);
+  const puedeCorrTras = ['vendor', 'coordinador', 'lampa', 'ito'].includes(user.role);
   const puedeResolver = ['ito', 'coordinador'].includes(user.role);
   const puedeEditar = ['limpieza', 'ito', 'coordinador'].includes(user.role);
   const puedeAnular = ['limpieza', 'ito', 'coordinador'].includes(user.role);
@@ -279,6 +302,7 @@ export default function Despachos() {
       bruto_destino: d.bruto_kg ?? d.kg_destino ?? '',
       kg_destino: d.kg_destino ?? '', tara_kg: d.tara_kg ?? '',
       ticket_numero: d.ticket_numero ?? '', vale_numero: d.vale_numero ?? '', motivo: '',
+      con_madera: d.con_madera ?? true,
     });
   }
   async function guardarCorreccion() {
@@ -291,9 +315,28 @@ export default function Despachos() {
         kg_destino: brutoC ? Math.max(brutoC - taraC, 0) : undefined,
         tara_kg: cForm.tara_kg === '' ? undefined : Number(cForm.tara_kg),
         ticket_numero: cForm.ticket_numero, vale_numero: cForm.vale_numero,
+        ...(fn.tm && corregir.precio_usd_tm != null ? { con_madera: cForm.con_madera } : {}),
         motivo: cForm.motivo.trim() } });
       toast(`Recepción de ${corregir.guia} corregida`);
       setCorregir(null); load();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // Corrección de un traslado a Lampa (kilos, categoría o peso recibido).
+  async function guardarCorrTras() {
+    const c = corrTras;
+    const kg = aKg(c.kg, c.unidad);
+    if (!kg) return toast('Indique el peso despachado', true);
+    const kgLampa = c.t.estado === 'recepcionado' ? aKg(c.kg_lampa, c.unidad_lampa) : null;
+    if (c.t.estado === 'recepcionado' && !kgLampa) return toast('Indique el peso recibido en Lampa', true);
+    if (!c.motivo.trim()) return toast('Indique el motivo de la corrección', true);
+    try {
+      const r = await api(`/traslados/${c.t.id}`, { method: 'PATCH', body: {
+        categoria_id: c.categoria_id, kg, ...(kgLampa ? { kg_lampa: kgLampa } : {}), motivo: c.motivo.trim() } });
+      toast(r.cuadratura_cerrada
+        ? `${c.t.guia} corregido · la cuadratura S${r.cuadratura_cerrada.semana} ya estaba cerrada: rehaga su cierre en Cuadratura`
+        : `${c.t.guia} corregido`);
+      setCorrTras(null); load();
     } catch (e) { toast(e.message, true); }
   }
 
@@ -321,6 +364,7 @@ export default function Despachos() {
       bruto_origen: String(d.bruto_origen_kg ?? d.kg_origen ?? ''),
       tara_origen: d.tara_origen_kg != null ? String(d.tara_origen_kg) : '', unidad_tara: 'kg',
       observacion: d.observacion ?? '',
+      con_madera: d.con_madera ?? true,
       transportista: d.transportista ?? '', transportista_rut: d.transportista_rut ?? '',
       patente_tracto: d.patente_tracto ?? '', patente_rampla: d.patente_rampla ?? '',
       ev: {},   // respaldos que se suman al corregir
@@ -345,6 +389,10 @@ export default function Despachos() {
       fd.append('kg_origen', kg);
       fd.append('tara_origen_kg', taraE || '');
       fd.append('observacion', eForm.observacion ?? '');
+      // La alternativa solo se corrige aquí mientras la guía no se recepciona.
+      if (fn.tm && ['pendiente_guia', 'en_transito'].includes(editar.estado)) {
+        fd.append('con_madera', eForm.con_madera ? 'true' : 'false');
+      }
       for (const k of ['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla']) {
         fd.append(k, eForm[k].trim());
       }
@@ -660,6 +708,13 @@ export default function Despachos() {
                       {t.cert_fotos > 0 ? 'Agregar documento' : 'Adjuntar CDF'}
                     </button>
                   )}{' '}
+                  {puedeCorrTras && (
+                    <button className="btn sm" title="Corregir kilos o categoría mal ingresados"
+                      onClick={() => setCorrTras({
+                        t, categoria_id: t.categoria_id, kg: String(t.kg), unidad: 'kg',
+                        kg_lampa: t.kg_lampa != null ? String(t.kg_lampa) : '', unidad_lampa: 'kg', motivo: '',
+                      })}>Corregir</button>
+                  )}{' '}
                   <BotonDocs hito="traslado" refId={t.id} />
                 </td>
               </tr>
@@ -881,27 +936,12 @@ export default function Despachos() {
         </Field>
         {/* La alternativa del contrato la declara quien despacha, que es quien ve
             como sale la carga del patio. La Negra la confirma al recibir. */}
-        {fn.tm && (() => {
-          const cat = maestros?.categorias?.find((c) => c.id === form.categoria_id);
-          const precioTm = (v) => v == null ? 'sin precio vigente' : `USD ${usd(v)}/TM`;
-          return (
-            <Field label="¿La carga lleva madera?"
-              hint="Define qué alternativa del contrato se aplica. La Negra la confirma o la corrige al recibir.">
-              <div className="alternativas">
-                {[[false, 'Sin madera', 'Alternativa A', cat?.precio_usd_tm],
-                  [true, 'Con madera', 'Alternativa B', cat?.precio_usd_tm_madera]].map(([val, tit, alt, precio]) => (
-                  <button key={String(val)} type="button"
-                    className={`alt${form.con_madera === val ? ' sel' : ''}`}
-                    onClick={() => setForm({ ...form, con_madera: val })}>
-                    <b>{tit}</b>
-                    <small>{alt}</small>
-                    <span className="mono">{precioTm(precio)}</span>
-                  </button>
-                ))}
-              </div>
-            </Field>
-          );
-        })()}
+        {fn.tm && (
+          <AlternativaMadera label="¿La carga lleva madera?"
+            hint="Define qué alternativa del contrato se aplica. La Negra la confirma o la corrige al recibir."
+            categoria={maestros?.categorias?.find((c) => c.id === form.categoria_id)}
+            valor={form.con_madera} onChange={(v) => setForm({ ...form, con_madera: v })} />
+        )}
         {/* La báscula pesa el camión cargado y después vacío: el neto SALE de
             esos dos, no se digita. Antes el primer campo decía «peso en báscula»
             y se guardaba como neto, así que quien anotaba el bruto del ticket
@@ -1032,32 +1072,16 @@ export default function Despachos() {
         })()}
         {/* Alternativa A o B del contrato. Se decide mirando la carga, y el
             precio que se elija aquí queda congelado con la guía. */}
-        {fn.tm && (() => {
-          // Si se reclasificó, el precio que rige es el de la categoría final:
-          // es la que se congela con la guía.
-          const cat = rForm.categoria_final_id
-            ? maestros?.categorias?.find((c) => c.id === rForm.categoria_final_id)
-            : maestros?.categorias?.find((c) => c.nombre === recep?.categoria);
-          const a = cat?.precio_usd_tm;
-          const b = cat?.precio_usd_tm_madera;
-          const precioTm = (v) => v == null ? 'sin precio vigente' : `USD ${usd(v)}/TM`;
-          return (
-            <Field label="¿La carga viene con madera?"
-              hint="Define qué alternativa del contrato se aplica. El precio elegido queda congelado con esta guía.">
-              <div className="alternativas">
-                {[[false, 'Sin madera', 'Alternativa A', a], [true, 'Con madera', 'Alternativa B', b]].map(([val, tit, alt, precio]) => (
-                  <button key={String(val)} type="button"
-                    className={`alt${rForm.con_madera === val ? ' sel' : ''}`}
-                    onClick={() => setRForm({ ...rForm, con_madera: val })}>
-                    <b>{tit}</b>
-                    <small>{alt}</small>
-                    <span className="mono">{precioTm(precio)}</span>
-                  </button>
-                ))}
-              </div>
-            </Field>
-          );
-        })()}
+        {/* Si se reclasificó, el precio que rige es el de la categoría final:
+            es la que se congela con la guía. */}
+        {fn.tm && (
+          <AlternativaMadera label="¿La carga viene con madera?"
+            hint="Define qué alternativa del contrato se aplica. El precio elegido queda congelado con esta guía."
+            categoria={rForm.categoria_final_id
+              ? maestros?.categorias?.find((c) => c.id === rForm.categoria_final_id)
+              : maestros?.categorias?.find((c) => c.nombre === recep?.categoria)}
+            valor={rForm.con_madera} onChange={(v) => setRForm({ ...rForm, con_madera: v })} />
+        )}
 
         {fn.pesaje && <>
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
@@ -1138,8 +1162,16 @@ export default function Despachos() {
           <b>El precio no se recalcula</b>
           <p>Quedó congelado al recepcionar y se mantiene. Corregir el peso cambia los kilos y el
           valor que resulta de ellos, <b>no lo que valía el material ese día</b>. Si la diferencia
-          contra el peso de origen queda sobre 2%, la guía vuelve a marcarse observada.</p>
+          contra el peso de origen queda sobre 2%, la guía vuelve a marcarse observada.
+          {fn.tm && corregir?.precio_usd_tm != null && <> Solo si cambia la alternativa se aplica el precio de la
+          otra, vigente a la fecha de la guía, con el mismo dólar congelado.</>}</p>
         </div>
+        {fn.tm && corregir?.precio_usd_tm != null && (
+          <AlternativaMadera label="¿La carga venía con madera?"
+            hint={`Hoy: ${corregir.con_madera ? 'con madera (B)' : 'sin madera (A)'} a USD ${usd(corregir.precio_usd_tm)}/TM.`}
+            categoria={maestros?.categorias?.find((c) => c.nombre === (corregir.categoria_final ?? corregir.categoria))}
+            valor={cForm.con_madera} onChange={(v) => setCForm({ ...cForm, con_madera: v })} />
+        )}
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="Peso bruto · camión cargado (kg)"
             hint={corregir?.bruto_kg != null ? `Actual: ${fmtKg(corregir.bruto_kg)}` : 'El pesaje del camión con la carga.'}>
@@ -1235,6 +1267,38 @@ export default function Despachos() {
           valor={tForm.kg} unidad={tForm.unidad}
           onValor={(v) => setTForm({ ...tForm, kg: v })}
           onUnidad={(u) => setTForm({ ...tForm, unidad: u })} />
+      </Modal>
+
+      <Modal open={!!corrTras} title={corrTras && `Corregir traslado · ${corrTras.t.guia}`} onClose={() => setCorrTras(null)}
+        footer={<>
+          <button className="btn" onClick={() => setCorrTras(null)}>Cancelar</button>
+          <button className="btn primary" onClick={guardarCorrTras}>Guardar corrección</button>
+        </>}>
+        {corrTras && <>
+          <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
+            Para corregir kilos o categoría mal ingresados. Queda en la bitácora con el antes y el después.
+            {corrTras.t.cert_folio && <> El certificado <b>{corrTras.t.cert_folio}</b> conserva su folio y pasa a certificar los kilos corregidos.</>}
+          </p>
+          <Field label="Categoría de material">
+            <Select value={corrTras.categoria_id ?? ''} onChange={(e) => setCorrTras({ ...corrTras, categoria_id: +e.target.value })}>
+              {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </Select>
+          </Field>
+          <CampoPeso label="Peso despachado desde La Negra" hint={`Registrado: ${fmtKg(corrTras.t.kg)} kg.`}
+            valor={corrTras.kg} unidad={corrTras.unidad}
+            onValor={(v) => setCorrTras({ ...corrTras, kg: v })}
+            onUnidad={(u) => setCorrTras({ ...corrTras, unidad: u })} />
+          {corrTras.t.estado === 'recepcionado' && (
+            <CampoPeso label="Peso recibido en Lampa" hint={`Registrado: ${fmtKg(corrTras.t.kg_lampa)} kg.`}
+              valor={corrTras.kg_lampa} unidad={corrTras.unidad_lampa}
+              onValor={(v) => setCorrTras({ ...corrTras, kg_lampa: v })}
+              onUnidad={(u) => setCorrTras({ ...corrTras, unidad_lampa: u })} />
+          )}
+          <Field label="Motivo de la corrección" hint="Obligatorio. Queda en la bitácora.">
+            <textarea rows="2" value={corrTras.motivo} onChange={(e) => setCorrTras({ ...corrTras, motivo: e.target.value })}
+              placeholder="Se ingresaron toneladas como kilos: la guía GT indica 10.000 kg." />
+          </Field>
+        </>}
       </Modal>
 
       <Modal open={!!recepTras} title={recepTras && `Recepcionar ${recepTras.guia} en Lampa`} onClose={() => { setRecepTras(null); setCdfFile([]); }}
@@ -1337,6 +1401,21 @@ export default function Despachos() {
             {maestros?.categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </Select>
         </Field>
+        {fn.tm && (['pendiente_guia', 'en_transito'].includes(editar.estado) ? (
+          <AlternativaMadera label="¿La carga lleva madera?"
+            hint="Define qué alternativa del contrato se aplica. La Negra la confirma o la corrige al recibir."
+            categoria={maestros?.categorias?.find((c) => c.id === eForm.categoria_id)}
+            valor={eForm.con_madera} onChange={(v) => setEForm({ ...eForm, con_madera: v })} />
+        ) : editar.con_madera != null && (
+          <Field label="Alternativa del contrato">
+            <div style={{ fontSize: 13.5 }}>
+              <b>{editar.con_madera ? 'Con madera · alternativa B' : 'Sin madera · alternativa A'}</b>
+              <small style={{ display: 'block', color: 'var(--muted)', marginTop: 3 }}>
+                La confirmó La Negra al recibir y con ella se fijó el precio. Para cambiarla use «Corregir recepción».
+              </small>
+            </div>
+          </Field>
+        ))}
         {fn.tara_origen ? (<>
           <CampoPeso label="Peso bruto · camión cargado en la báscula"
             valor={eForm.bruto_origen} unidad={eForm.unidad}
