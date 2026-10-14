@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { env } from './env.js';
 import { login, cambiarClave, auth } from './auth.js';
+import { solicitar, validar, restablecer } from './recuperar.js';
 import { ah } from './supa.js';
 import maestros from './routes/maestros.js';
 import programa from './routes/programa.js';
@@ -65,11 +66,32 @@ const portalLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes. Espere unos minutos y vuelva a intentar.' },
 });
 
+// Recuperación de contraseña: pocas solicitudes por IP, para que el formulario
+// no sirva para inundar casillas ajenas ni para probar enlaces a ciegas.
+const recuperarLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes de recuperación. Espere 15 minutos y vuelva a intentar.' },
+});
+const restablecerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espere 15 minutos y vuelva a intentar.' },
+});
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, fase: 3 }));
 app.post('/api/auth/login', loginLimiter, ah(login));
 // Cada quien cambia su propia contraseña; no requiere rol.
 app.post('/api/auth/password', auth(), ah(cambiarClave));
 app.get('/api/auth/me', auth(), (req, res) => res.json({ user: req.user }));
+// Sin sesión: quien olvidó su clave no puede iniciarla.
+app.post('/api/auth/recuperar', recuperarLimiter, ah(solicitar));
+app.post('/api/auth/restablecer/validar', restablecerLimiter, ah(validar));
+app.post('/api/auth/restablecer', restablecerLimiter, ah(restablecer));
 
 app.use('/api/portal', portalLimiter);
 

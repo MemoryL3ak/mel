@@ -59,6 +59,7 @@ export default function Portal() {
   const [orden, setOrden] = useState('cierre');
   const [rf, setRf] = useState({ razon_social: '', rut: '', email: '', telefono: '', password: '' });
   const [lf, setLf] = useState({ email: '', password: '' });
+  const [recupera, setRecupera] = useState(null);   // { correo, enviado }
   const [of, setOf] = useState({
     monto: '', moneda: 'USD', plazo_retiro: '5 días hábiles', forma_pago: 'Transferencia 100%', comentarios: '',
     solicitante_tipo: 'persona', solicitante_nombre: '', solicitante_rut: '',
@@ -87,6 +88,12 @@ export default function Portal() {
       if (u.role !== 'comprador') { logout(); return toast('Esa cuenta no es de comprador. Use el acceso interno de la plataforma.', true); }
       toast(`Bienvenido, ${u.name}`);
       setAcceso(false); setLf({ email: '', password: '' });
+    } catch (e) { toast(e.message, true); }
+  }
+  async function pedirEnlace() {
+    try {
+      const r = await api('/auth/recuperar', { method: 'POST', body: { correo: recupera.correo.trim(), ambito: 'portal' } });
+      setRecupera({ ...recupera, enviado: r.mensaje });
     } catch (e) { toast(e.message, true); }
   }
   async function enviarOferta() {
@@ -366,6 +373,24 @@ export default function Portal() {
         <Field label="Correo"><input value={lf.email} onChange={(e) => setLf({ ...lf, email: e.target.value })} placeholder="contacto@empresa.cl" /></Field>
         <Field label="Contraseña"><input type="password" value={lf.password} onChange={(e) => setLf({ ...lf, password: e.target.value })} placeholder="••••••••" /></Field>
         <small style={{ color: 'var(--muted)' }}>Su cuenta se habilita cuando aprobamos la due diligence. ¿No tiene cuenta? Regístrese primero.</small>
+        <button type="button" className="login-link" style={{ marginTop: 12 }}
+          onClick={() => { setAcceso(false); setRecupera({ correo: lf.email, enviado: null }); }}>¿Olvidó su contraseña?</button>
+      </Modal>
+
+      <Modal open={!!recupera} title="Recuperar contraseña" onClose={() => setRecupera(null)}
+        footer={recupera?.enviado
+          ? <button className="btn primary" onClick={() => setRecupera(null)}>Entendido</button>
+          : <><button className="btn" onClick={() => setRecupera(null)}>Cancelar</button>
+              <button className="btn primary" onClick={pedirEnlace} disabled={!recupera?.correo?.trim()}>Enviar enlace</button></>}>
+        {recupera?.enviado ? <p style={{ margin: 0 }}>{recupera.enviado}</p> : (<>
+          <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
+            Le enviaremos un enlace al correo con que se registró para definir una contraseña nueva.
+          </p>
+          <Field label="Correo">
+            <input type="email" value={recupera?.correo ?? ''} onChange={(e) => setRecupera({ ...recupera, correo: e.target.value })}
+              placeholder="contacto@empresa.cl" />
+          </Field>
+        </>)}
       </Modal>
 
       <Modal open={!!oferta} title={oferta && `Presentar oferta · ${oferta.componente}`} onClose={() => setOferta(null)}

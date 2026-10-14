@@ -19,6 +19,7 @@ import Ofertas from './pages/Ofertas.jsx';
 import Compradores from './pages/Compradores.jsx';
 import Portal from './pages/Portal.jsx';
 import Documentos from './pages/Documentos.jsx';
+import Restablecer from './pages/Restablecer.jsx';
 
 const I = {
   panel: <path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z" />,
@@ -197,6 +198,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/restablecer" element={<Restablecer />} />
             <Route path="/" element={<Home />} />
             <Route path="/programa" element={<Guard screen="programa"><Programa /></Guard>} />
             <Route path="/despachos" element={<Guard screen="despachos"><Despachos /></Guard>} />
