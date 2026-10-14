@@ -5,7 +5,7 @@ import { useAuth } from '../auth.jsx';
 
 export default function Cuadratura() {
   const [data, setData] = useState(null);
-  const [cerrar, setCerrar] = useState(false);
+  const [cerrar, setCerrar] = useState(false);   // false | 'nuevo' | 'rehacer'
   const [cat, setCat] = useState('todas');   // filtro de categoría de la tabla
   const [fila, setFila] = useState(null);    // fila abierta en el detalle guía a guía
   const [obs, setObs] = useState('');
@@ -32,8 +32,11 @@ export default function Cuadratura() {
 
   async function cerrarSemana() {
     try {
-      const r = await api('/cuadratura/cerrar', { method: 'POST', body: { anio: data.anio, semana: data.semana, observacion: obs } });
-      toast(r.estado === 'cuadrada' ? 'Semana cuadrada sin diferencias' : 'Cuadratura cerrada con diferencias registradas');
+      const rehacer = cerrar === 'rehacer';
+      const r = await api('/cuadratura/cerrar', { method: 'POST', body: { anio: data.anio, semana: data.semana, observacion: obs, rehacer } });
+      toast(rehacer
+        ? 'Cierre rehecho con los datos corregidos · Lampa debe confirmarlo de nuevo'
+        : r.estado === 'cuadrada' ? 'Semana cuadrada sin diferencias' : 'Cuadratura cerrada con diferencias registradas');
       setCerrar(false); setObs('');
       load({ anio: data.anio, semana: data.semana });
     } catch (e) { toast(e.message, true); }
@@ -54,12 +57,27 @@ export default function Cuadratura() {
       <PageHead title="Cuadratura semanal de movimientos"
         sub="Cruce de la semana por categoría en sus tres dimensiones: cantidad de guías de despacho, kilos y monto valorizado. Haga clic en una categoría para ver guía a guía de dónde nace su diferencia. El cierre guarda un registro inmutable.">
         {!data.cerrada && data.detalle.length > 0 && puedeCerrar && (
-          <button className="btn primary" onClick={() => setCerrar(true)}>Cerrar cuadratura S{data.semana}</button>
+          <button className="btn primary" onClick={() => setCerrar('nuevo')}>Cerrar cuadratura S{data.semana}</button>
+        )}
+        {data.cerrada && data.cambios_desde_cierre && puedeCerrar && (
+          <button className="btn" onClick={() => { setCerrar('rehacer'); setObs(''); }}>Rehacer cierre S{data.semana}</button>
         )}
         {data.cerrada && !data.cerrada.confirmada_el && puedeConfirmar && (
           <button className="btn primary" onClick={confirmarSemana}>Confirmar cierre (Lampa)</button>
         )}
       </PageHead>
+
+      {/* Lo que cambia después del cierre (una corrección, o guías de la semana
+          registradas o recepcionadas más tarde) no altera lo que quedó cerrado:
+          se avisa para que el cierre se rehaga. */}
+      {data.cerrada && data.cambios_desde_cierre && (
+        <div className="aviso">
+          <b>Los datos de esta semana cambiaron después del cierre</b>
+          <p>Desde el cierre se registraron, recepcionaron o corrigieron guías o traslados de esta semana. La tabla muestra lo que
+          quedó cerrado el {new Date(data.cerrada.generada_el).toLocaleDateString('es-CL')};
+          {puedeCerrar ? ' use «Rehacer cierre» para cerrarla con los datos corregidos.' : ' el ITO debe rehacer el cierre para incorporar la corrección.'}</p>
+        </div>
+      )}
 
       {/* Lo que la semana tiene que explicar, antes de la tabla: si hay que
           buscarlo entre las cifras, no es una alerta. */}
@@ -364,17 +382,19 @@ export default function Cuadratura() {
         })()}
       </Modal>
 
-      <Modal open={cerrar} title={`Cerrar cuadratura · semana ${data.semana}`} onClose={() => setCerrar(false)}
+      <Modal open={!!cerrar} title={`${cerrar === 'rehacer' ? 'Rehacer cierre' : 'Cerrar cuadratura'} · semana ${data.semana}`} onClose={() => setCerrar(false)}
         footer={<>
           <button className="btn" onClick={() => setCerrar(false)}>Cancelar</button>
-          <button className="btn primary" onClick={cerrarSemana}>Cerrar cuadratura</button>
+          <button className="btn primary" onClick={cerrarSemana}>{cerrar === 'rehacer' ? 'Rehacer cierre' : 'Cerrar cuadratura'}</button>
         </>}>
         <p style={{ marginTop: 0, color: 'var(--ink-2)' }}>
-          {hayDif
-            ? 'La semana registra diferencias sobre el 2% o recepciones observadas: la observación es obligatoria y quedará en el registro.'
-            : 'Los movimientos cuadran dentro de la tolerancia. El cierre guarda un registro inmutable de la semana.'}
+          {cerrar === 'rehacer'
+            ? 'Se reemplaza lo cerrado por los datos actuales, que incluyen las correcciones. El cierre anterior queda en la bitácora, y el responsable de Lampa debe confirmarlo de nuevo.'
+            : hayDif
+              ? 'La semana registra diferencias sobre el 2% o recepciones observadas: la observación es obligatoria y quedará en el registro.'
+              : 'Los movimientos cuadran dentro de la tolerancia. El cierre guarda un registro inmutable de la semana.'}
         </p>
-        <Field label={hayDif ? 'Observación (obligatoria)' : 'Observación (opcional)'}>
+        <Field label={cerrar === 'rehacer' ? 'Motivo (obligatorio)' : hayDif ? 'Observación (obligatoria)' : 'Observación (opcional)'}>
           <textarea rows="2" value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ej.: diferencia por humedad en fierro liviano; guía GD-1007 en revisión con vendor." />
         </Field>
       </Modal>

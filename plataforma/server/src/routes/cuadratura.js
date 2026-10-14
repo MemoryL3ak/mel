@@ -219,6 +219,24 @@ async function calcular(anio, semana) {
   };
 }
 
+// Cifras que se comparan entre lo cerrado y lo que hay hoy para saber si la
+// semana cambió después del cierre (una corrección, o guías de esa semana que
+// se registraron o recepcionaron más tarde). El monto del lado MEL no entra: en
+// las guías sin recepcionar se estima con el precio y el dólar del día, y
+// cambiaría solo. El de La Negra sí, porque queda congelado al recibir.
+const CAMPOS_CIERRE = ['guias_mel', 'guias_recepcionadas', 'kg_mel', 'kg_lanegra', 'kg_lampa_desp', 'kg_lampa_rec', 'monto_lanegra'];
+function cambioDesdeElCierre(cerrado = [], vivo = []) {
+  const antes = new Map(cerrado.map((x) => [x.categoria, x]));
+  if (antes.size !== vivo.length) return true;
+  return vivo.some((x) => {
+    const y = antes.get(x.categoria);
+    if (!y) return true;
+    // Los cierres antiguos pueden no traer todas las cifras: se compara lo que
+    // ambos tienen, redondeado a la décima.
+    return CAMPOS_CIERRE.some((c) => c in x && c in y && Math.round(Number(x[c]) * 10) !== Math.round(Number(y[c]) * 10));
+  });
+}
+
 r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) => {
   const actual = semanaISO();
   const anio = Number(req.query.anio || actual.anio);
@@ -228,13 +246,28 @@ r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) =>
     q(supa.from('cuadraturas').select('*').order('anio', { ascending: false }).order('semana', { ascending: false }).limit(12)),
   ]);
   const cerrada = cerradas.find((c) => c.anio === anio && c.semana === semana) ?? null;
-  res.json({ anio, semana, actual, desde, hasta, detalle, alertas, anuladas, cerrada, historico: cerradas });
+  res.json({
+    anio, semana, actual, desde, hasta, detalle, alertas, anuladas, cerrada, historico: cerradas,
+    cambios_desde_cierre: cerrada ? cambioDesdeElCierre(cerrada.detalle, detalle) : false,
+  });
 }));
 
 // Cierra la cuadratura de la semana con el snapshot calculado en ese momento.
+// Con `rehacer`, vuelve a tomar la foto de una semana ya cerrada cuyos datos se
+// corrigieron después: exige motivo y la confirmación de Lampa se vuelve a
+// pedir, porque lo que Lampa firmó ya no es lo que queda cerrado.
 r.post('/cuadratura/cerrar', auth('ito', 'coordinador'), ah(async (req, res) => {
   const { anio, semana, observacion } = req.body || {};
   if (!anio || !semana) return res.status(400).json({ error: 'Año y semana son obligatorios' });
+  const rehacer = !!req.body?.rehacer;
+  const previa = await q(supa.from('cuadraturas').select('*').eq('anio', Number(anio)).eq('semana', Number(semana)).maybeSingle());
+  if (previa && !rehacer) {
+    return res.status(409).json({ error: 'La semana ya está cerrada. Si sus datos se corrigieron, use «Rehacer cierre».' });
+  }
+  if (rehacer && !previa) return res.status(409).json({ error: 'La semana todavía no se cierra' });
+  if (rehacer && !(observacion || '').trim()) {
+    return res.status(400).json({ error: 'Indique por qué se rehace el cierre' });
+  }
   const { detalle } = await calcular(Number(anio), Number(semana));
   if (!detalle.length) return res.status(400).json({ error: 'La semana no registra movimientos que cuadrar' });
 
@@ -253,8 +286,12 @@ r.post('/cuadratura/cerrar', auth('ito', 'coordinador'), ah(async (req, res) => 
     anio: Number(anio), semana: Number(semana),
     estado: conDif ? 'con_diferencias' : 'cuadrada',
     detalle, observacion: (observacion || '').trim() || null, generada_por: req.user.name,
+    ...(rehacer ? { generada_el: new Date().toISOString() } : {}),
+    ...(rehacer && tiene.cuad_doble ? { confirmada_por: null, confirmada_el: null } : {}),
   }, { onConflict: 'anio,semana' }).select().single());
-  await audit(req.user.name, req.user.role, `Cerró cuadratura semanal (${row.estado})`, `S${semana}/${anio}`);
+  await audit(req.user.name, req.user.role,
+    rehacer ? `Rehízo el cierre de la cuadratura (${previa.estado} → ${row.estado})` : `Cerró cuadratura semanal (${row.estado})`,
+    `S${semana}/${anio}${rehacer ? ` · motivo: ${(observacion || '').trim()}` : ''}`);
   res.json(row);
 }));
 

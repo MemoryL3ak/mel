@@ -4,7 +4,7 @@
 //   certificado de disposición final).
 import { Router } from 'express';
 import multer from 'multer';
-import { supa, q, ah, folio, audit, precioVigente, fmtFecha } from '../supa.js';
+import { supa, q, ah, folio, audit, precioVigente, fmtFecha, semanaISO } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { valorDolar } from '../dolar.js';
@@ -593,16 +593,33 @@ r.patch('/despachos/:id/recepcion', auth('ito', 'coordinador'), ah(async (req, r
       bitacora.push(`tara → ${cambios.tara_kg ?? '—'}`);
     }
   }
+  // Alternativa A (sin madera) o B (con madera). La confirma La Negra al
+  // recibir y con ella se congela el precio; si estuvo mal, se corrige aquí y
+  // se aplica el precio de la otra alternativa vigente a la fecha de la guía,
+  // con el mismo dólar congelado.
+  let precioTm = num(d.precio_usd_tm);
+  if (tiene.tm && req.body?.con_madera !== undefined && d.precio_usd_tm != null) {
+    const conMadera = ['true', '1', 'on', 'si', 'sí'].includes(String(req.body.con_madera).toLowerCase());
+    if (conMadera !== !!d.con_madera) {
+      const precio = await precioVigente(Number(d.categoria_final_id ?? d.categoria_id), d.fecha, tiene.usd, tiene.tm);
+      const nuevo = conMadera ? (precio.precio_usd_tm_madera ?? precio.precio_usd_tm) : precio.precio_usd_tm;
+      if (nuevo == null) return res.status(400).json({ error: 'No hay precio vigente de esa alternativa para la fecha de la guía' });
+      cambios.con_madera = conMadera;
+      cambios.precio_usd_tm = Number(nuevo);
+      precioTm = Number(nuevo);
+      bitacora.push(`alternativa → ${conMadera ? 'con madera (B)' : 'sin madera (A)'}, USD ${d.precio_usd_tm} → ${nuevo}/TM`);
+    }
+  }
   if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
 
-  // Se revaloriza solo si cambiaron los kilos, con el precio y el tipo de
-  // cambio congelados en la guía y los descuentos que ya tenía.
-  if (cambios.kg_destino !== undefined) {
+  // Se revaloriza si cambiaron los kilos o la alternativa, con el tipo de
+  // cambio congelado en la guía y los descuentos que ya tenía.
+  if (cambios.kg_destino !== undefined || cambios.precio_usd_tm !== undefined) {
     const descuentos = tiene.desc_item
       ? await q(supa.from('despacho_descuentos').select('tipo,valor').eq('despacho_id', d.id))
       : [];
     const v = valorizar({
-      kg, precio_usd_tm: num(d.precio_usd_tm), precio_usd: num(d.precio_usd),
+      kg, precio_usd_tm: precioTm, precio_usd: num(d.precio_usd),
       precio_kg: num(d.precio_kg), dolar: num(d.dolar), descuentos,
     });
     cambios.valor = v.valor;
@@ -643,6 +660,15 @@ r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'),
     if (b.fecha) { cambios.fecha = b.fecha; bitacora.push(`fecha → ${b.fecha}`); }
   }
   if (b.patio_id !== undefined && Number(b.patio_id) > 0) { cambios.patio_id = Number(b.patio_id); bitacora.push('patio'); }
+  // La alternativa que declara quien despacha se corrige mientras la guía no
+  // se recepciona; después la fija La Negra y se cambia en «Corregir recepción».
+  if (tiene.tm && b.con_madera !== undefined && ['pendiente_guia', 'en_transito'].includes(d.estado)) {
+    const conMadera = ['true', '1', 'on', 'si', 'sí'].includes(String(b.con_madera).toLowerCase());
+    if (conMadera !== !!d.con_madera) {
+      cambios.con_madera = conMadera;
+      bitacora.push(`alternativa → ${conMadera ? 'con madera (B)' : 'sin madera (A)'}`);
+    }
+  }
   if (b.categoria_id !== undefined && Number(b.categoria_id) > 0) { cambios.categoria_id = Number(b.categoria_id); bitacora.push('categoría'); }
   if (b.kg_origen !== undefined) {
     if (!(Number(b.kg_origen) > 0)) return res.status(400).json({ error: 'El peso de origen debe ser mayor que cero' });
@@ -763,6 +789,49 @@ r.post('/traslados/:id/cdf', auth('vendor', 'coordinador', 'lampa'),
   await audit(req.user.name, req.user.role, 'Adjuntó documento al certificado de disposición final',
     `${t.guia} · ${t.cert_folio} · ${n} documento(s)`);
   res.json({ ok: true, adjuntados: n, cert_fotos: (t.cert_fotos ?? 0) + n });
+}));
+
+// Corrección de un traslado a Lampa: los kilos o la categoría mal digitados al
+// despachar desde La Negra, o el peso recibido en Lampa. Antes no había forma
+// de arreglarlos y el error quedaba para siempre en la cuadratura y en el
+// certificado. Exige motivo y queda en la bitácora con el antes y el después;
+// el folio del certificado no cambia, solo los kilos que certifica.
+r.patch('/traslados/:id', auth('vendor', 'coordinador', 'lampa', 'ito'), ah(async (req, res) => {
+  const motivo = String(req.body?.motivo || '').trim();
+  if (!motivo) return res.status(400).json({ error: 'Indique el motivo de la corrección' });
+  const t = await q(supa.from('traslados').select('*').eq('id', req.params.id).single());
+  const b = req.body || {};
+  const cambios = {};
+  const bitacora = [];
+  if (b.kg !== undefined) {
+    const kg = Number(b.kg);
+    if (!(kg > 0)) return res.status(400).json({ error: 'El peso despachado debe ser mayor que cero' });
+    if (kg !== Number(t.kg)) { cambios.kg = kg; bitacora.push(`kg despachados ${t.kg} → ${kg}`); }
+  }
+  if (b.categoria_id !== undefined && Number(b.categoria_id) > 0 && Number(b.categoria_id) !== Number(t.categoria_id)) {
+    cambios.categoria_id = Number(b.categoria_id);
+    bitacora.push('categoría');
+  }
+  if (b.kg_lampa !== undefined && b.kg_lampa !== null && b.kg_lampa !== '') {
+    if (t.estado !== 'recepcionado') return res.status(409).json({ error: 'El traslado aún no se recepciona en Lampa' });
+    const kl = Number(b.kg_lampa);
+    if (!(kl > 0)) return res.status(400).json({ error: 'El peso recibido en Lampa debe ser mayor que cero' });
+    if (kl !== Number(t.kg_lampa)) { cambios.kg_lampa = kl; bitacora.push(`kg recibidos en Lampa ${t.kg_lampa} → ${kl}`); }
+  }
+  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
+
+  const row = await q(supa.from('traslados').update(cambios).eq('id', t.id).select(TRAS_SEL).single());
+  await audit(req.user.name, req.user.role, 'Corrigió traslado a Lampa',
+    `${t.guia}${t.cert_folio ? ` · ${t.cert_folio}` : ''} · ${bitacora.join(' · ')} · motivo: ${motivo}`);
+
+  // Si la semana del traslado ya tiene la cuadratura cerrada, esa foto no
+  // cambia sola: se avisa para que el ITO rehaga el cierre.
+  const { anio, semana } = semanaISO(new Date(`${t.fecha}T12:00:00`));
+  const cerrada = await q(supa.from('cuadraturas').select('id').eq('anio', anio).eq('semana', semana).maybeSingle());
+  res.json({
+    ...row, kg: Number(row.kg), kg_lampa: row.kg_lampa == null ? null : Number(row.kg_lampa), categoria: row.categorias?.nombre,
+    cuadratura_cerrada: cerrada ? { anio, semana } : null,
+  });
 }));
 
 // Documento(s) del certificado de disposición final de un traslado.
