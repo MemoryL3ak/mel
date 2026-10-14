@@ -151,7 +151,7 @@ function Shell({ children }) {
               {rail ? <path d="M14 9.5l2.5 2.5L14 14.5" /> : <path d="M17 9.5L14.5 12l2.5 2.5" />}
             </svg>
           </button>
-          <span className="crumb">GEA <span className="sep">/</span> <b>{TITULOS[loc.pathname] ?? 'Fase 1'}</b></span>
+          <span className="crumb">GEA <span className="sep">/</span> <b>{TITULOS[loc.pathname] ?? ''}</b></span>
           <span className="top-user">
             <span className="top-date">{new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
             <Avatar name={user.name} className="avatar" />

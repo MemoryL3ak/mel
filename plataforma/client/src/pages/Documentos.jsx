@@ -8,7 +8,7 @@ import { Chip, DateField, Empty, Field, Modal, PageHead, Select, Tabs, hoyISO, u
 // obsoletos, cada documento vinculado al hito del proceso que respalda, con
 // versiones que nunca se pisan y control de vencimientos. Qué ve y qué carga
 // cada perfil lo define el catálogo de tipos, que ajusta el coordinador.
-const EYEBROW = 'Fase 3 · Control documental';
+const EYEBROW = 'Control documental';
 const VENC = {
   vencido: ['bad', 'Vencido'],
   por_vencer: ['warn', 'Por vencer'],

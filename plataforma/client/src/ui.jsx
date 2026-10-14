@@ -218,7 +218,7 @@ export function DateField({ value, onChange, disabled, id }) {
   );
 }
 
-export function PageHead({ eyebrow = 'Fase 1 · Proceso de chatarra', title, sub, children }) {
+export function PageHead({ eyebrow = 'Proceso de chatarra', title, sub, children }) {
   return (
     <div className="page-head">
       <div>

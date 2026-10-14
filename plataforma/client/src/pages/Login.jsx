@@ -62,7 +62,6 @@ export default function Login() {
         <div>
           <h1 className="display">Del patio al pago conciliado, <em>cada kilo trazado</em>.</h1>
           <p className="desc">Trazabilidad completa del material: del retiro en patios al pago conciliado, con evidencia, folios automáticos y auditoría inmutable.</p>
-          <span className="fase">Fase 1 · Proceso de chatarra</span>
         </div>
         <div className="foot">Minera Escondida Limitada · Grupo Lampa</div>
       </section>

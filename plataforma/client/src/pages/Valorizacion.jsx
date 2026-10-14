@@ -424,7 +424,7 @@ export default function Valorizacion() {
         {campoContrato('iva_pct', 'IVA (%)', { type: 'number' })}
         {campoContrato('dia_corte', 'Día de corte del período', { type: 'number', hint: 'El EP va del día siguiente al corte del mes anterior hasta este día.' })}
         {campoContrato('meses_vigencia_precio', 'Vigencia de los precios (meses)', { type: 'number', hint: 'Pasado ese plazo la plataforma avisa que hay que renegociar.' })}
-        {campoContrato('comision_vendor_pct', 'Comisión al vendor por venta de obsoletos (%)', { type: 'number', hint: 'Se aplica sobre el monto de cada adjudicación de la Fase 2.' })}
+        {campoContrato('comision_vendor_pct', 'Comisión al vendor por venta de obsoletos (%)', { type: 'number', hint: 'Se aplica sobre el monto de cada adjudicación de la venta de obsoletos.' })}
       </Modal>
 
       <Modal open={!!nuevo} title={nuevo && `Nueva vigencia · ${nuevo.nombre}`} onClose={() => setNuevo(null)}

@@ -19,7 +19,7 @@ export default function Auditoria() {
 
   return (
     <div>
-      <PageHead title="Auditoría y permisos"
+      <PageHead eyebrow="Gestión" title="Auditoría y permisos"
         sub="Bitácora inmutable de todas las acciones del sistema y matriz de acceso por rol. Los registros solo se agregan: nunca se editan ni se eliminan." />
       <Tabs active={tab} onChange={setTab} tabs={[['a1', 'Bitácora de auditoría'], ['a2', 'Matriz de permisos']]} />
 

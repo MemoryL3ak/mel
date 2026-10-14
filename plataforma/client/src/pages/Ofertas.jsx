@@ -4,7 +4,7 @@ import { api, fmtUSD } from '../api.js';
 import { Select, Chip, Empty, Field, Modal, PageHead, Tabs, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
-const EYEBROW = 'Fase 2 · Venta de obsoletos';
+const EYEBROW = 'Venta de obsoletos';
 const DD = { aprobada: ['ok', 'Aprobada'], pendiente: ['warn', 'En revisión'], rechazada: ['bad', 'Rechazada'] };
 const EST_ADJ = { adjudicada: ['info', 'Adjudicada'], pagada: ['warn', 'Pagada'], entregada: ['ok', 'Entregada'] };
 

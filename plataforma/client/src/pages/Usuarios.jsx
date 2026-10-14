@@ -60,7 +60,7 @@ export default function Usuarios() {
 
   return (
     <div>
-      <PageHead title="Cuentas de usuario"
+      <PageHead eyebrow="Gestión" title="Cuentas de usuario"
         sub="Creación, activación y restablecimiento de contraseñas. Las contraseñas se generan aleatorias, se muestran una sola vez y viajan cifradas.">
         <button className="btn primary" onClick={() => { setCreada(null); setNuevo(true); }}>+ Nueva cuenta</button>
       </PageHead>

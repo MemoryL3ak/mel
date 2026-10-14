@@ -4,7 +4,7 @@ import { api, fmtUSD } from '../api.js';
 import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, hoyISO, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
-const EYEBROW = 'Fase 2 · Venta de obsoletos';
+const EYEBROW = 'Venta de obsoletos';
 const ESTADO = {
   por_identificar: ['warn', 'Por identificar'], no_encontrado: ['bad', 'No encontrado en terreno'],
   planificado: ['neutral', 'Planificado'], publicado: ['info', 'Publicado'],
@@ -478,7 +478,7 @@ export default function Inventario() {
         </>}>
         <p style={{ marginTop: 0 }}><b>{clasificar?.nombre}</b> no se vendió y pasó a chatarra.</p>
         <p style={{ color: 'var(--ink-2)', fontSize: 13.5 }}>
-          Fase 1 mueve <b>kilos de una categoría desde un patio</b>, y el componente no trae ninguno de esos datos:
+          El proceso de chatarra mueve <b>kilos de una categoría desde un patio</b>, y el componente no trae ninguno de esos datos:
           por eso hay que clasificarlo. Con esto se crea el registro en el programa de limpieza y su despacho a
           La Negra, que queda <b>«Pendiente guía»</b> en Despachos hasta que se ingresen la guía MEL, el pesaje y los
           respaldos. Se valoriza al recepcionarse en La Negra.
