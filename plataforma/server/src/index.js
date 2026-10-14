@@ -126,8 +126,11 @@ supa.storage.createBucket('documentos', { public: false, fileSizeLimit: '20MB' }
 // segundo en que el servidor respondía como si ninguna migración existiera.
 // Justo después de un despliegue, el primero en entrar cargaba la plataforma
 // sin sus funciones y no las recuperaba hasta recargar la página.
-import { detectarEsquema } from './esquema.js';
+import { detectarEsquema, vigilarMigraciones } from './esquema.js';
 await detectarEsquema().catch((e) => console.error('[GEA] esquema:', e.message));
+// Y mientras falte alguna migración, se sigue revisando: aplicarla en Supabase
+// basta para que la función aparezca, sin reiniciar el servidor.
+vigilarMigraciones();
 
 // Barrido de la regla de 15 días de obsoletos (Fase 2): convierte a chatarra
 // las publicaciones cuyo plazo venció sin adjudicar. Corre al arrancar y cada
