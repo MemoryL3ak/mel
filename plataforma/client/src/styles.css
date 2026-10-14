@@ -177,6 +177,13 @@ a{color:var(--copper-deep)}
 .login-card>p{color:var(--ink-2);margin:6px 0 24px}
 .login-card .field{margin-bottom:16px}
 .login-error{background:var(--bad-bg);border:1px solid var(--bad-line);color:var(--bad-tx);border-radius:var(--radius-s);padding:10px 14px;font-size:13px;margin-bottom:16px}
+/* Enlace secundario de la tarjeta de ingreso (¿Olvidó su contraseña?). */
+.login-link{display:block;margin:14px auto 0;background:none;border:0;padding:4px;font-size:13px;font-weight:600;color:var(--copper-deep);cursor:pointer}
+.login-link:hover{text-decoration:underline}
+/* Pantalla de una sola columna (definir contraseña desde el correo). */
+.login.login-solo{grid-template-columns:1fr}
+.login-marca{display:flex;align-items:center;gap:9px;margin-bottom:18px}
+.login-marca b{font-size:17px;font-weight:800;letter-spacing:.04em}
 .login-help{margin-top:24px;font-size:12.5px;color:var(--muted);border-top:1px dashed var(--line);padding-top:15px;line-height:1.6}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @media (max-width:880px){.login{grid-template-columns:1fr}.login-brand{padding:36px 30px;gap:24px}.login-brand h1{font-size:28px}}
