@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
+import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
 const CHIP = {
+  pendiente_guia: ['warn', 'Pendiente guía'],
   en_transito: ['info', 'En tránsito'], recepcionado: ['ok', 'Recepcionado'],
   observado: ['warn', 'Difer. de peso'], anulado: ['bad', 'Anulada'],
 };
@@ -305,9 +306,12 @@ export default function Despachos() {
     } catch (e) { toast(e.message, true); }
   }
 
-  // Corrección de datos de una guía que aún no entró a un estado de pago.
-  function abrirEditar(d) {
-    setEditar(d);
+  // Corrección de datos de una guía que aún no entró a un estado de pago. Con
+  // `completar`, es la guía de un obsoleto derivado a chatarra que nació
+  // pendiente: el peso parte vacío porque el guardado era una estimación, y
+  // ahora se digita el de la báscula.
+  function abrirEditar(d, completar = false) {
+    setEditar({ ...d, completar });
     setEForm({
       guia_mel: d.guia_mel ?? '', fecha: d.fecha ?? '',
       patio_id: maestros?.patios.find((p) => p.codigo === d.patio)?.id ?? '',
@@ -320,6 +324,7 @@ export default function Despachos() {
       transportista: d.transportista ?? '', transportista_rut: d.transportista_rut ?? '',
       patente_tracto: d.patente_tracto ?? '', patente_rampla: d.patente_rampla ?? '',
       ev: {},   // respaldos que se suman al corregir
+      ...(completar ? { kg_origen: '', bruto_origen: '', tara_origen: '' } : {}),
     });
   }
 
@@ -328,7 +333,8 @@ export default function Despachos() {
     const taraE = aKg(eForm.tara_origen, eForm.unidad_tara);
     if (brutoE && taraE && taraE >= brutoE) return toast('La tara no puede ser mayor o igual al peso bruto', true);
     const kg = brutoE ? Math.max(brutoE - (taraE || 0), 0) : aKg(eForm.kg_origen, eForm.unidad);
-    if (!kg) return toast('El peso de origen debe ser mayor que cero', true);
+    if (!kg) return toast(editar.completar ? 'Ingrese el peso de la báscula MEL' : 'El peso de origen debe ser mayor que cero', true);
+    if (editar.completar && !eForm.guia_mel.trim()) return toast('Ingrese el N° de la guía de despacho MEL', true);
     try {
       // Viaja como formulario porque puede traer respaldos adjuntos.
       const fd = new FormData();
@@ -342,12 +348,15 @@ export default function Despachos() {
       for (const k of ['transportista', 'transportista_rut', 'patente_tracto', 'patente_rampla']) {
         fd.append(k, eForm[k].trim());
       }
+      if (editar.completar) fd.append('despachar', '1');
       let adj = 0;
       for (const [tipo, archivos] of Object.entries(eForm.ev ?? {})) {
         for (const f of archivos) { fd.append(tipo, f); adj++; }
       }
       await api(`/despachos/${editar.id}`, { method: 'PATCH', body: fd });
-      toast(adj ? `Guía ${editar.guia} corregida · ${adj} respaldo(s) adjuntado(s)` : `Guía ${editar.guia} corregida`);
+      toast(editar.completar
+        ? `${editar.guia} con guía MEL ${eForm.guia_mel.trim()} · en tránsito a La Negra`
+        : adj ? `Guía ${editar.guia} corregida · ${adj} respaldo(s) adjuntado(s)` : `Guía ${editar.guia} corregida`);
       setEditar(null); setEForm(null);
       load();
     } catch (e) { toast(e.message, true); }
@@ -446,6 +455,8 @@ export default function Despachos() {
         const anuladas = rows.filter((d) => d.estado === 'anulado').length;
         const FILTROS = [
           ['todas', 'Todas', rows.length],
+          ...(rows.some((d) => d.estado === 'pendiente_guia')
+            ? [['pendiente_guia', 'Pendiente guía', rows.filter((d) => d.estado === 'pendiente_guia').length]] : []),
           ['en_transito', 'En tránsito', enTransito],
           ['observado', 'Con diferencia', observados],
           ['recepcionado', 'Recepcionadas', rows.filter((d) => d.estado === 'recepcionado').length],
@@ -468,10 +479,17 @@ export default function Despachos() {
           <thead><tr><th title="Código interno">Código</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th title="Estado de la guía y, si ya está en uno, el estado de pago que la incluye">Estado</th><th className="acc"></th></tr></thead>
           <tbody>
             {visibles.map((d) => (
-              <tr key={d.id} className={d.estado === 'anulado' ? 'anulada' : undefined}>
+              <tr key={d.id} className={[d.estado === 'anulado' && 'anulada', d.componente_id && 'desde-obs'].filter(Boolean).join(' ') || undefined}>
                 <td>
                   <span className="mono">{d.guia}</span>
                   {d.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {d.guia_mel}</small></>}
+                  {d.componente_id && (
+                    // Etiqueta corta para no ensanchar la columna; el SKU y el
+                    // nombre van en el texto emergente.
+                    <><br /><span className="tag-obs"
+                      title={`Obsoleto no vendido, derivado a chatarra${d.componente_codigo ? ` · SKU ${d.componente_codigo}` : ''}${d.componente_nombre ? ` · ${d.componente_nombre}` : ''}`}>
+                      Obsoleto</span></>
+                  )}
                 </td>
                 <td className="mono">{d.fecha}</td><td>{d.patio}</td>
                 <td>{d.categoria}{d.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {d.categoria_final}</span>}</td>
@@ -489,36 +507,52 @@ export default function Despachos() {
                     : <span style={{ color: 'var(--muted)' }}>—</span>}
                 </td>
                 <td><Chip tone={CHIP[d.estado][0]}>{CHIP[d.estado][1]}</Chip>{d.ep_folio && <><br /><small className="mono" style={{ color: 'var(--muted)' }} title="Estado de pago que incluye esta guía">en {d.ep_folio}</small></>}</td>
-                <td className="num acc"><div className="acciones">
-                  <button className="btn sm" onClick={() => abrirDetalle(d)}>Detalle</button>{' '}
-                  {d.estado === 'en_transito' && puedeRecep && (
-                    <button className="btn sm primary" onClick={() => {
-                      setRecep(d);
-                      // El peso parte VACÍO: la recepción es una declaración
-                      // independiente, no la confirmación de lo que dijo MEL.
-                      // La alternativa del contrato sí llega preseleccionada con
-                      // lo que declaró el patio, para confirmarla o corregirla.
-                      setRForm({ ...recepVacia(), con_madera: d.con_madera ?? true });
-                    }}>Recepcionar</button>
-                  )}
-                  {d.estado === 'observado' && puedeResolver && (
-                    <button className="btn sm" onClick={() => { setResolver(d); setObs(''); }}>Resolver</button>
-                  )}{' '}
-                  {/* Corrección de datos de digitación, mientras la guía no esté en un EP. */}
-                  {puedeEditar && d.estado !== 'anulado' && !d.ep_folio && (
-                    <button className="btn sm" onClick={() => abrirEditar(d)}>Editar</button>
-                  )}{' '}
-                  {/* La recepción ya aceptada se corrige con motivo; la hace el ITO,
-                      no quien la digitó. */}
-                  {puedeResolver && ['recepcionado', 'observado'].includes(d.estado) && !d.ep_folio && (
-                    <button className="btn sm" onClick={() => abrirCorregir(d)}
-                      title="Corregir los kilos o el pesaje de la recepción">Corregir recepción</button>
-                  )}{' '}
-                  {/* Una guía no se borra: se anula con motivo y queda en el libro. */}
-                  {fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeAnular && (
-                    <button className="btn sm danger" onClick={() => { setAnular(d); setAForm({ motivo: '', reemplazar: false }); }}>Anular</button>
-                  )}
-                </div></td>
+                <td className="num acc">
+                  {(() => {
+                    const detalle = <button className="btn sm" onClick={() => abrirDetalle(d)}>Detalle</button>;
+                    const recepcionar = d.estado === 'en_transito' && puedeRecep && (
+                      <button className="btn sm primary" onClick={() => {
+                        setRecep(d);
+                        // El peso parte VACÍO: la recepción es una declaración
+                        // independiente, no la confirmación de lo que dijo MEL.
+                        // La alternativa del contrato sí llega preseleccionada con
+                        // lo que declaró el patio, para confirmarla o corregirla.
+                        setRForm({ ...recepVacia(), con_madera: d.con_madera ?? true });
+                      }}>Recepcionar</button>
+                    );
+                    const resolver = d.estado === 'observado' && puedeResolver && (
+                      <button className="btn sm" onClick={() => { setResolver(d); setObs(''); }}>Resolver</button>
+                    );
+                    const completar = puedeEditar && d.estado === 'pendiente_guia' && (
+                      <button className="btn sm primary" onClick={() => abrirEditar(d, true)}
+                        title="Ingresar la guía MEL, el pesaje y los respaldos para que salga a La Negra">Completar guía</button>
+                    );
+                    // Corrección de datos de digitación, mientras la guía no esté en un EP.
+                    const editar = puedeEditar && !['anulado', 'pendiente_guia'].includes(d.estado) && !d.ep_folio && (
+                      <button className="btn sm" onClick={() => abrirEditar(d)}>Editar</button>
+                    );
+                    // La recepción ya aceptada se corrige con motivo; la hace el
+                    // ITO, no quien la digitó.
+                    const corregir = puedeResolver && ['recepcionado', 'observado'].includes(d.estado) && !d.ep_folio && (
+                      <button className="btn sm" onClick={() => abrirCorregir(d)}
+                        title="Corregir los kilos o el pesaje de la recepción">Corregir recepción</button>
+                    );
+                    // Una guía no se borra: se anula con motivo y queda en el libro.
+                    const anular = fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeAnular && (
+                      <button className="btn sm danger" onClick={() => { setAnular(d); setAForm({ motivo: '', reemplazar: false }); }}>Anular</button>
+                    );
+                    // Columna derecha de la primera fila: la acción que hace
+                    // avanzar la guía en el estado en que está.
+                    const principal = completar || recepcionar || resolver || corregir;
+                    return (
+                      <Acciones columnas="62px 128px" filas={[
+                        [detalle, principal],
+                        [editar, anular],
+                        [null, principal !== corregir && corregir],
+                      ]} />
+                    );
+                  })()}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1266,20 +1300,30 @@ export default function Despachos() {
         </div>
       </Modal>
 
-      <Modal open={!!editar} title={editar && `Corregir datos · ${editar.guia}`} onClose={() => { setEditar(null); setEForm(null); }}
+      <Modal open={!!editar} title={editar && (editar.completar ? `Completar guía · ${editar.guia}` : `Corregir datos · ${editar.guia}`)}
+        onClose={() => { setEditar(null); setEForm(null); }}
         footer={<>
           <button className="btn" onClick={() => { setEditar(null); setEForm(null); }}>Cancelar</button>
-          <button className="btn primary" onClick={guardarEdicion}>Guardar corrección</button>
+          <button className="btn primary" onClick={guardarEdicion}>{editar?.completar ? 'Completar y despachar' : 'Guardar corrección'}</button>
         </>}>
         {eForm && <>
-        <small style={{ color: 'var(--muted)', display: 'block', marginBottom: 12 }}>
-          Solo datos del documento de origen. Los kilos y el precio de la recepción no se editan aquí: para eso se anula la guía y se rehace.
-        </small>
+        {editar.completar ? (
+          <div className="alerta info" style={{ marginBottom: 14 }}>
+            <b>Obsoleto {editar.componente_codigo ?? ''}</b>
+            <span>{editar.componente_nombre ? `${editar.componente_nombre}. ` : ''}Al derivarlo se estimaron
+              {' '}<b>{fmtKg(editar.kg_origen)} kg</b>. Ingrese la guía de despacho MEL, el pesaje real de la báscula
+              y los respaldos: al guardar queda en tránsito a La Negra.</span>
+          </div>
+        ) : (
+          <small style={{ color: 'var(--muted)', display: 'block', marginBottom: 12 }}>
+            Solo datos del documento de origen. Los kilos y el precio de la recepción no se editan aquí: para eso se anula la guía y se rehace.
+          </small>
+        )}
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
-          <Field label="N° de guía de despacho MEL">
+          <Field label="N° de guía de despacho MEL" hint={editar.completar ? 'Obligatorio para despachar.' : undefined}>
             <input value={eForm.guia_mel} onChange={(e) => setEForm({ ...eForm, guia_mel: e.target.value })} placeholder="458921" />
           </Field>
-          <Field label="Fecha del despacho">
+          <Field label="Fecha del despacho" hint={editar.completar ? 'Se propuso la fecha de retiro; ajústela a la de la guía.' : undefined}>
             <DateField value={eForm.fecha} onChange={(e) => setEForm({ ...eForm, fecha: e.target.value })} />
           </Field>
         </div>

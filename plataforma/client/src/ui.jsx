@@ -1,7 +1,44 @@
 // Componentes base del sistema de diseño.
-import { createContext, useContext, useState, useRef, useEffect, Children, isValidElement } from 'react';
+import { createContext, useContext, useState, useRef, useEffect, useLayoutEffect, Children, isValidElement } from 'react';
+import { createPortal } from 'react-dom';
 
 export const Chip = ({ tone = 'neutral', children }) => <span className={`chip ${tone}`}>{children}</span>;
+
+// Posición de un menú flotante junto a su campo. El menú se dibuja en <body>
+// (portal) con posición fija: dentro de un modal, el cuerpo del modal se
+// desplaza y recortaba el menú, que además quedaba tapado por el pie. Abre
+// hacia abajo si cabe; si no, hacia el lado con más espacio, y su alto se
+// limita a ese espacio. Se recalcula al desplazar cualquier contenedor o al
+// cambiar el tamaño de la ventana.
+function usePosicionFlotante(open, ancla, { alto, ancho } = {}) {
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return undefined; }
+    const calcular = () => {
+      const r = ancla.current?.getBoundingClientRect();
+      if (!r) return;
+      const margen = 8;
+      const abajo = window.innerHeight - r.bottom - margen;
+      const arriba = r.top - margen;
+      const haciaArriba = abajo < Math.min(alto, 220) && arriba > abajo;
+      const w = ancho ?? r.width;
+      const left = Math.max(margen, Math.min(r.left, window.innerWidth - w - margen));
+      setPos({
+        left, width: w, haciaArriba,
+        maxHeight: Math.max(140, Math.min(alto, (haciaArriba ? arriba : abajo) - 4)),
+        ...(haciaArriba ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+      });
+    };
+    calcular();
+    window.addEventListener('resize', calcular);
+    window.addEventListener('scroll', calcular, true);
+    return () => {
+      window.removeEventListener('resize', calcular);
+      window.removeEventListener('scroll', calcular, true);
+    };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  return pos;
+}
 
 // Desplegable propio de la plataforma: reemplaza al <select> nativo para que el
 // menú abierto siga el lenguaje visual (y el modo oscuro) en vez del popup del
@@ -11,9 +48,9 @@ export const Chip = ({ tone = 'neutral', children }) => <span className={`chip $
 export function Select({ value, onChange, children, disabled, placeholder, id }) {
   const [open, setOpen] = useState(false);
   const [activo, setActivo] = useState(-1);
-  const [arriba, setArriba] = useState(false);
   const box = useRef(null);
   const menu = useRef(null);
+  const pos = usePosicionFlotante(open, box, { alto: 280 });
 
   const opts = Children.toArray(children)
     .filter((c) => isValidElement(c) && c.type === 'option')
@@ -26,18 +63,20 @@ export function Select({ value, onChange, children, disabled, placeholder, id })
   // Cierre al hacer clic fuera.
   useEffect(() => {
     if (!open) return;
-    const fuera = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    // El menú vive en <body>, fuera de `box`: un clic en él (p. ej. en su
+    // barra de desplazamiento) no cuenta como clic fuera.
+    const fuera = (e) => {
+      if (box.current?.contains(e.target) || menu.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', fuera);
     return () => document.removeEventListener('mousedown', fuera);
   }, [open]);
 
-  // Al abrir: ítem activo en el seleccionado, y decide si abre hacia arriba
-  // cuando no hay espacio suficiente abajo (p. ej. cerca del pie de un modal).
+  // Al abrir: ítem activo en el seleccionado, visible dentro del menú.
   useEffect(() => {
     if (open) {
       setActivo(idx >= 0 ? idx : 0);
-      const rect = box.current?.getBoundingClientRect();
-      if (rect) setArriba(window.innerHeight - rect.bottom < 264 && rect.top > window.innerHeight - rect.bottom);
       requestAnimationFrame(() => menu.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }));
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -83,8 +122,9 @@ export function Select({ value, onChange, children, disabled, placeholder, id })
         <span className={`sel-val${sel ? '' : ' ph'}`}>{etiqueta || ' '}</span>
         <svg className="sel-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
       </button>
-      {open && (
-        <ul className={`sel-menu${arriba ? ' arriba' : ''}`} role="listbox" ref={menu} tabIndex={-1}>
+      {open && pos && createPortal(
+        <ul className={`sel-menu${pos.haciaArriba ? ' arriba' : ''}`} role="listbox" ref={menu} tabIndex={-1}
+          style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxHeight }}>
           {opts.map((o, i) => (
             <li key={i} role="option" aria-selected={String(o.value) === String(val)}
               className={`sel-opt${i === activo ? ' activo' : ''}${o.disabled ? ' off' : ''}${String(o.value) === String(val) ? ' checked' : ''}`}
@@ -92,7 +132,8 @@ export function Select({ value, onChange, children, disabled, placeholder, id })
               {o.label}
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   );
@@ -111,17 +152,21 @@ const fmtDMY = (s) => { const d = parseISO(s); return d ? `${pad2(d.getDate())}-
 
 export function DateField({ value, onChange, disabled, id }) {
   const [open, setOpen] = useState(false);
-  const [arriba, setArriba] = useState(false);
   const [vista, setVista] = useState(() => { const d = parseISO(value) || new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
   const box = useRef(null);
+  const pop = useRef(null);
+  const pos = usePosicionFlotante(open, box, { alto: 360, ancho: 280 });
 
   useEffect(() => {
     if (!open) return;
     const d = parseISO(value) || new Date();
     setVista({ y: d.getFullYear(), m: d.getMonth() });
-    const r = box.current?.getBoundingClientRect();
-    if (r) setArriba(window.innerHeight - r.bottom < 360 && r.top > window.innerHeight - r.bottom);
-    const fuera = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    // El calendario vive en <body>: sus botones (mes anterior/siguiente) no
+    // cuentan como clic fuera.
+    const fuera = (e) => {
+      if (box.current?.contains(e.target) || pop.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', fuera);
     return () => document.removeEventListener('mousedown', fuera);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -143,8 +188,9 @@ export function DateField({ value, onChange, disabled, id }) {
         <span className={value ? '' : 'ph'}>{fmtDMY(value) || 'dd-mm-aaaa'}</span>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2" /><path d="M3 9h18M8 2.5v4M16 2.5v4" /></svg>
       </button>
-      {open && (
-        <div className={`dp-pop${arriba ? ' arriba' : ''}`} role="dialog">
+      {open && pos && createPortal(
+        <div className={`dp-pop${pos.haciaArriba ? ' arriba' : ''}`} role="dialog" ref={pop}
+          style={{ left: pos.left, top: pos.top, bottom: pos.bottom }}>
           <div className="dp-head">
             <button type="button" className="dp-nav" onClick={() => mes(-1)} aria-label="Mes anterior">‹</button>
             <b>{MESES[vista.m]} {vista.y}</b>
@@ -165,7 +211,8 @@ export function DateField({ value, onChange, disabled, id }) {
             <button type="button" className="dp-link" onClick={() => { onChange?.({ target: { value: '' } }); cerrar(); }}>Borrar</button>
             <button type="button" className="dp-link" onClick={() => elegir(new Date())}>Hoy</button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -264,6 +311,23 @@ export function Modal({ open, title, onClose, footer, children, ancho }) {
         <div className="modal-b">{children}</div>
         {footer && <div className="modal-f">{footer}</div>}
       </div>
+    </div>
+  );
+}
+
+// Botones de acción de una fila de tabla en una grilla fija: cada acción ocupa
+// siempre la misma posición y, si no corresponde, su lugar queda vacío. Así
+// los botones se leen alineados de una fila a otra en vez de correrse según
+// cuántos haya. `filas` es una lista de filas de celdas (botón o null); una
+// fila de un solo elemento ocupa todo el ancho. Las filas vacías se omiten.
+export function Acciones({ filas, columnas = '1fr 1fr' }) {
+  const visibles = filas.filter((f) => f.some(Boolean));
+  if (!visibles.length) return null;
+  return (
+    <div className="acciones grilla" style={{ gridTemplateColumns: columnas }}>
+      {visibles.flatMap((f, i) => (f.length === 1
+        ? [<div key={i} className="ancho">{f[0]}</div>]
+        : f.map((c, j) => <div key={`${i}-${j}`}>{c || null}</div>)))}
     </div>
   );
 }

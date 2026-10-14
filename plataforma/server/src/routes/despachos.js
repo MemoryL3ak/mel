@@ -167,7 +167,12 @@ async function subirCDF(trasladoId, archivos = [], quien = null) {
   }
   return n;
 }
-const DESP_SEL = '*, patios(codigo, nombre), cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre), estados_pago(folio)';
+const DESP_BASE = '*, patios(codigo, nombre), cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre), estados_pago(folio)';
+// El componente de origen (obsoleto derivado a chatarra) existe desde 0013: la
+// lista lo muestra para distinguir esos despachos de los retiros de patio.
+const despSel = () => (tiene.desp_componente
+  ? `${DESP_BASE}, comp:componentes!despachos_componente_id_fkey(codigo, nombre)`
+  : DESP_BASE);
 const TRAS_SEL = '*, categorias(nombre)';
 
 const num = (v) => (v == null ? null : Number(v));
@@ -186,6 +191,9 @@ const view = (d, descuentos = []) => ({
   valor: num(d.valor),
   obs_recepcion: d.obs_recepcion, recepcionado_el: d.recepcionado_el && fmtFecha(d.recepcionado_el),
   ep_folio: d.estados_pago?.folio ?? null, creado_por: d.creado_por,
+  // obsoleto no vendido del que nace este despacho
+  componente_id: d.componente_id ?? null,
+  componente_codigo: d.comp?.codigo ?? null, componente_nombre: d.comp?.nombre ?? null,
   // transporte (Res. Ex. 154 del SII)
   transportista: d.transportista ?? null, transportista_rut: d.transportista_rut ?? null,
   patente_tracto: d.patente_tracto ?? null, patente_rampla: d.patente_rampla ?? null,
@@ -256,7 +264,7 @@ async function revalorizar(id) {
 /* ---------- despachos MEL → La Negra ---------- */
 
 r.get('/despachos', auth(), ah(async (_req, res) => {
-  const rows = await q(supa.from('despachos').select(DESP_SEL).order('id', { ascending: false }).limit(300));
+  const rows = await q(supa.from('despachos').select(despSel()).order('id', { ascending: false }).limit(300));
   const desc = await descuentosDe(rows.map((d) => d.id));
   res.json(rows.map((d) => view(d, desc.get(d.id) ?? [])));
 }));
@@ -302,7 +310,7 @@ r.post('/despachos', auth('limpieza', 'ito', 'coordinador'), subir.fields(CAMPOS
     ...(tiene.tara_origen && taraOrigen > 0 ? { tara_origen_kg: taraOrigen } : {}),
     ...transporteDe(req.body || {}),
     fotos: archivos.length, creado_por: req.user.name,
-  }).select(DESP_SEL).single());
+  }).select(despSel()).single());
 
   for (const [tipo, lista] of Object.entries(req.files ?? {})) {
     await subirEvidencia(row.id, tipo, lista, req.user);
@@ -346,6 +354,9 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
 
   const d = await q(supa.from('despachos').select('*').eq('id', req.params.id).single());
   if (d.estado === 'anulado') return res.status(409).json({ error: 'La guía está anulada' });
+  if (d.estado === 'pendiente_guia') {
+    return res.status(409).json({ error: 'El despacho aún no sale del patio: primero se completa su guía de despacho MEL' });
+  }
   if (d.estado !== 'en_transito') return res.status(409).json({ error: 'El despacho ya fue recepcionado' });
 
   const tara = Number(req.body?.tara_kg);
@@ -413,7 +424,7 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
   if (descuentos.length && tiene.desc_item) {
     await guardarDescuentos(descuentos.map((x) => ({ ...x, despacho_id: d.id, creado_por: req.user.name })));
   }
-  const row = await q(supa.from('despachos').select(DESP_SEL).eq('id', d.id).single());
+  const row = await q(supa.from('despachos').select(despSel()).eq('id', d.id).single());
   const desc = await descuentosDe([d.id]);
 
   await audit(req.user.name, req.user.role,
@@ -442,7 +453,7 @@ r.post('/despachos/:id/descuentos', auth('vendor', 'ito', 'coordinador'), ah(asy
   if (mal) return res.status(400).json({ error: mal });
   await guardarDescuentos({ despacho_id: d.id, tipo, valor: Number(valor), glosa: String(glosa).trim(), creado_por: req.user.name });
   await revalorizar(d.id);
-  const row = await q(supa.from('despachos').select(DESP_SEL).eq('id', d.id).single());
+  const row = await q(supa.from('despachos').select(despSel()).eq('id', d.id).single());
   const desc = await descuentosDe([d.id]);
   await audit(req.user.name, req.user.role, 'Aplicó descuento a una recepción',
     `${row.guia} · ${TIPO_DESCUENTO[tipo]} ${valor} · ${glosa}`);
@@ -456,7 +467,7 @@ r.delete('/despachos/:id/descuentos/:descId', auth('ito', 'coordinador'), ah(asy
   await q(supa.from('despacho_descuentos').delete()
     .eq('id', req.params.descId).eq('despacho_id', d.id).select('id'));
   await revalorizar(d.id);
-  const row = await q(supa.from('despachos').select(DESP_SEL).eq('id', d.id).single());
+  const row = await q(supa.from('despachos').select(despSel()).eq('id', d.id).single());
   const desc = await descuentosDe([d.id]);
   await audit(req.user.name, req.user.role, 'Quitó un descuento de una recepción', row.guia);
   res.json(view(row, desc.get(d.id) ?? []));
@@ -513,7 +524,7 @@ r.post('/despachos/:id/anular', auth('limpieza', 'ito', 'coordinador'), ah(async
     anulada_por: req.user.name,
     motivo_anulacion: motivo,
     reemplazada_por: nueva?.id ?? null,
-  }).eq('id', d.id).select(DESP_SEL).single());
+  }).eq('id', d.id).select(despSel()).single());
 
   await audit(req.user.name, req.user.role, 'Anuló una guía de despacho',
     `${row.guia} · ${motivo}${nueva ? ` · reemplazada por ${nueva.guia}` : ''}`);
@@ -526,7 +537,7 @@ r.post('/despachos/:id/resolver', auth('ito', 'coordinador'), ah(async (req, res
   if (!obs) return res.status(400).json({ error: 'Indique cómo se resolvió la diferencia' });
   const row = await q(supa.from('despachos')
     .update({ estado: 'recepcionado', obs_recepcion: obs })
-    .eq('id', req.params.id).eq('estado', 'observado').select(DESP_SEL).single());
+    .eq('id', req.params.id).eq('estado', 'observado').select(despSel()).single());
   await audit(req.user.name, req.user.role, 'Resolvió recepción observada', `${row.guia} · ${obs}`);
   res.json(view(row));
 }));
@@ -605,7 +616,7 @@ r.patch('/despachos/:id/recepcion', auth('ito', 'coordinador'), ah(async (req, r
     if (cambios.estado !== d.estado) bitacora.push(`estado → ${cambios.estado}`);
   }
 
-  const row = await q(supa.from('despachos').update(cambios).eq('id', d.id).select(DESP_SEL).single());
+  const row = await q(supa.from('despachos').update(cambios).eq('id', d.id).select(despSel()).single());
   await audit(req.user.name, req.user.role, 'Corrigió la recepción de una guía',
     `${d.guia} · ${bitacora.join(' · ')} · motivo: ${motivo}`);
   res.json(view(row));
@@ -665,12 +676,25 @@ r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'),
   }
   if (nuevos) cambios.fotos = Number(d.fotos ?? 0) + nuevos;
 
+  // Completar la guía de un despacho que nació pendiente (obsoleto derivado a
+  // chatarra): con el N° de guía MEL el camión puede salir, y el despacho pasa
+  // a tránsito para que La Negra lo recepcione.
+  const despachar = ['1', 'true', 'on'].includes(String(b.despachar ?? ''));
+  if (despachar) {
+    if (d.estado !== 'pendiente_guia') return res.status(409).json({ error: 'Este despacho ya tiene su guía' });
+    const guiaMel = cambios.guia_mel !== undefined ? cambios.guia_mel : d.guia_mel;
+    if (!guiaMel) return res.status(400).json({ error: 'Ingrese el N° de la guía de despacho MEL' });
+    cambios.estado = 'en_transito';
+    bitacora.push('guía completada, en tránsito a La Negra');
+  }
+
   // Adjuntar sin corregir nada es un uso válido: no se exige cambiar datos.
   if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios ni respaldos que guardar' });
 
-  const row = await q(supa.from('despachos').update(cambios).eq('id', req.params.id).select(DESP_SEL).single());
+  const row = await q(supa.from('despachos').update(cambios).eq('id', req.params.id).select(despSel()).single());
   await audit(req.user.name, req.user.role,
-    nuevos && bitacora.length === 1 ? 'Adjuntó respaldos a la guía' : 'Corrigió datos de la guía',
+    despachar ? 'Completó la guía del despacho'
+      : nuevos && bitacora.length === 1 ? 'Adjuntó respaldos a la guía' : 'Corrigió datos de la guía',
     `${row.guia} · ${bitacora.join(', ')}`);
   const desc = await descuentosDe([row.id]);
   res.json(view(row, desc.get(row.id) ?? []));

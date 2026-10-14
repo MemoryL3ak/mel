@@ -64,10 +64,12 @@ input::placeholder,textarea::placeholder{color:#B5AB9D}
 .sel-val.ph{color:#B5AB9D}
 .sel-caret{flex-shrink:0;color:var(--muted);transition:transform .16s}
 .sel.open .sel-caret{transform:rotate(180deg)}
-.sel-menu{position:absolute;z-index:60;top:calc(100% + 4px);left:0;right:0;margin:0;padding:5px;
+/* Menú y calendario se dibujan en <body> con posición fija (ver
+   usePosicionFlotante): por encima de los modales (100) y bajo los avisos (200). */
+.sel-menu{position:fixed;z-index:150;margin:0;padding:5px;
   list-style:none;max-height:260px;overflow-y:auto;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--radius-s);box-shadow:0 12px 32px -10px rgba(0,0,0,.30)}
-.sel-menu.arriba{top:auto;bottom:calc(100% + 4px)}
+
 .sel-opt{padding:9px 11px;border-radius:calc(var(--radius-s) - 3px);font-size:13.5px;color:var(--ink);
   cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sel-opt.activo{background:var(--copper-tint)}
@@ -83,10 +85,10 @@ input::placeholder,textarea::placeholder{color:#B5AB9D}
 .dp.disabled{opacity:.6}
 .dp-btn .ph{color:#B5AB9D}
 .dp-btn svg{flex-shrink:0;color:var(--muted)}
-.dp-pop{position:absolute;z-index:60;top:calc(100% + 4px);left:0;width:280px;max-width:calc(100vw - 32px);
+.dp-pop{position:fixed;z-index:150;width:280px;max-width:calc(100vw - 32px);
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);
   box-shadow:0 12px 32px -10px rgba(0,0,0,.30);padding:12px}
-.dp-pop.arriba{top:auto;bottom:calc(100% + 4px)}
+
 .dp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .dp-head b{font-size:13.5px;text-transform:capitalize}
 .dp-nav{background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;width:28px;height:28px;
@@ -463,6 +465,12 @@ table.cabecera-libre th{white-space:normal;vertical-align:bottom;line-height:1.3
 .masivo-plantilla{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;
   border:1px solid var(--line);background:var(--surface-2);border-radius:var(--radius-s);padding:12px 14px;margin-bottom:6px}
 .masivo-plantilla p{flex:1;min-width:260px}
+/* Grilla fija de acciones (componente Acciones): mismas columnas en todas las
+   filas, y cada botón llena su celda. */
+.acciones.grilla{display:grid;gap:5px;min-width:0;max-width:none;justify-content:end}
+.acciones.grilla>div{min-width:0}
+.acciones.grilla>div>.btn{width:100%;padding-left:8px;padding-right:8px;white-space:nowrap}
+.acciones.grilla>.ancho{grid-column:1 / -1}
 /* Texto secundario de una celda en una sola línea, recortado con «…». */
 .recorte{display:block;max-width:115px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 th.acc{background:var(--surface-2)}
@@ -521,6 +529,10 @@ table.grp td.dif{font-weight:600;color:var(--ink)}
 .alerta.info{border-color:var(--info-line);border-left-color:var(--info-tx);background:var(--info-bg);color:var(--info-tx)}
 .alerta b{font-weight:700;flex-shrink:0}
 /* Una guía anulada sigue en el libro, pero se lee de inmediato que no cuenta. */
+/* Despacho que nace de un obsoleto no vendido: marca en la fila y etiqueta. */
+tbody tr.desde-obs td:first-child{box-shadow:inset 3px 0 0 var(--copper)}
+.tag-obs{display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:.03em;white-space:nowrap;
+  color:var(--copper-deep);background:var(--copper-tint);border:1px solid var(--copper-line);border-radius:999px;padding:1px 8px}
 tbody tr.anulada td{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--bad-line)}
 tbody tr.anulada td.acc,tbody tr.anulada td:last-child{text-decoration:none}
 /* Alta rápida de un descuento: tipo, monto y glosa en una línea */

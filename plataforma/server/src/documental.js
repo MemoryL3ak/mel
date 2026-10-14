@@ -39,7 +39,7 @@ export const HITOS = {
   },
   despacho: {
     nombre: 'Despacho a La Negra',
-    estados: { en_transito: 'En tránsito', recepcionado: 'Recepcionado', observado: 'Observado', anulado: 'Anulado' },
+    estados: { pendiente_guia: 'Pendiente guía', en_transito: 'En tránsito', recepcionado: 'Recepcionado', observado: 'Observado', anulado: 'Anulado' },
     listar: (ids) => seguro(async () => {
       let b = supa.from('despachos').select(`id, guia, fecha, estado${tiene.guia_mel ? ', guia_mel' : ''}`)
         .order('id', { ascending: false }).limit(lim);

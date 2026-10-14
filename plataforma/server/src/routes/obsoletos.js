@@ -38,30 +38,38 @@ const subir = multer({
 });
 const CAMPOS_COMP = [{ name: 'fotos', maxCount: 4 }, { name: 'ficha', maxCount: 1 }];
 
-// Acta de entrega firmada por el comprador, en evidencia/ENT/<adjudicacion>/.
+// Documentos de la entrega al comprador. Los tres son obligatorios para cerrar
+// la adjudicación: la guía con que sale el componente, la factura de venta y
+// el documento de entrega que firma el comprador al retirar. Van a
+// evidencia/ENT/<adjudicacion>/ con el tipo en el nombre del archivo, y cada
+// uno queda además en el repositorio documental con su tipo.
+export const DOC_ENTREGA = {
+  guia: { etiqueta: 'Guía de despacho', tipo: 'ob_guia_despacho' },
+  factura: { etiqueta: 'Factura de venta', tipo: 'ob_factura' },
+  acta: { etiqueta: 'Documento firmado de entrega', tipo: 'ob_cert_entrega' },
+};
 const ACTA = { ...IMG, 'application/pdf': 'pdf' };
 const subirActa = multer({
   storage: multer.memoryStorage(),
   defParamCharset: 'utf8',   // el nombre original pasa al repositorio documental
-  limits: { files: 3, fileSize: 8 * 1024 * 1024 },
+  limits: { files: 9, fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, f, cb) => cb(null, !!ACTA[f.mimetype]),
 });
-// El acta también queda en el repositorio documental como certificado de entrega.
-async function subirDocEntrega(adjId, archivos = [], quien = null) {
+async function subirDocEntrega(adjId, clase, archivos = [], quien = null) {
   let n = 0;
   const marca = Date.now();
   const subidos = [];
   for (const f of archivos) {
     const ext = ACTA[f.mimetype];
     if (!ext) continue;
-    const path = `ENT/${adjId}/acta-${marca}-${n + 1}.${ext}`;
+    const path = `ENT/${adjId}/${clase}-${marca}-${n + 1}.${ext}`;
     const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
-    if (error) { console.error('[GEA] acta de entrega:', error.message); continue; }
+    if (error) { console.error(`[GEA] ${DOC_ENTREGA[clase].etiqueta}:`, error.message); continue; }
     subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
     n++;
   }
   if (subidos.length) {
-    await registrarArchivos({ tipo: 'ob_cert_entrega', hito: 'adjudicacion', refId: adjId, archivos: subidos, quien });
+    await registrarArchivos({ tipo: DOC_ENTREGA[clase].tipo, hito: 'adjudicacion', refId: adjId, archivos: subidos, quien });
   }
   return n;
 }
@@ -579,20 +587,29 @@ r.post('/componentes/:id/clasificar', OP, ah(async (req, res) => {
     clasificado_el: new Date().toISOString(), clasificado_por: req.user.name,
   }).eq('id', id).select().single());
 
-  // La linea del programa manda a la cuadrilla a buscarlo, pero la guia y la
-  // valorizacion nacen del despacho de Fase 1. Se crea aqui mismo, con los
-  // datos ya clasificados, para que el obsoleto no quede a medio camino
-  // esperando que alguien lo tipee de nuevo en otra pantalla.
-  let despacho = null;
-  if (req.body?.crear_despacho) {
-    const guia = await folioInternoChatarra();
-    despacho = await q(supa.from('despachos').insert({
-      guia, patio_id, categoria_id, kg_origen: peso, fecha,
-      ...(tiene.desp_componente ? { componente_id: c.id } : {}),
-    }).select('id,guia').single());
-    await audit(req.user.name, req.user.role, 'Creó despacho desde un obsoleto derivado a chatarra',
-      `${despacho.guia} · ${c.codigo} · ${peso} kg`);
+  // La línea del programa manda a la cuadrilla a buscarlo, pero la guía y la
+  // valorización nacen del despacho de Fase 1, que se crea siempre aquí con los
+  // datos ya clasificados. Nace «pendiente de guía»: el retiro está planificado
+  // pero la pieza aún no sale del patio, así que no hay N° de guía MEL, pesaje
+  // de báscula ni respaldos. Se completan después en Despachos y recién ahí
+  // queda en tránsito a La Negra, donde se recepciona y se valoriza.
+  const base = {
+    guia: await folioInternoChatarra(), patio_id, categoria_id, kg_origen: peso, fecha,
+    creado_por: req.user.name,
+    ...(tiene.desp_componente ? { componente_id: c.id } : {}),
+    ...(tiene.desp_obs ? { observacion: `Obsoleto no vendido · ${c.codigo} · ${c.nombre}` } : {}),
+  };
+  let despacho;
+  try {
+    despacho = await q(supa.from('despachos').insert({ ...base, estado: 'pendiente_guia' }).select('id,guia,estado').single());
+  } catch (e) {
+    // Sin db/0016 la base no conoce el estado: el despacho nace en tránsito,
+    // como antes, en vez de perder la derivación.
+    if (!/despachos_estado_check/.test(e.message)) throw e;
+    despacho = await q(supa.from('despachos').insert(base).select('id,guia,estado').single());
   }
+  await audit(req.user.name, req.user.role, 'Creó despacho desde un obsoleto derivado a chatarra',
+    `${despacho.guia} · ${c.codigo} · ${peso} kg estimados · ${despacho.estado === 'pendiente_guia' ? 'pendiente de guía' : 'en tránsito'}`);
 
   await audit(req.user.name, req.user.role, 'Derivó obsoleto al programa de chatarra',
     `${c.codigo} · ${peso} kg · semana ${semana}/${anio}`);
@@ -903,14 +920,30 @@ r.post('/adjudicaciones/:id/pago', OP, ah(async (req, res) => {
 }));
 
 // Paso 4: guía de despacho + certificado de entrega, retiro coordinado.
-r.post('/adjudicaciones/:id/entrega', OP, subirActa.fields([{ name: 'acta', maxCount: 3 }]), ah(async (req, res) => {
+r.post('/adjudicaciones/:id/entrega', OP,
+  subirActa.fields(Object.keys(DOC_ENTREGA).map((name) => ({ name, maxCount: 3 }))), ah(async (req, res) => {
   if (!tiene.obsoletos) return sinTabla(res);
   const a = await q(supa.from('adjudicaciones').select('*').eq('id', req.params.id).single());
   if (a.estado === 'entregada') return res.status(409).json({ error: 'El retiro ya fue entregado' });
   if (a.estado !== 'pagada') return res.status(409).json({ error: 'Registre el pago antes de coordinar el retiro' });
+
+  // Sin los tres documentos la entrega no se registra. Se revisa antes de
+  // subir nada: o entran los tres, o la adjudicación queda como estaba.
+  let docs = 0;
+  if (tiene.acta_entrega) {
+    const faltan = Object.entries(DOC_ENTREGA).filter(([k]) => !req.files?.[k]?.length).map(([, d]) => d.etiqueta.toLowerCase());
+    if (faltan.length) {
+      return res.status(400).json({ error: `Para registrar la entrega adjunte: ${faltan.join(', ')}` });
+    }
+    for (const clase of Object.keys(DOC_ENTREGA)) {
+      const n = await subirDocEntrega(a.id, clase, req.files[clase], req.user);
+      if (!n) return res.status(400).json({ error: `No se pudo guardar ${DOC_ENTREGA[clase].etiqueta.toLowerCase()}. Revise el archivo e intente de nuevo.` });
+      docs += n;
+    }
+  }
   const row = await q(supa.from('adjudicaciones').update({
     estado: 'entregada', entregado_el: new Date().toISOString(), guia_folio: (req.body?.guia_folio || '').trim() || null,
-    ...(tiene.acta_entrega ? { entrega_docs: await subirDocEntrega(a.id, req.files?.acta, req.user) } : {}),
+    ...(tiene.acta_entrega ? { entrega_docs: Number(a.entrega_docs ?? 0) + docs } : {}),
   }).eq('id', a.id).select('*').single());
   const pub = await q(supa.from('publicaciones').select('componente_id').eq('id', a.publicacion_id).single());
   await q(supa.from('componentes').update({ estado: 'entregado' }).eq('id', pub.componente_id).select('id').single());
@@ -918,14 +951,21 @@ r.post('/adjudicaciones/:id/entrega', OP, subirActa.fields([{ name: 'acta', maxC
   res.json(row);
 }));
 
-// Acta(s) de entrega con URL firmada (1 h).
+// Documentos de la entrega con URL firmada (1 h), rotulados por tipo y en el
+// orden del retiro: guía, factura, documento firmado.
 r.get('/adjudicaciones/:id/acta', OP, ah(async (req, res) => {
   const carpeta = `ENT/${Number(req.params.id) || 0}`;
   const { data: lista } = await supa.storage.from('evidencia').list(carpeta);
   if (!lista?.length) return res.json({ archivos: [] });
   const { data: firmadas } = await supa.storage.from('evidencia')
     .createSignedUrls(lista.map((f) => `${carpeta}/${f.name}`), 3600);
-  res.json({ archivos: (firmadas ?? []).filter((f) => f.signedUrl).map((f) => ({ url: f.signedUrl })) });
+  const orden = Object.keys(DOC_ENTREGA);
+  const archivos = (firmadas ?? [])
+    .map((f, i) => ({ url: f.signedUrl, clase: lista[i].name.split('-')[0] }))
+    .filter((f) => f.url)
+    .map((f) => ({ ...f, etiqueta: DOC_ENTREGA[f.clase]?.etiqueta ?? 'Documento de entrega' }))
+    .sort((x, y) => (orden.indexOf(x.clase) + 1 || 99) - (orden.indexOf(y.clase) + 1 || 99));
+  res.json({ archivos });
 }));
 
 /* ============================ compradores (due diligence) ============================ */
