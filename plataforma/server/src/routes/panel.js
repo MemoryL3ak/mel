@@ -24,9 +24,10 @@ r.get('/panel', auth(), ah(async (req, res) => {
     q(supa.from('cuadraturas').select('anio, semana, estado').order('id', { ascending: false }).limit(1)),
     q(supa.from('auditoria').select('*').order('id', { ascending: false }).limit(6)),
     // Las guías anuladas no suman al flujo del mes ni a la actividad reciente.
-    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').neq('estado', 'anulado').gte('fecha', mes + '-01')),
+    // Ni las anuladas ni las pendientes de guía (aún no salen del patio) suman.
+    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', mes + '-01')),
     q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio').gte('fecha', mes + '-01')),
-    q(supa.from('despachos').select('fecha, kg_origen').neq('estado', 'anulado').gte('fecha', desde14)),
+    q(supa.from('despachos').select('fecha, kg_origen').not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', desde14)),
     q(supa.from('categorias').select('id, nombre').eq('activo', true)),
     q(supa.from('precios').select('categoria_id, precio_kg, vigente_desde').order('vigente_desde', { ascending: false })),
     contrato(),
@@ -99,6 +100,15 @@ r.get('/panel', auth(), ah(async (req, res) => {
   }
   if (['limpieza', 'coordinador'].includes(rol) && !prog.length) {
     pendientes.push({ tipo: 'info', tag: 'Programa', destino: 'programa', texto: `La semana ${semana} no tiene planificación de despachos` });
+  }
+
+  // Obsoletos derivados a chatarra cuyo despacho espera la guía para salir.
+  if (['limpieza', 'ito', 'coordinador'].includes(rol)) {
+    const sinGuia = await q(supa.from('despachos').select('id').eq('estado', 'pendiente_guia'));
+    if (sinGuia.length) {
+      pendientes.push({ tipo: 'warn', tag: 'Guía', destino: 'despachos?f=pendiente_guia',
+        texto: `${sinGuia.length} despacho(s) de obsoletos esperan su guía para salir del patio` });
+    }
   }
 
   // Repositorio documental (Fase 3): cada perfil ve los vencimientos de lo que

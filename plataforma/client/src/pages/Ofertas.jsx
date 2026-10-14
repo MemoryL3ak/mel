@@ -8,6 +8,14 @@ const EYEBROW = 'Fase 2 · Venta de obsoletos';
 const DD = { aprobada: ['ok', 'Aprobada'], pendiente: ['warn', 'En revisión'], rechazada: ['bad', 'Rechazada'] };
 const EST_ADJ = { adjudicada: ['info', 'Adjudicada'], pagada: ['warn', 'Pagada'], entregada: ['ok', 'Entregada'] };
 
+// Documentos que se adjuntan al registrar la entrega: [campo, etiqueta, ayuda].
+// Los tres son obligatorios; el servidor también los exige.
+const DOCS_ENTREGA = [
+  ['guia', 'Guía de despacho', 'PDF o foto de la guía con que el componente sale de MEL.'],
+  ['factura', 'Factura de venta', 'PDF de la factura emitida al comprador.'],
+  ['acta', 'Documento firmado de entrega', 'PDF o foto del documento que firma el comprador al retirar.'],
+];
+
 export default function Ofertas() {
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState('adjudicar');
@@ -23,6 +31,7 @@ export default function Ofertas() {
   const [nuevoCrit, setNuevoCrit] = useState({ nombre: '', peso: '' });
   const [pago, setPago] = useState(null);
   const [entrega, setEntrega] = useState(null);
+  const [docsEntrega, setDocsEntrega] = useState(null);
   const [cert, setCert] = useState(null);
   const toast = useToast();
 
@@ -108,11 +117,13 @@ export default function Ofertas() {
     } catch (e) { toast(e.message, true); }
   }
 
+  // Documentos de la entrega en un modal con enlaces rotulados: abrir varias
+  // pestañas a la vez lo bloquea el navegador.
   async function verActa(a) {
     try {
       const r = await api(`/adjudicaciones/${a.id}/acta`);
-      if (!r.archivos?.length) return toast('Esta entrega no tiene acta adjunta', true);
-      for (const x of r.archivos) window.open(x.url, '_blank', 'noreferrer');
+      if (!r.archivos?.length) return toast('Esta entrega no tiene documentos adjuntos', true);
+      setDocsEntrega({ cert_folio: a.cert_folio, archivos: r.archivos });
     } catch (e) { toast(e.message, true); }
   }
 
@@ -123,11 +134,13 @@ export default function Ofertas() {
     } catch (e) { toast(e.message, true); }
   }
   async function registrarEntrega() {
+    const faltan = DOCS_ENTREGA.filter(([k]) => !entrega.docs?.[k]?.length).map(([, etiqueta]) => etiqueta.toLowerCase());
+    if (faltan.length) return toast(`Para registrar la entrega adjunte: ${faltan.join(', ')}`, true);
     try {
-      // Viaja como formulario para poder adjuntar el acta firmada.
+      // Viaja como formulario con los tres documentos de la entrega.
       const fd = new FormData();
       fd.append('guia_folio', entrega.guia ?? '');
-      for (const a of entrega.acta ?? []) fd.append('acta', a);
+      for (const [k] of DOCS_ENTREGA) for (const a of entrega.docs[k]) fd.append(k, a);
       await api(`/adjudicaciones/${entrega.id}/entrega`, { method: 'POST', body: fd });
       toast('Entrega registrada'); setEntrega(null); load();
     } catch (e) { toast(e.message, true); }
@@ -233,9 +246,10 @@ export default function Ofertas() {
                   <td><Chip tone={tono}>{txt}</Chip></td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>
                     {a.estado === 'adjudicada' && <button className="btn sm primary" onClick={() => setPago({ id: a.id, ref: '' })}>Registrar pago</button>}
-                    {a.estado === 'pagada' && <button className="btn sm primary" onClick={() => setEntrega({ id: a.id, guia: '', acta: [] })}>Registrar entrega</button>}
+                    {a.estado === 'pagada' && <button className="btn sm primary" onClick={() => setEntrega({ id: a.id, cert_folio: a.cert_folio, guia: '', docs: {} })}>Registrar entrega</button>}
                     {a.estado === 'entregada' && a.entrega_docs > 0 && (
-                      <button className="btn sm" onClick={() => verActa(a)}>Acta ({a.entrega_docs})</button>
+                      <button className="btn sm" onClick={() => verActa(a)}
+                        title="Guía de despacho, factura de venta y documento firmado de entrega">Entrega ({a.entrega_docs})</button>
                     )}{' '}
                     <BotonDocs hito="adjudicacion" refId={a.id} />
                   </td>
@@ -294,19 +308,37 @@ export default function Ofertas() {
         </Field>
       </Modal>
 
-      <Modal open={!!entrega} title="Registrar entrega y retiro" onClose={() => setEntrega(null)}
-        footer={<><button className="btn" onClick={() => setEntrega(null)}>Cancelar</button><button className="btn primary" onClick={registrarEntrega}>Registrar entrega</button></>}>
-        <Field label="N° de guía de despacho (opcional)" hint="La guía física con que se coordina el retiro en terreno.">
+      <Modal open={!!entrega} title={entrega && `Registrar entrega y retiro · ${entrega.cert_folio}`} onClose={() => setEntrega(null)}
+        footer={<>
+          <button className="btn" onClick={() => setEntrega(null)}>Cancelar</button>
+          <button className="btn primary" onClick={registrarEntrega}
+            disabled={!entrega || DOCS_ENTREGA.some(([k]) => !entrega.docs?.[k]?.length)}>Registrar entrega</button>
+        </>}>
+        <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
+          Para cerrar la adjudicación se adjuntan los tres documentos del retiro. Quedan también en el repositorio documental.
+        </p>
+        <Field label="N° de guía de despacho" hint="Opcional: el número de la guía física con que sale el componente.">
           <input value={entrega?.guia ?? ''} onChange={(e) => setEntrega({ ...entrega, guia: e.target.value })} placeholder="458…" />
         </Field>
-        <Field label="Acta de entrega firmada"
-          hint="PDF o foto del documento que firma el comprador al retirar. Es el respaldo de que el activo salió.">
-          <input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp"
-            onChange={(e) => setEntrega({ ...entrega, acta: Array.from(e.target.files).slice(0, 3) })} />
-          {entrega?.acta?.length > 0 && (
-            <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>{entrega.acta.length} documento(s) listo(s).</small>
-          )}
-        </Field>
+        {DOCS_ENTREGA.map(([k, etiqueta, ayuda]) => (
+          <Field key={k} label={`${etiqueta} · obligatorio`} hint={ayuda}>
+            <input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(e) => setEntrega({ ...entrega, docs: { ...entrega.docs, [k]: Array.from(e.target.files).slice(0, 3) } })} />
+            {entrega?.docs?.[k]?.length > 0 && (
+              <small style={{ color: 'var(--ok-tx)', display: 'block', marginTop: 6 }}>✓ {entrega.docs[k].map((f) => f.name).join(', ')}</small>
+            )}
+          </Field>
+        ))}
+      </Modal>
+
+      <Modal open={!!docsEntrega} title={docsEntrega && `Documentos de entrega · ${docsEntrega.cert_folio}`} onClose={() => setDocsEntrega(null)}>
+        {docsEntrega && (
+          <ul className="doc-files">
+            {docsEntrega.archivos.map((x, i) => (
+              <li key={i}><a href={x.url} target="_blank" rel="noreferrer">📄 {x.etiqueta}</a></li>
+            ))}
+          </ul>
+        )}
       </Modal>
 
       <Modal open={!!cert} title={cert && `Certificado ${cert.cert_folio}`} onClose={() => setCert(null)} ancho>

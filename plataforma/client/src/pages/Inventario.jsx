@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, fmtUSD } from '../api.js';
-import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
+import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, hoyISO, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
 const EYEBROW = 'Fase 2 · Venta de obsoletos';
@@ -104,6 +105,11 @@ async function leerArchivo(archivo) {
 const cortable = (t) => (t ? String(t).replace(/,(?=\S)/g, ',\u200b') : t);
 
 export default function Inventario() {
+  // Pestañas: los pendientes quedaban debajo de un inventario largo y nadie los
+  // veía. ?t= permite enlazar directo a una pestaña (p. ej. desde el panel).
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('t') ?? 'inv';
+  const setTab = (t) => setParams(t === 'inv' ? {} : { t }, { replace: true });
   const [data, setData] = useState(null);
   const [sitios, setSitios] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -120,7 +126,7 @@ export default function Inventario() {
   const [patios, setPatios] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [clasificar, setClasificar] = useState(null);
-  const [cf, setCf] = useState({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO(), crear_despacho: true });
+  const [cf, setCf] = useState({ patio_id: '', categoria_id: '', peso: '', unidad: 't', fecha: hoyISO() });
   const toast = useToast();
 
   const load = () => api('/componentes').then(setData).catch((e) => toast(e.message, true));
@@ -200,15 +206,16 @@ export default function Inventario() {
   const derivar = () => correr(async () => {
     if (!cf.patio_id) return toast('Indique el patio donde se retirara', true);
     if (!cf.categoria_id) return toast('Indique la categoria de chatarra', true);
-    if (!(Number(cf.peso_estimado_kg) > 0)) return toast('Indique el peso estimado en kilos', true);
+    const kg = aKg(cf.peso, cf.unidad);
+    if (!kg) return toast('Indique el peso estimado', true);
+    if (kg < 100) return toast('El programa se planifica en toneladas: el mínimo es 0,1 t (100 kg)', true);
     try {
       const r = await api(`/componentes/${clasificar.id}/clasificar`, { method: 'POST', body: {
         patio_id: Number(cf.patio_id), categoria_id: Number(cf.categoria_id),
-        peso_estimado_kg: Number(cf.peso_estimado_kg), fecha: cf.fecha,
-        crear_despacho: !!cf.crear_despacho } });
-      toast(r.despacho
-        ? `${clasificar.codigo} derivado · guía ${r.despacho.guia} creada`
-        : `${clasificar.codigo} derivado al programa · semana ${r.programa.semana}`);
+        peso_estimado_kg: kg, fecha: cf.fecha } });
+      toast(r.despacho?.estado === 'pendiente_guia'
+        ? `${clasificar.codigo} derivado · despacho ${r.despacho.guia} pendiente de guía en Despachos`
+        : `${clasificar.codigo} derivado · despacho ${r.despacho?.guia ?? ''} creado`);
       setClasificar(null); load();
     } catch (e) { toast(e.message, true); }
   });
@@ -239,7 +246,14 @@ export default function Inventario() {
         <button className="btn primary" onClick={() => { setNuevo(true); setF(vacio); }}>+ Ingresar componente</button>
       </PageHead>
 
-      <div className="card" style={{ marginBottom: 16 }}><div className="tbl-wrap"><table className="densa cabecera-libre">
+      <Tabs active={tab} onChange={setTab} tabs={[
+        ['inv', 'Inventario'],
+        ['clasificar', 'Pendientes de clasificar', data.porClasificar?.length ?? 0],
+        ['entrega', 'Pendientes de entrega', data.pendientes.length],
+      ]} />
+
+      {tab === 'inv' && (
+      <div className="card"><div className="tbl-wrap"><table className="densa cabecera-libre">
         {/* Mismas columnas, en el mismo orden y con las mismas etiquetas que el
             formulario de ingreso (CAMPO), más el estado del proceso. */}
         <thead><tr><th>{CAMPO.memo}</th><th>{CAMPO.codigo}</th><th>{CAMPO.nombre}</th><th>{CAMPO.especificaciones}</th>
@@ -261,16 +275,18 @@ export default function Inventario() {
                 <td className="num">{fmtUSD(c.valor_referencial)}</td>
                 <td><Chip tone={tono}>{txt}{c.estado === 'publicado' && c.dia != null ? ` · día ${c.dia}` : ''}</Chip>
                   {c.nota_terreno && <><br /><small style={{ color: 'var(--muted)' }}>{c.nota_terreno}</small></>}</td>
-                <td className="num acc"><div className="acciones">
-                  {['por_identificar', 'no_encontrado'].includes(c.estado) && (
-                    <button className="btn sm primary" disabled={busy} onClick={() => confirmarTerreno(c)}
-                      title="Marcarlo como encontrado en terreno para poder publicarlo">Confirmar en terreno</button>
-                  )}
-                  {c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>}
-                  <BotonDocs hito="componente" refId={c.id} />
-                  <button className="btn sm" onClick={() => setEditar({ ...c, especificaciones: c.especificaciones ?? '', ubicacion: c.ubicacion ?? '', sitio_id: c.sitio_id ?? '', valor_referencial: c.valor_referencial ?? '' })}>Editar</button>
-                  {['planificado', 'por_identificar', 'no_encontrado'].includes(c.estado) && <button className="btn sm danger" onClick={() => setEliminar(c)}>Eliminar</button>}
-                </div></td>
+                <td className="num acc">
+                  <Acciones columnas="94px 68px" filas={[
+                    [['por_identificar', 'no_encontrado'].includes(c.estado) && (
+                      <button className="btn sm primary" disabled={busy} onClick={() => confirmarTerreno(c)}
+                        title="Marcarlo como encontrado en terreno para poder publicarlo">Confirmar en terreno</button>
+                    )],
+                    [<BotonDocs hito="componente" refId={c.id} />,
+                      <button className="btn sm" onClick={() => setEditar({ ...c, especificaciones: c.especificaciones ?? '', ubicacion: c.ubicacion ?? '', sitio_id: c.sitio_id ?? '', valor_referencial: c.valor_referencial ?? '' })}>Editar</button>],
+                    [c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>,
+                      ['planificado', 'por_identificar', 'no_encontrado'].includes(c.estado) && <button className="btn sm danger" onClick={() => setEliminar(c)}>Eliminar</button>],
+                  ]} />
+                </td>
               </tr>
             );
           })}
@@ -278,25 +294,27 @@ export default function Inventario() {
       </table></div>
         {data.componentes.length === 0 && <Empty title="Inventario vacío">Ingrese el primer componente obsoleto para planificar su venta.</Empty>}
       </div>
+      )}
 
-      {data.porClasificar?.length > 0 && (
-        <div className="card" style={{ marginBottom: 16, borderColor: 'var(--warn-line)' }}>
+      {tab === 'clasificar' && (
+        <div className="card">
           <div className="card-h">
             <h3>Pendientes de clasificar para chatarra</h3>
             <small>no se vendieron · esperan patio, categoría y peso para entrar al programa</small>
           </div>
           <div className="tbl-wrap"><table>
-            <thead><tr><th>Componente</th><th>Ubicación</th><th>Motivo</th><th className="num">Días esperando</th><th className="acc"></th></tr></thead>
+            <thead><tr><th>{CAMPO.nombre}</th><th>{CAMPO.sitio}</th><th>{CAMPO.ubicacion}</th><th>Motivo</th><th className="num">Días esperando</th><th className="acc"></th></tr></thead>
             <tbody>
-              {data.porClasificar.map((c) => (
+              {(data.porClasificar ?? []).map((c) => (
                 <tr key={c.id}>
-                  <td><b>{c.nombre}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{c.codigo}</small></td>
-                  <td>{[c.sitio, c.ubicacion].filter(Boolean).join(' · ') || '—'}</td>
+                  <td><b>{cortable(c.nombre)}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{c.codigo}</small></td>
+                  <td>{c.sitio || '—'}</td>
+                  <td>{c.ubicacion || '—'}</td>
                   <td><small style={{ color: 'var(--ink-2)' }}>{c.motivo || '—'}</small></td>
                   <td className="num">{c.desde ?? '—'}</td>
                   <td className="num acc">
                     <button className="btn sm primary" disabled={busy}
-                      onClick={() => { setClasificar(c); setCf({ patio_id: '', categoria_id: '', peso_estimado_kg: '', fecha: hoyISO(), crear_despacho: true }); }}>
+                      onClick={() => { setClasificar(c); setCf({ patio_id: '', categoria_id: '', peso: '', unidad: 't', fecha: hoyISO() }); }}>
                       Clasificar y derivar
                     </button>
                   </td>
@@ -304,12 +322,17 @@ export default function Inventario() {
               ))}
             </tbody>
           </table></div>
-          <div className="audit-note" style={{ marginTop: 10 }}>
-            ⚙ Mientras estén acá, la cuadrilla de limpieza no tiene instrucción de retirarlos. Al clasificarlos se crea el registro en el programa de Fase 1.
+          {!data.porClasificar?.length && (
+            <Empty title="Sin pendientes">Ningún componente convertido a chatarra espera clasificación.</Empty>
+          )}
+          <div className="audit-note" style={{ margin: 12 }}>
+            ⚙ Mientras estén acá, la cuadrilla de limpieza no tiene instrucción de retirarlos. Al clasificarlos se crea el
+            registro en el programa de limpieza y el despacho a La Negra, donde se valorizan al recepcionarse.
           </div>
         </div>
       )}
 
+      {tab === 'entrega' && (
       <div className="card">
         <div className="card-h"><h3>Pendientes de entrega</h3><small>adjudicados sin retiro coordinado</small></div>
         <div className="tbl-wrap"><table>
@@ -328,6 +351,7 @@ export default function Inventario() {
         </table></div>
         {data.pendientes.length === 0 && <Empty title="Sin pendientes">No hay componentes adjudicados esperando retiro.</Empty>}
       </div>
+      )}
 
       {/* ---- alta ---- */}
       <Modal open={nuevo} title="Ingresar componente obsoleto" onClose={() => setNuevo(false)}
@@ -455,7 +479,9 @@ export default function Inventario() {
         <p style={{ marginTop: 0 }}><b>{clasificar?.nombre}</b> no se vendió y pasó a chatarra.</p>
         <p style={{ color: 'var(--ink-2)', fontSize: 13.5 }}>
           Fase 1 mueve <b>kilos de una categoría desde un patio</b>, y el componente no trae ninguno de esos datos:
-          por eso hay que clasificarlo. Con esto se crea el registro en el programa de limpieza.
+          por eso hay que clasificarlo. Con esto se crea el registro en el programa de limpieza y su despacho a
+          La Negra, que queda <b>«Pendiente guía»</b> en Despachos hasta que se ingresen la guía MEL, el pesaje y los
+          respaldos. Se valoriza al recepcionarse en La Negra.
         </p>
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="Patio de retiro">
@@ -472,27 +498,16 @@ export default function Inventario() {
           </Field>
         </div>
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
-          <Field label="Peso estimado (kg)" hint="El programa se planifica en toneladas: mínimo 100 kg.">
-            <input type="number" min="0" step="1" value={cf.peso_estimado_kg}
-              onChange={(e) => setCf({ ...cf, peso_estimado_kg: e.target.value })} placeholder="4200" />
-          </Field>
+          {/* Mismo campo de peso que al registrar un despacho (kg o t), pero
+              parte en toneladas: el programa de limpieza planifica en toneladas. */}
+          <CampoPeso label="Peso estimado" hint="Mínimo 0,1 t (100 kg)."
+            valor={cf.peso} unidad={cf.unidad}
+            onValor={(v) => setCf({ ...cf, peso: v })}
+            onUnidad={(u) => setCf({ ...cf, unidad: u })} />
           <Field label="Fecha de retiro" hint="Define la semana del programa. No opera domingo.">
             <DateField value={cf.fecha} onChange={(e) => setCf({ ...cf, fecha: e.target.value })} />
           </Field>
         </div>
-        <Field label="Guía y valorización">
-          <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13.5 }}>
-            <input type="checkbox" checked={!!cf.crear_despacho} style={{ marginTop: 3 }}
-              onChange={(e) => setCf({ ...cf, crear_despacho: e.target.checked })} />
-            <span>
-              <b>Crear además el despacho de Fase 1</b>
-              <br /><small style={{ color: 'var(--muted)' }}>
-                Emite la guía con estos mismos datos. Sin esto el componente entra al programa, pero
-                la guía y la valorización hay que crearlas a mano en Despachos.
-              </small>
-            </span>
-          </label>
-        </Field>
       </Modal>
 
       {/* ---- adjuntos ---- */}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
+import { Acciones, DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
 // Memo de baja: el documento firmado del área usuaria generadora que autoriza
@@ -133,12 +133,14 @@ export default function Memos() {
                   </>)}
                 </td>
                 <td><Chip tone={tono}>{txt}</Chip></td>
-                <td className="num acc"><div className="acciones">
-                  <button className="btn sm" onClick={() => abrirDetalle(m)}>Ver</button>
-                  {m.doc > 0 && <button className="btn sm" onClick={() => verDocumento(m)}>Documento</button>}
-                  {esMEL && <button className="btn sm" onClick={() => setEditar({ ...m, emitido_por: m.emitido_por ?? '', referencia: m.referencia ?? '', observaciones: m.observaciones ?? '' })}>Editar</button>}
-                  {esMEL && m.componentes === 0 && <button className="btn sm danger" onClick={() => setEliminar(m)}>Eliminar</button>}
-                </div></td>
+                <td className="num acc">
+                  <Acciones columnas="56px 88px" filas={[
+                    [<button className="btn sm" onClick={() => abrirDetalle(m)}>Ver</button>,
+                      m.doc > 0 && <button className="btn sm" onClick={() => verDocumento(m)}>Documento</button>],
+                    [esMEL && <button className="btn sm" onClick={() => setEditar({ ...m, emitido_por: m.emitido_por ?? '', referencia: m.referencia ?? '', observaciones: m.observaciones ?? '' })}>Editar</button>,
+                      esMEL && m.componentes === 0 && <button className="btn sm danger" onClick={() => setEliminar(m)}>Eliminar</button>],
+                  ]} />
+                </td>
               </tr>
             );
           })}

@@ -56,7 +56,9 @@ async function calcular(anio, semana) {
   // Una guía anulada no existe para la cuadratura: queda en el libro con su
   // motivo, pero no suma kilos, ni guías, ni montos.
   const anuladas = desp.filter((d) => d.estado === 'anulado');
-  desp = desp.filter((d) => d.estado !== 'anulado');
+  // Un despacho pendiente de guía todavía no sale del patio: su peso es una
+  // estimación y no puede cuadrar contra nada.
+  desp = desp.filter((d) => !['anulado', 'pendiente_guia'].includes(d.estado));
 
   const descuentos = await descuentosDeSemana(desp.map((d) => d.id));
 
