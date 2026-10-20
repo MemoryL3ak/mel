@@ -12,6 +12,7 @@ import { contrato } from '../contrato.js';
 import { enviarCorreo, plantilla } from '../mail.js';
 import { convertirAChatarra } from '../jobs.js';
 import { registrarArchivos } from '../documental.js';
+import { leerPlanilla, agrupar } from '../planilla.js';
 
 const r = Router();
 const OP = auth('coordinador', 'admin_venta');
@@ -299,6 +300,15 @@ r.get('/componentes', OP, ah(async (_req, res) => {
       cant_comprometida: c.cant_comprometida ?? null, cant_encontrada: c.cant_encontrada ?? null,
       cant_enviada: c.cant_enviada ?? null, cant_recibida: c.cant_recibida ?? null,
       dia: p ? diasDesde(p.publicado_el) : null, plazo: p?.plazo_dias ?? null,
+      ...(tiene.planilla ? {
+        cant_no_encontrada: c.cant_no_encontrada ?? null,
+        precio_unitario_clp: num(c.precio_unitario_clp), monto_clp: num(c.monto_clp),
+        area: c.area ?? null, subarea: c.subarea ?? null, planta: c.planta ?? null,
+        storage_location: c.storage_location ?? null, mrp_controller: c.mrp_controller ?? null, mrp_type: c.mrp_type ?? null,
+        estado_planilla: c.estado_planilla ?? null, guias_gd: c.guias_gd ?? null, guias_gv: c.guias_gv ?? null,
+        encontrado_el: c.encontrado_el ?? null, despachado_el: c.despachado_el ?? null,
+        responsable_terreno: c.responsable_terreno ?? null, ficha_sap: c.ficha_sap ?? null, importado_el: c.importado_el ?? null,
+      } : {}),
     };
   });
 
@@ -406,6 +416,11 @@ r.patch('/componentes/:id', OP, ah(async (req, res) => {
   }
   if (b.sitio_id !== undefined) cambios.sitio_id = b.sitio_id ? Number(b.sitio_id) : null;
   if (b.valor_referencial !== undefined) cambios.valor_referencial = Number(b.valor_referencial) >= 0 && b.valor_referencial !== '' ? Number(b.valor_referencial) : null;
+  if (tiene.cantidades && b.cant_comprometida !== undefined) {
+    const n = Math.round(Number(b.cant_comprometida));
+    if (!(n >= 1)) return res.status(400).json({ error: 'La cantidad debe ser un entero mayor que cero' });
+    cambios.cant_comprometida = n;
+  }
   if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
   const row = await q(supa.from('componentes').update(cambios).eq('id', req.params.id).select().single());
   await audit(req.user.name, req.user.role, 'Editó componente obsoleto', row.codigo);
@@ -450,6 +465,11 @@ r.post('/componentes/:id/terreno', OP, ah(async (req, res) => {
   if (tiene.cantidades) {
     const n = Math.round(Number(req.body?.cant_encontrada));
     cambios.cant_encontrada = encontrado ? (n >= 0 ? n : Number(c.cant_comprometida ?? 1)) : 0;
+    if (tiene.planilla) {
+      // Lo que se buscó y no apareció; el resto queda por contar.
+      const ne = Math.round(Number(req.body?.cant_no_encontrada));
+      cambios.cant_no_encontrada = encontrado ? (ne >= 0 ? ne : null) : Number(c.cant_comprometida ?? 1);
+    }
   }
   const row = await q(supa.from('componentes').update(cambios).eq('id', id).select().single());
   await audit(req.user.name, req.user.role,
@@ -542,6 +562,197 @@ r.post('/componentes/masivo', OP, ah(async (req, res) => {
   const rows = await q(supa.from('componentes').insert(limpias).select('id,codigo'));
   await audit(req.user.name, req.user.role, 'Carga masiva de componentes', `${rows.length} componente(s)`);
   res.json({ cargados: rows.length, filas: rows });
+}));
+
+/* ==================== importación de la planilla de materiales ==================== */
+
+// MEL lleva su inventario en una planilla propia (una fila por material SAP).
+// En vez de reescribirla en el formato de la carga masiva, se importa tal cual:
+// primero una vista previa agrupada por área y sub-área, después la carga con
+// el memo elegido para cada grupo. Importar la misma planilla la semana
+// siguiente actualiza por código SAP; no duplica.
+const subirPlanilla = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 1, fileSize: 15 * 1024 * 1024 },
+  // CSV o Excel (.xlsx). El .xls antiguo pasa el filtro para que el lector
+  // responda con un mensaje claro en vez de un rechazo mudo.
+  fileFilter: (_req, f, cb) => cb(null, /\.(csv|txt|xlsx|xls)$/i.test(f.originalname)
+    || /text\/(csv|plain)|spreadsheetml|excel/.test(f.mimetype)),
+});
+const sinPlanilla = (res) => res.status(503).json({ error: 'Esta función requiere aplicar db/0017_planilla_materiales.sql en la base de datos' });
+
+// Lo que una fila de la planilla aporta al componente. Lo que la plataforma
+// define por su cuenta (especificaciones, fotos, publicación, precio de venta)
+// no se toca.
+function datosDePlanilla(f, sitioDe) {
+  return {
+    nombre: f.nombre, ubicacion: f.ubicacion,
+    cant_comprometida: Math.round(f.cantidad),
+    cant_encontrada: f.cant_encontrada != null ? Math.round(f.cant_encontrada) : null,
+    cant_no_encontrada: f.cant_no_encontrada != null ? Math.round(f.cant_no_encontrada) : null,
+    cant_enviada: f.cant_despachada > 0 ? Math.round(f.cant_despachada) : null,
+    precio_unitario_clp: f.precio_unitario_clp, monto_clp: f.monto_clp,
+    area: f.area, subarea: f.subarea, planta: f.planta,
+    storage_location: f.storage_location, mrp_controller: f.mrp_controller, mrp_type: f.mrp_type,
+    estado_planilla: f.estado_planilla, guias_gd: f.guias_gd, guias_gv: f.guias_gv,
+    encontrado_el: f.encontrado_el, despachado_el: f.despachado_el,
+    responsable_terreno: f.responsable, ficha_sap: f.ficha_sap,
+    ...(f.observacion ? { nota_terreno: f.observacion } : {}),
+    ...(sitioDe(f.planta) ? { sitio_id: sitioDe(f.planta) } : {}),
+    importado_el: new Date().toISOString(),
+  };
+}
+
+// Lee el archivo y muestra qué haría, sin tocar nada.
+r.post('/componentes/importar/previa', OP, subirPlanilla.single('archivo'), ah(async (req, res) => {
+  if (!tiene.planilla) return sinPlanilla(res);
+  if (!req.file) return res.status(400).json({ error: 'Adjunte la planilla de materiales (CSV separado por «;» o Excel .xlsx)' });
+  const lectura = await leerPlanilla(req.file.buffer, req.file.originalname);
+  if (lectura.error) return res.status(400).json({ error: lectura.error });
+
+  const codigos = lectura.filas.map((f) => f.codigo);
+  const existentes = new Map();
+  // La consulta por lista se parte: una planilla grande excede el largo de URL.
+  for (let i = 0; i < codigos.length; i += 150) {
+    const lote = await q(supa.from('componentes').select('id, codigo, estado, memo_id, valor_referencial, cant_comprometida').in('codigo', codigos.slice(i, i + 150)));
+    for (const c of lote) existentes.set(c.codigo, c);
+  }
+  const grupos = agrupar(lectura.filas).map((g) => {
+    const aprobadas = g.filas.filter((f) => f.aprobado);
+    const vista = (f) => {
+      const e = existentes.get(f.codigo);
+      return {
+        fila: f.fila, codigo: f.codigo, nombre: f.nombre, cantidad: f.cantidad, estado: f.estado, estado_planilla: f.estado_planilla,
+        existe: !!e, estado_actual: e?.estado ?? null,
+        // El memo que ya tiene manda: la planilla no reasigna.
+        con_memo: !!e?.memo_id,
+        avanzado: !!e && !['por_identificar', 'no_encontrado', 'planificado'].includes(e.estado),
+      };
+    };
+    return {
+      clave: g.clave, area: g.area, subarea: g.subarea, memo_ref: g.memo_ref,
+      nuevas: aprobadas.filter((f) => !existentes.has(f.codigo)).length,
+      actualizan: aprobadas.filter((f) => existentes.has(f.codigo)).length,
+      sin_memo: aprobadas.filter((f) => !existentes.get(f.codigo)?.memo_id).length,
+      no_aprobadas: g.filas.length - aprobadas.length,
+      unidades: aprobadas.reduce((a, f) => a + f.cantidad, 0),
+      filas: g.filas.map(vista),
+    };
+  });
+  res.json({
+    archivo: req.file.originalname,
+    total: lectura.filas.length,
+    aprobadas: lectura.filas.filter((f) => f.aprobado).length,
+    omitidas: lectura.omitidas,
+    grupos,
+    // Las filas aprobadas viajan de vuelta en la carga: el servidor no guarda
+    // el archivo entre la vista previa y la confirmación.
+    filas: lectura.filas.filter((f) => f.aprobado),
+  });
+}));
+
+// Carga lo que la vista previa mostró. `memos` asigna a cada grupo (clave) un
+// memo existente (id) o uno nuevo ({ nuevo: { area_usuaria, referencia,
+// emitido_por, fecha_memo } }). Solo lo necesitan los grupos con filas sin memo.
+r.post('/componentes/importar', OP, ah(async (req, res) => {
+  if (!tiene.planilla) return sinPlanilla(res);
+  const filas = Array.isArray(req.body?.filas) ? req.body.filas.filter((f) => f && f.codigo && f.aprobado) : [];
+  const memos = req.body?.memos && typeof req.body.memos === 'object' ? req.body.memos : {};
+  if (!filas.length) return res.status(400).json({ error: 'No hay filas aprobadas que importar' });
+  if (filas.length > 2000) return res.status(400).json({ error: 'Máximo 2.000 filas por importación' });
+  for (const f of filas) {
+    if (!(Number(f.cantidad) > 0)) return res.status(400).json({ error: `Fila ${f.fila} (${f.codigo}): cantidad inválida` });
+    if (!String(f.nombre || '').trim()) return res.status(400).json({ error: `Fila ${f.fila} (${f.codigo}): sin descripción` });
+  }
+
+  const [sitios, memosExistentes] = await Promise.all([
+    q(supa.from('sitios').select('id, codigo')),
+    q(supa.from('memos').select('id, folio')),
+  ]);
+  const sitioPorCodigo = new Map(sitios.map((x) => [x.codigo, x.id]));
+  const sitioDe = (planta) => (planta === 'B521' ? sitioPorCodigo.get('COL') : sitioPorCodigo.get('MEL')) ?? null;
+  const memoValido = new Set(memosExistentes.map((m) => m.id));
+
+  const grupos = agrupar(filas);
+  const existentes = new Map();
+  for (let i = 0; i < filas.length; i += 150) {
+    const lote = await q(supa.from('componentes').select('*').in('codigo', filas.slice(i, i + 150).map((f) => f.codigo)));
+    for (const c of lote) existentes.set(c.codigo, c);
+  }
+
+  // Cada grupo con filas sin memo necesita uno antes de escribir nada.
+  const memoDelGrupo = new Map();
+  const memosCreados = [];
+  for (const g of grupos) {
+    const necesita = g.filas.some((f) => !existentes.get(f.codigo)?.memo_id);
+    if (!necesita) continue;
+    const asignado = memos[g.clave];
+    if (asignado && typeof asignado === 'object' && asignado.nuevo) {
+      const n = asignado.nuevo;
+      const area_usuaria = String(n.area_usuaria || g.clave).trim();
+      if (!area_usuaria) return res.status(400).json({ error: `Grupo ${g.clave}: indique el área usuaria del memo nuevo` });
+      memoDelGrupo.set(g.clave, { nuevo: {
+        area_usuaria, referencia: String(n.referencia || g.memo_ref || '').trim() || null,
+        emitido_por: String(n.emitido_por || '').trim() || null,
+        fecha_memo: /^\d{4}-\d{2}-\d{2}$/.test(n.fecha_memo || '') ? n.fecha_memo : hoy(),
+      } });
+    } else if (memoValido.has(Number(asignado))) {
+      memoDelGrupo.set(g.clave, { id: Number(asignado) });
+    } else {
+      return res.status(400).json({ error: `Elija el memo de baja para el grupo «${g.clave}»` });
+    }
+  }
+  for (const [clave, m] of memoDelGrupo) {
+    if (!m.nuevo) continue;
+    const folioMemo = await folio('MEMO');
+    const row = await q(supa.from('memos').insert({ folio: folioMemo, ...m.nuevo, creado_por: req.user.name }).select('id, folio').single());
+    m.id = row.id;
+    memosCreados.push(row.folio);
+    await audit(req.user.name, req.user.role, 'Cargó memo de baja', `${row.folio} · ${m.nuevo.area_usuaria} · desde la planilla de materiales`);
+  }
+
+  let creados = 0, actualizados = 0, valoresCorregidos = 0;
+  const errores = [];
+  for (const g of grupos) {
+    const memoId = memoDelGrupo.get(g.clave)?.id ?? null;
+    for (const f of g.filas) {
+      const datos = datosDePlanilla(f, sitioDe);
+      const e = existentes.get(f.codigo);
+      try {
+        if (!e) {
+          await q(supa.from('componentes').insert({
+            codigo: f.codigo, ...datos, estado: f.estado, memo_id: memoId, creado_por: req.user.name,
+          }).select('id').single());
+          creados++;
+          continue;
+        }
+        const cambios = { ...datos };
+        // Un componente que ya avanzó (publicado, adjudicado, entregado,
+        // chatarra) conserva su estado: la planilla no sabe de esa parte.
+        if (['por_identificar', 'no_encontrado', 'planificado'].includes(e.estado)) cambios.estado = f.estado;
+        if (!e.memo_id && memoId) cambios.memo_id = memoId;
+        // Si fue movido a La Negra o Lampa, la planilla no lo devuelve a MEL.
+        if (e.sitio_id && ![sitioPorCodigo.get('MEL'), sitioPorCodigo.get('COL')].includes(e.sitio_id)) delete cambios.sitio_id;
+        if (e.nota_terreno && !f.observacion) delete cambios.nota_terreno;
+        // Cargas anteriores guardaron el monto SAP en pesos como si fuera el
+        // valor referencial en dólares: se limpia para que el campo vuelva a
+        // ser la estimación de venta.
+        const vr = Number(e.valor_referencial);
+        if (e.valor_referencial != null && (vr === Number(f.monto_clp) || vr === Number(f.precio_unitario_clp))) {
+          cambios.valor_referencial = null;
+          valoresCorregidos++;
+        }
+        await q(supa.from('componentes').update(cambios).eq('id', e.id).select('id').single());
+        actualizados++;
+      } catch (err) {
+        errores.push(`Fila ${f.fila} (${f.codigo}): ${err.message}`);
+      }
+    }
+  }
+  await audit(req.user.name, req.user.role, 'Importó la planilla de materiales',
+    `${creados} nuevo(s) · ${actualizados} actualizado(s)${valoresCorregidos ? ` · ${valoresCorregidos} valor(es) referencial(es) corregido(s)` : ''}`
+    + `${memosCreados.length ? ` · memos ${memosCreados.join(', ')}` : ''}${errores.length ? ` · ${errores.length} error(es)` : ''}`);
+  res.json({ creados, actualizados, valores_corregidos: valoresCorregidos, memos_creados: memosCreados, errores: errores.slice(0, 20) });
 }));
 
 /* ==================== derivación a chatarra (Fase 1) ==================== */

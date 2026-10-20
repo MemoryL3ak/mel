@@ -37,6 +37,11 @@ el coordinador desde la pantalla.
    - `db/0008_memos.sql` … `db/0014_despacho_obs.sql` (ajustes de las fases 1 y 2)
    - `db/0015_documental.sql` (Fase 3: catálogo de 23 tipos documentales,
      documentos y versiones)
+   - `db/0016_despacho_pendiente.sql` (despacho «pendiente de guía» de un
+     obsoleto derivado a chatarra; patio La Negra)
+   - `db/0017_planilla_materiales.sql` (importación de la planilla de
+     materiales: valor SAP en pesos, área, planta, estado de terreno por
+     cantidades; sitio Puerto Coloso)
 
    Después de aplicar `0015`, desde `server/` correr `npm run indexar:documentos`:
    registra en el repositorio las guías, certificados, respaldos, actas y memos
@@ -132,3 +137,16 @@ carga solo los tipos que le asigna el catálogo (`doc_tipos`).
   el catálogo (p. ej. la factura del EP desde «facturado»).
 - Prueba E2E: `npm run test:documental` (firma sus propias sesiones y borra lo
   que crea).
+
+### Planilla de materiales de MEL
+
+MEL lleva su inventario de obsoletos en una planilla propia (Excel `.xlsx` o
+CSV separado por `;`, una fila por material SAP). En **Inventario → «Importar planilla de
+materiales»** se sube tal cual: la plataforma muestra una vista previa agrupada
+por área y sub-área, se elige el memo de baja de cada grupo (uno existente o
+uno nuevo) y se importa. Solo entran las filas con «Aprobado = Sí». Reimportar
+la misma planilla actualiza por código SAP (cantidades, estado de terreno,
+ubicación, datos SAP) sin duplicar; los componentes que ya avanzaron en la
+plataforma conservan su estado y su memo. El valor contable SAP se guarda en
+pesos, aparte del valor referencial de venta en USD. El lector vive en
+`server/src/planilla.js`.

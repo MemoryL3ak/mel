@@ -1,9 +1,10 @@
-// Panel de control: el flujo físico del material del mes (patios → La Negra
-// → Lampa), la serie diaria y lo urgente según el rol de quien entra.
+// Panel de control: el flujo físico del material del período del estado de
+// pago en curso (patios → La Negra → Lampa), la serie diaria y lo urgente
+// según el rol de quien entra.
 import { Router } from 'express';
 import { supa, q, ah, hoy, semanaISO, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
-import { contrato, venceElPrecio } from '../contrato.js';
+import { contrato, venceElPrecio, periodoEP } from '../contrato.js';
 import { tiene } from '../esquema.js';
 import { faltantes, vencimiento, puedeCargar } from '../documental.js';
 
@@ -11,10 +12,13 @@ const r = Router();
 
 r.get('/panel', auth(), ah(async (req, res) => {
   const { anio, semana } = semanaISO();
-  const mes = hoy().slice(0, 7);
   const hace14 = new Date(Date.now() - 13 * 86400000);
   const desde14 = `${hace14.getFullYear()}-${String(hace14.getMonth() + 1).padStart(2, '0')}-${String(hace14.getDate()).padStart(2, '0')}`;
 
+  // El acumulado se mide por período del estado de pago, no por mes
+  // calendario: con corte el 20, octubre es del 21-sep al 20-oct.
+  const cfgPeriodo = await contrato();
+  const periodo = periodoEP(cfgPeriodo.dia_corte);
   const [transito, observados, trasladosTr, prog, eps, cuad, actividad, despMes, trasMes, desp14, cats, precios, cfg] = await Promise.all([
     q(supa.from('despachos').select('id, guia, fecha').eq('estado', 'en_transito').order('id')),
     q(supa.from('despachos').select('id, guia, obs_recepcion').eq('estado', 'observado').order('id')),
@@ -23,17 +27,17 @@ r.get('/panel', auth(), ah(async (req, res) => {
     q(supa.from('estados_pago').select('*').order('periodo', { ascending: false }).limit(6)),
     q(supa.from('cuadraturas').select('anio, semana, estado').order('id', { ascending: false }).limit(1)),
     q(supa.from('auditoria').select('*').order('id', { ascending: false }).limit(6)),
-    // Las guías anuladas no suman al flujo del mes ni a la actividad reciente.
-    // Ni las anuladas ni las pendientes de guía (aún no salen del patio) suman.
-    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', mes + '-01')),
-    q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio').gte('fecha', mes + '-01')),
+    // Ni las anuladas ni las pendientes de guía (aún no salen del patio)
+    // suman al flujo del período ni a la actividad reciente.
+    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', periodo.desde).lte('fecha', periodo.hasta)),
+    q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio').gte('fecha', periodo.desde).lte('fecha', periodo.hasta)),
     q(supa.from('despachos').select('fecha, kg_origen').not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', desde14)),
     q(supa.from('categorias').select('id, nombre').eq('activo', true)),
     q(supa.from('precios').select('categoria_id, precio_kg, vigente_desde').order('vigente_desde', { ascending: false })),
     contrato(),
   ]);
 
-  // Flujo físico del mes: cuánto salió de patios, cuánto validó La Negra,
+  // Flujo físico del período: cuánto salió de patios, cuánto validó La Negra,
   // cuánto quedó dispuesto en Lampa con certificado.
   const flujo = {
     kg_patios: despMes.reduce((a, d) => a + Number(d.kg_origen), 0),
@@ -137,6 +141,7 @@ r.get('/panel', auth(), ah(async (req, res) => {
 
   const ejec = prog.filter((p) => p.estado === 'ejecutado');
   res.json({
+    periodo,
     flujo,
     serie14,
     kpis: {

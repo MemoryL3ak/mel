@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, fmtCLP, fmtKg } from '../api.js';
+import { api, fmtCLP, fmtKg, fmtPeriodo } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
@@ -477,12 +477,16 @@ export default function Despachos() {
       </PageHead>
 
       {(() => {
-        const mesActual = new Date().toISOString().slice(0, 7);
-        const dMes = rows.filter((d) => d.fecha?.startsWith(mesActual));
-        const tMes = traslados.filter((t) => t.fecha?.startsWith(mesActual));
+        // Acumulado del período del estado de pago en curso (21 → 20), igual
+        // que el panel; si los maestros aún no llegaron, el mes calendario.
+        const p = maestros?.periodo;
+        const enPeriodo = (f) => (p ? f >= p.desde && f <= p.hasta : (f || '').startsWith(new Date().toISOString().slice(0, 7)));
+        const dMes = rows.filter((d) => d.estado !== 'anulado' && d.estado !== 'pendiente_guia' && enPeriodo(d.fecha));
+        const tMes = traslados.filter((t) => enPeriodo(t.fecha));
+        const per = fmtPeriodo(p);
         return (
-          <div className="flow-mini" aria-label="Resumen del flujo del mes">
-            <span className="fm"><span className="k">Patios · mes</span><span className="v display">{fmtKg(dMes.reduce((a, d) => a + d.kg_origen, 0))} <small>kg</small></span></span>
+          <div className="flow-mini" aria-label="Resumen del flujo del período" title={per ? `${per.titulo} · ${per.rango}` : undefined}>
+            <span className="fm"><span className="k">Patios · {per ? per.titulo.replace(/^EP /, 'EP ') : 'mes'}</span><span className="v display">{fmtKg(dMes.reduce((a, d) => a + d.kg_origen, 0))} <small>kg</small></span></span>
             <span className="fm-sep">→</span>
             <span className="fm"><span className="k">La Negra</span><span className="v display">{fmtKg(dMes.reduce((a, d) => a + (d.kg_destino ?? 0), 0))} <small>kg</small></span></span>
             <span className="fm-sep">→</span>
@@ -523,7 +527,7 @@ export default function Despachos() {
             </div>
             <small>{visibles.length} de {rows.length} guía(s)</small>
           </div>
-          <div className="tbl-wrap"><table className="densa">
+          <div className="tbl-wrap"><table className="densa cabecera-libre">
           <thead><tr><th title="Código interno">Código</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th title="Estado de la guía y, si ya está en uno, el estado de pago que la incluye">Estado</th><th className="acc"></th></tr></thead>
           <tbody>
             {visibles.map((d) => (
@@ -593,7 +597,7 @@ export default function Despachos() {
                     // avanzar la guía en el estado en que está.
                     const principal = completar || recepcionar || resolver || corregir;
                     return (
-                      <Acciones columnas="62px 128px" filas={[
+                      <Acciones columnas="60px 126px" filas={[
                         [detalle, principal],
                         [editar, anular],
                         [null, principal !== corregir && corregir],

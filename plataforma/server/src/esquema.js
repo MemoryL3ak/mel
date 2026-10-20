@@ -51,6 +51,8 @@ export const tiene = {
   desp_obs: false,            // despachos.observacion
   // db/0015_documental.sql
   documentos: false,          // Fase 3: doc_tipos, documentos, documento_versiones
+  // db/0017_planilla_materiales.sql
+  planilla: false,            // componentes: valor SAP en pesos, área, planta, estado de la planilla…
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -73,6 +75,7 @@ const ORIGEN = {
   acta_entrega: '0013_fase2_obs.sql', desp_componente: '0013_fase2_obs.sql',
   desp_obs: '0014_despacho_obs.sql',
   documentos: '0015_documental.sql',
+  planilla: '0017_planilla_materiales.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -140,6 +143,9 @@ async function revisar() {
   t.acta_entrega    = t.obsoletos && (await existe('adjudicaciones', 'entrega_docs'));
   t.desp_componente = t.obsoletos && (await existe('despachos', 'componente_id'));
   t.desp_obs        = await existe('despachos', 'observacion');
+
+  t.planilla = t.obsoletos && (await existe('componentes',
+    'precio_unitario_clp,monto_clp,area,subarea,planta,estado_planilla,cant_no_encontrada,guias_gd,importado_el'));
 
   t.documentos = (await existe('doc_tipos', 'codigo,hito,roles_carga,roles_ver,exigible_en'))
     && (await existe('documentos', 'id,folio,tipo,ref_id,vence_el,aviso_por_vencer_el'))

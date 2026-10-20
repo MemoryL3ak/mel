@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, fmtCLP, fmtKg } from '../api.js';
+import { api, fmtCLP, fmtKg, fmtPeriodo } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Chip, KPI, PageHead, useToast } from '../ui.jsx';
 
@@ -47,22 +47,26 @@ export default function Panel() {
   if (!data) return <div className="loading">Cargando panel…</div>;
   const { flujo, serie14, kpis, pendientes, actividad } = data;
   const nombre = user.name.split(' ')[0];
-  const mes = MESES[new Date().getMonth()];
+  // El acumulado es el del período del estado de pago en curso (21 → 20), no
+  // el del mes calendario: es la cifra que termina en el EP.
+  const per = fmtPeriodo(data.periodo);
+  const mes = per ? per.titulo : MESES[new Date().getMonth()];
 
   return (
     <div>
       <PageHead title="Panel de control" sub="Estado del proceso de chatarra: lo que requiere su decisión aparece primero." />
 
-      <section className="hero" aria-label="Flujo del material del mes">
+      <section className="hero" aria-label="Flujo del material del período">
         <div className="hero-top">
           <div>
-            <div className="hola">{saludo()}, {nombre} · así se mueve el material este mes</div>
+            <div className="hola">{saludo()}, {nombre} · así se mueve el material en el período del estado de pago</div>
             <h2>Flujo de enajenación · {mes}</h2>
+            {per && <div className="hola" style={{ marginTop: 4 }}>del {per.rango} · acumulado del EP en curso</div>}
           </div>
           <span className="tag">Trazado de punta a punta</span>
         </div>
         <div className="flow">
-          <Nodo label="Patios MEL" kg={flujo.kg_patios} sub={`${flujo.guias} guía(s) despachada(s) en el mes`} />
+          <Nodo label="Patios MEL" kg={flujo.kg_patios} sub={`${flujo.guias} guía(s) despachada(s) en el período`} />
           <div className="fjoin" aria-hidden="true" />
           <Nodo label="La Negra · vendor" kg={flujo.kg_lanegra} sub="recepcionado, pesado y clasificado" />
           <div className="fjoin" aria-hidden="true" />
@@ -81,7 +85,7 @@ export default function Panel() {
             <Spark serie={serie14} />
           </div>
         </div>
-        <KPI label="Valorizado · mes" value={fmtCLP(kpis.valor_mes)} delta="según tabla de precios del contrato"
+        <KPI label="Valorizado · período EP" value={fmtCLP(kpis.valor_mes)} delta="según tabla de precios del contrato"
           ico={<path d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5h-4a2.5 2.5 0 0 0 0 5h6" />} />
         <KPI label="Despachos en tránsito" value={kpis.en_transito} delta="camiones por recepcionar en La Negra"
           ico={<><path d="M2 7h11v9H2zM13 10h4l3 3v3h-7z" /><circle cx="6" cy="18" r="1.6" /><circle cx="16" cy="18" r="1.6" /></>} />
