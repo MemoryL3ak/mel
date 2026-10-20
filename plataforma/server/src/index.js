@@ -140,8 +140,13 @@ supa.storage.createBucket('evidencia', { public: false, fileSizeLimit: '5MB' })
   .then(({ error }) => { if (error && !/already exists/i.test(error.message)) console.error('[GEA] bucket evidencia:', error.message); });
 // Repositorio documental (Fase 3): contratos, facturas y actas pesan más que
 // una foto de evidencia, por eso tiene su propio bucket con un límite mayor.
-supa.storage.createBucket('documentos', { public: false, fileSizeLimit: '20MB' })
-  .then(({ error }) => { if (error && !/already exists/i.test(error.message)) console.error('[GEA] bucket documentos:', error.message); });
+// El tope por archivo subió a 500 MB para los videos de evidencia, que entran
+// directo del navegador al almacenamiento. Se fija en cada arranque porque el
+// bucket pudo crearse con el tope anterior.
+supa.storage.createBucket('documentos', { public: false, fileSizeLimit: '500MB' })
+  .then(({ error }) => { if (error && !/already exists/i.test(error.message)) console.error('[GEA] bucket documentos:', error.message); })
+  .then(() => supa.storage.updateBucket('documentos', { public: false, fileSizeLimit: '500MB' }))
+  .then(({ error }) => { if (error) console.error('[GEA] bucket documentos (límite):', error.message); });
 
 // Migraciones aplicadas (ver src/esquema.js). Se comprueba ANTES de aceptar
 // tráfico, y por eso se espera: lanzarlo en paralelo al listen dejaba un

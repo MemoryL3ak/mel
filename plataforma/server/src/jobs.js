@@ -8,7 +8,7 @@ import { supa, q, audit, hoy } from './supa.js';
 import { tiene } from './esquema.js';
 import { env } from './env.js';
 import { enviarCorreo, plantilla } from './mail.js';
-import { diasHasta } from './documental.js';
+import { diasHasta, limpiarSubidasHuerfanas } from './documental.js';
 
 const diasDesde = (fecha) =>
   Math.floor((new Date(hoy() + 'T12:00:00') - new Date(fecha + 'T12:00:00')) / 86400000);
@@ -162,7 +162,7 @@ export async function revisarVencimientos() {
 // impedir que el proceso termine si alguien lo detiene. El mismo ciclo revisa
 // los vencimientos del repositorio documental.
 export function iniciarBarridoObsoletos() {
-  const ciclo = () => { barrerPublicacionesVencidas(); revisarVencimientos(); };
+  const ciclo = () => { barrerPublicacionesVencidas(); revisarVencimientos(); limpiarSubidasHuerfanas(); };
   ciclo();
   const t = setInterval(ciclo, 6 * 60 * 60 * 1000);
   if (typeof t.unref === 'function') t.unref();

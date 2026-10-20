@@ -8,9 +8,10 @@ import multer from 'multer';
 import { supa, q, ah, folio, audit } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
+import { randomBytes } from 'node:crypto';
 import {
   BUCKET, MIME, HITOS, catalogoHitos, tiposDe, puedeVer, puedeCargar,
-  vencimiento, rotulos, faltantes,
+  vencimiento, rotulos, faltantes, esVideo, MAX_DIRECTO, CARPETA_SUBIDAS,
 } from '../documental.js';
 
 const r = Router();
@@ -25,9 +26,13 @@ const subir = multer({
   // Nombres con tildes y eñes: sin esto el nombre original llega en latin1.
   defParamCharset: 'utf8',
   limits: { files: 10, fileSize: 20 * 1024 * 1024 },
-  fileFilter: (_req, f, cb) => (MIME[f.mimetype]
+  // Los videos no pasan por aquí: van directo del navegador al almacenamiento
+  // (ver /documentos/subida), porque no caben en la memoria del servidor.
+  fileFilter: (_req, f, cb) => (MIME[f.mimetype] && !esVideo(f.mimetype)
     ? cb(null, true)
-    : cb(Object.assign(new Error(`Formato no admitido: ${f.originalname}. Use PDF, imagen, Excel o Word.`), { code: 'FORMATO' }))),
+    : cb(Object.assign(new Error(esVideo(f.mimetype)
+      ? `Los videos se suben directo al almacenamiento: vuelva a intentar (${f.originalname}).`
+      : `Formato no admitido: ${f.originalname}. Use PDF, imagen, Excel, Word o video.`), { code: 'FORMATO' }))),
 });
 // Los errores de multer llegan en inglés y como 500: se traducen a un 400 claro.
 const recibir = (req, res, next) => subir.array('archivos', 10)(req, res, (err) => {
@@ -52,6 +57,30 @@ async function subirArchivos(docId, version, files = []) {
     const { error } = await supa.storage.from(BUCKET).upload(path, f.buffer, { contentType: f.mimetype });
     if (error) { console.error('[GEA] documento:', error.message); continue; }
     out.push({ bucket: BUCKET, path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
+  }
+  return out;
+}
+
+// Archivos que el navegador ya subió a la carpeta de espera (subida directa):
+// se comprueba que existan y se mueven a la carpeta del documento. Devuelve
+// los que entraron, con la misma forma que subirArchivos.
+function subidosDe(body) {
+  const raw = body?.subidos;
+  const lista = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : raw;
+  return Array.isArray(lista) ? lista.filter((s) => s && typeof s.path === 'string') : [];
+}
+async function adoptarSubidos(docId, version, subidos = []) {
+  const marca = Date.now();
+  const out = [];
+  for (const [i, s] of subidos.entries()) {
+    const ext = MIME[s.mime];
+    if (!ext || !s.path.startsWith(`${CARPETA_SUBIDAS}/`)) continue;
+    const { data: existe } = await supa.storage.from(BUCKET).exists(s.path);
+    if (!existe) { console.error('[GEA] documento: subida no encontrada', s.path); continue; }
+    const destino = `${docId}/v${version}-${marca}-d${i + 1}.${ext}`;
+    const { error } = await supa.storage.from(BUCKET).move(s.path, destino);
+    if (error) { console.error('[GEA] documento:', error.message); continue; }
+    out.push({ bucket: BUCKET, path: destino, nombre: String(s.nombre || s.path.split('/').pop()).slice(0, 200), mime: s.mime, bytes: Number(s.bytes) || null });
   }
   return out;
 }
@@ -147,6 +176,27 @@ r.patch('/documentos/tipos/:codigo', auth('coordinador'), ah(async (req, res) =>
   await audit(req.user.name, req.user.role, 'Ajustó tipo documental',
     `${t.nombre} (${t.proceso}) · ${Object.keys(cambios).join(', ')}`);
   res.json({ ...row, puede_cargar: puedeCargar(row, req.user.role) });
+}));
+
+// Permiso de subida directa: el navegador manda el archivo al almacenamiento
+// con una URL firmada (válida 2 horas) y después lo registra junto con el
+// documento. Así un video de celular no pasa por la memoria del servidor.
+r.post('/documentos/subida', INTERNO, ah(async (req, res) => {
+  if (!tiene.documentos) return sinTabla(res);
+  const pedidos = Array.isArray(req.body?.archivos) ? req.body.archivos.slice(0, 10) : [];
+  if (!pedidos.length) return res.status(400).json({ error: 'Indique los archivos que va a subir' });
+  const subidas = [];
+  for (const [i, a] of pedidos.entries()) {
+    const ext = MIME[a?.mime];
+    if (!ext) return res.status(400).json({ error: `Formato no admitido: ${a?.nombre || 'archivo'}. Use PDF, imagen, Excel, Word o video (MP4, MOV, WebM).` });
+    const bytes = Number(a.bytes) || 0;
+    if (bytes > MAX_DIRECTO) return res.status(400).json({ error: `${a.nombre}: supera los ${Math.round(MAX_DIRECTO / 1048576)} MB` });
+    const path = `${CARPETA_SUBIDAS}/${req.user.sub}-${Date.now()}-${i + 1}-${randomBytes(4).toString('hex')}.${ext}`;
+    const { data, error } = await supa.storage.from(BUCKET).createSignedUploadUrl(path);
+    if (error) throw new Error(error.message);
+    subidas.push({ path, nombre: String(a.nombre || '').slice(0, 200), mime: a.mime, bytes, signedUrl: data.signedUrl, token: data.token });
+  }
+  res.json({ subidas });
 }));
 
 // Entidades de un hito, para elegir a cuál se vincula un documento.
@@ -245,7 +295,8 @@ r.post('/documentos', INTERNO, recibir, ah(async (req, res) => {
   const venceEl = String(b.vence_el || '').trim() || null;
   if (venceEl && !FECHA.test(venceEl)) return res.status(400).json({ error: 'Fecha de vencimiento inválida' });
   if (tipo.vence && !venceEl) return res.status(400).json({ error: `«${tipo.nombre}» vence: indique la fecha de vencimiento` });
-  if (!req.files?.length) return res.status(400).json({ error: 'Adjunte al menos un archivo' });
+  const subidos = subidosDe(b);
+  if (!req.files?.length && !subidos.length) return res.status(400).json({ error: 'Adjunte al menos un archivo' });
 
   const titulo = String(b.titulo || '').trim() || `${tipo.nombre} · ${ent.label}`;
   const doc = await q(supa.from('documentos').insert({
@@ -253,7 +304,7 @@ r.post('/documentos', INTERNO, recibir, ah(async (req, res) => {
     titulo, vence_el: tipo.vence ? venceEl : null, creado_por: req.user.name,
   }).select('*').single());
 
-  const archivos = await subirArchivos(doc.id, 1, req.files);
+  const archivos = [...await subirArchivos(doc.id, 1, req.files ?? []), ...await adoptarSubidos(doc.id, 1, subidos)];
   if (!archivos.length) {
     await supa.from('documentos').delete().eq('id', doc.id);
     return res.status(400).json({ error: 'No se pudo guardar ningún archivo. Intente nuevamente.' });
@@ -264,7 +315,7 @@ r.post('/documentos', INTERNO, recibir, ah(async (req, res) => {
   }).select('id').single());
   await audit(req.user.name, req.user.role, 'Cargó documento al repositorio',
     `${doc.folio} · ${tipo.nombre} · ${ent.label}${doc.vence_el ? ` · vence ${doc.vence_el}` : ''}`);
-  res.json({ ...doc, fallidos: req.files.length - archivos.length });
+  res.json({ ...doc, fallidos: (req.files?.length ?? 0) + subidos.length - archivos.length });
 }));
 
 // Versión nueva. Por defecto reemplaza los archivos; con conservar=1 suma los
@@ -283,10 +334,11 @@ r.post('/documentos/:id/versiones', INTERNO, recibir, ah(async (req, res) => {
   const venceEl = String(b.vence_el || '').trim() || null;
   if (venceEl && !FECHA.test(venceEl)) return res.status(400).json({ error: 'Fecha de vencimiento inválida' });
   if (tipo.vence && !venceEl) return res.status(400).json({ error: `«${tipo.nombre}» vence: indique la fecha de vencimiento de esta versión` });
-  if (!req.files?.length) return res.status(400).json({ error: 'Adjunte al menos un archivo' });
+  const subidos = subidosDe(b);
+  if (!req.files?.length && !subidos.length) return res.status(400).json({ error: 'Adjunte al menos un archivo' });
 
   const version = doc.version_actual + 1;
-  const nuevos = await subirArchivos(doc.id, version, req.files);
+  const nuevos = [...await subirArchivos(doc.id, version, req.files ?? []), ...await adoptarSubidos(doc.id, version, subidos)];
   if (!nuevos.length) return res.status(400).json({ error: 'No se pudo guardar ningún archivo. Intente nuevamente.' });
   let archivos = nuevos;
   if (['1', 'true', 'on'].includes(String(b.conservar))) {
@@ -305,7 +357,7 @@ r.post('/documentos/:id/versiones', INTERNO, recibir, ah(async (req, res) => {
   }).eq('id', doc.id).select('*').single());
   await audit(req.user.name, req.user.role, 'Cargó nueva versión de documento',
     `${doc.folio} v${version} · ${tipo.nombre} · ${nota}`);
-  res.json({ ...row, fallidos: req.files.length - nuevos.length });
+  res.json({ ...row, fallidos: (req.files?.length ?? 0) + subidos.length - nuevos.length });
 }));
 
 // Corrección del título o del vencimiento sin cargar archivos. El vencimiento

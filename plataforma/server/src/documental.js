@@ -11,7 +11,8 @@ import { tiene } from './esquema.js';
 export const BUCKET = 'documentos';
 
 // Formatos que acepta el repositorio. Los contratos y actas suelen venir en
-// Word; los registros de descuentos y ofertas, en planilla.
+// Word; los registros de descuentos y ofertas, en planilla; la evidencia de
+// destrucción de un componente, en foto o video de celular.
 export const MIME = {
   'application/pdf': 'pdf',
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
@@ -19,7 +20,27 @@ export const MIME = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-m4v': 'm4v',
 };
+export const esVideo = (mime) => String(mime || '').startsWith('video/');
+// Tope de la subida directa (el navegador manda el archivo al almacenamiento
+// sin pasar por el servidor). El límite por archivo del proyecto Supabase
+// también tiene que permitirlo.
+export const MAX_DIRECTO = 500 * 1024 * 1024;
+export const CARPETA_SUBIDAS = 'subidas';
+
+// Archivos que el navegador subió a la carpeta de espera y nunca se
+// registraron (cerró la pantalla a medio camino). Se borran pasado un día.
+export async function limpiarSubidasHuerfanas() {
+  try {
+    const { data } = await supa.storage.from(BUCKET).list(CARPETA_SUBIDAS, { limit: 1000 });
+    const viejos = (data ?? []).filter((f) => f.created_at && Date.now() - new Date(f.created_at).getTime() > 86400000);
+    if (viejos.length) {
+      await supa.storage.from(BUCKET).remove(viejos.map((f) => `${CARPETA_SUBIDAS}/${f.name}`));
+      console.log(`[GEA] repositorio: ${viejos.length} subida(s) sin registrar eliminada(s)`);
+    }
+  } catch (e) { console.error('[GEA] limpieza de subidas:', e.message); }
+}
 
 const lim = 500;
 const seguro = async (fn) => { try { return await fn(); } catch { return []; } };
