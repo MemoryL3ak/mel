@@ -20,6 +20,7 @@ import Compradores from './pages/Compradores.jsx';
 import Portal from './pages/Portal.jsx';
 import Documentos from './pages/Documentos.jsx';
 import Restablecer from './pages/Restablecer.jsx';
+import Indicadores from './pages/Indicadores.jsx';
 
 const I = {
   panel: <path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z" />,
@@ -36,9 +37,10 @@ const I = {
   ofertas: <path d="M4 5h16v14H4zM8 3v4M16 3v4M8 12l3 3 5-5" />,
   compradores: <><circle cx="9" cy="8" r="3.4" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><path d="M15 4l2 2 4-4" /></>,
   documentos: <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 9h18" />,
+  indicadores: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
 };
 const NAV = [
-  ['INICIO', [['panel', '/', 'Panel de control']]],
+  ['INICIO', [['panel', '/', 'Panel de control'], ['indicadores', '/indicadores', 'Indicadores y reportes']]],
   ['PROCESO DE CHATARRA', [
     ['programa', '/programa', 'Programa de limpieza'],
     ['despachos', '/despachos', 'Despachos y recepciones'],
@@ -67,7 +69,7 @@ const TITULOS = {
   '/estados': 'Estados de pago', '/auditoria': 'Auditoría y permisos', '/usuarios': 'Cuentas de usuario',
   '/memos': 'Memos de baja', '/inventario': 'Inventario de obsoletos', '/publicaciones': 'Publicaciones',
   '/ofertas': 'Ofertas y adjudicación', '/compradores': 'Compradores',
-  '/documentos': 'Repositorio documental',
+  '/documentos': 'Repositorio documental', '/indicadores': 'Indicadores y reportes',
 };
 // Ruta de cada pantalla, para el aterrizaje de quien no tiene Panel.
 const RUTA = Object.fromEntries(NAV.flatMap(([, items]) => items.map(([id, to]) => [id, to])));
@@ -213,6 +215,7 @@ export default function App() {
             <Route path="/ofertas" element={<Guard screen="ofertas"><Ofertas /></Guard>} />
             <Route path="/compradores" element={<Guard screen="compradores"><Compradores /></Guard>} />
             <Route path="/documentos" element={<Guard screen="documentos"><Documentos /></Guard>} />
+            <Route path="/indicadores" element={<Guard screen="indicadores"><Indicadores /></Guard>} />
             <Route path="/portal" element={<Portal />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

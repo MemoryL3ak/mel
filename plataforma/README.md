@@ -142,6 +142,23 @@ carga solo los tipos que le asigna el catálogo (`doc_tipos`).
 - Prueba E2E: `npm run test:documental` (firma sus propias sesiones y borra lo
   que crea).
 
+### Fase 4 · Indicadores y reportes
+
+Pantalla **Indicadores y reportes** (coordinador completa; ITO el proceso de
+chatarra; administrador de venta la venta de obsoletos). El proceso de
+chatarra se mide por período del estado de pago (del día siguiente al corte
+del mes anterior al corte del mes): tonelaje y valorizado por período con
+comparación contra el anterior, acumulado del año, cartera de EP por etapa,
+tiempos del ciclo del EP (generación → firma → factura → pago, con el plazo
+de 15 días), calidad de la operación (diferencia de peso, observadas,
+programa) y categorías del período. La venta de obsoletos se mide por mes:
+inventario por etapa, tasa de adjudicación, conversión a chatarra, tiempos
+hasta adjudicar, pagar y retirar, ingresos en USD con la comisión al vendor
+y compradores. Cada gráfico tiene su tabla gemela. Exportación: **Excel**
+(`GET /indicadores/excel?pestana=…`, un libro con resumen y detalle) y
+**PDF** por la vista de impresión del navegador. Cálculo en
+`server/src/routes/indicadores.js`.
+
 ### Planilla de materiales de MEL
 
 MEL lleva su inventario de obsoletos en una planilla propia (Excel `.xlsx` o
