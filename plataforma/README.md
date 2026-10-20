@@ -123,8 +123,12 @@ carga solo los tipos que le asigna el catálogo (`doc_tipos`).
 
 ### Fase 3 · Repositorio documental
 
-- Folio `DOC` por `next_folio`. Archivos en el bucket privado `documentos`
-  (20 MB por archivo; PDF, imagen, Excel o Word), servidos con URL firmada.
+- Folio `DOC` por `next_folio`. Archivos en el bucket privado `documentos`,
+  servidos con URL firmada: PDF, imagen, Excel o Word hasta 20 MB por el
+  servidor, y videos (MP4, MOV, WebM) o archivos grandes hasta 500 MB que el
+  navegador sube directo al almacenamiento con una URL firmada de subida
+  (`POST /documentos/subida`) y después registra con el documento. El límite
+  por archivo del proyecto Supabase (Storage → Settings) debe permitirlo.
 - Cada carga es una **versión nueva**; las anteriores no se modifican ni se
   borran. Un documento no se elimina: se **anula** con motivo (coordinador).
 - Vencimiento: vigente / por vencer (dentro del aviso del tipo) / vencido. El

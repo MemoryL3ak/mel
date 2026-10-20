@@ -22,6 +22,29 @@ const ROL_CORTO = {
   lampa: 'Lampa', admin_venta: 'Adm. venta',
 };
 
+// Un video, o cualquier archivo grande, va directo del navegador al
+// almacenamiento: el servidor entrega un permiso de subida y después registra
+// el archivo con el documento. Lo chico sigue viajando con el formulario.
+const ACEPTA = '.pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.doc,.docx,.mp4,.mov,.webm,.m4v';
+const DIRECTO = (f) => f.type.startsWith('video/') || f.size > 15 * 1024 * 1024;
+const MAX_MB = 500;
+const AYUDA_ARCHIVOS = `PDF, imagen, Excel, Word o video (MP4, MOV, WebM); hasta 10 archivos. Documentos de hasta 20 MB; videos de hasta ${MAX_MB} MB.`;
+// Tipo de archivo del celular que llega sin MIME (pasa con algunos .mov).
+const mimeDe = (f) => f.type || ({ mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', m4v: 'video/x-m4v' }[f.name.split('.').pop().toLowerCase()] ?? '');
+
+function subirConAvance(url, archivo, mime, onAvance) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', mime);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onAvance(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(
+      xhr.status === 413 ? `${archivo.name}: el almacenamiento rechazó el tamaño (revise el límite del proyecto)` : `${archivo.name}: la subida falló (${xhr.status})`)));
+    xhr.onerror = () => reject(new Error(`${archivo.name}: la subida se cortó. Revise la conexión e intente de nuevo.`));
+    xhr.send(archivo);
+  });
+}
+
 const fmtBytes = (n) => (n == null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toLocaleString('es-CL', { maximumFractionDigits: 1 })} MB`);
 const fmtCuando = (ts) => (ts ? new Date(ts).toLocaleString('es-CL', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 // Vencimiento propuesto: hoy + la vigencia típica del tipo.
@@ -70,6 +93,29 @@ export default function Documentos() {
   const [editar, setEditar] = useState(null);
   const [anular, setAnular] = useState(null);
   const [tipoEdit, setTipoEdit] = useState(null);
+  const [avance, setAvance] = useState({});   // nombre del archivo → % subido
+
+  // Separa los archivos: los grandes se suben directo (con avance) y vuelven
+  // como referencias; los chicos se devuelven para ir en el formulario.
+  async function prepararArchivos(archivos) {
+    const grandes = archivos.filter(DIRECTO);
+    const chicos = archivos.filter((f) => !DIRECTO(f));
+    for (const f of grandes) {
+      if (f.size > MAX_MB * 1024 * 1024) throw new Error(`${f.name} supera los ${MAX_MB} MB`);
+      if (!mimeDe(f)) throw new Error(`${f.name}: formato no reconocido`);
+    }
+    let subidos = [];
+    if (grandes.length) {
+      const { subidas } = await api('/documentos/subida', { method: 'POST', body: {
+        archivos: grandes.map((f) => ({ nombre: f.name, mime: mimeDe(f), bytes: f.size })) } });
+      for (const [i, f] of grandes.entries()) {
+        setAvance((a) => ({ ...a, [f.name]: 0 }));
+        await subirConAvance(subidas[i].signedUrl, f, mimeDe(f), (pct) => setAvance((a) => ({ ...a, [f.name]: pct })));
+      }
+      subidos = subidas.map((s) => ({ path: s.path, nombre: s.nombre, mime: s.mime, bytes: s.bytes }));
+    }
+    return { chicos, subidos };
+  }
 
   const load = async () => {
     try {
@@ -149,12 +195,15 @@ export default function Documentos() {
     fd.append('titulo', cargar.titulo);
     if (t.vence) fd.append('vence_el', cargar.vence_el);
     fd.append('nota', cargar.nota);
-    for (const f of cargar.archivos) fd.append('archivos', f);
     try {
+      const { chicos, subidos } = await prepararArchivos(cargar.archivos);
+      for (const f of chicos) fd.append('archivos', f);
+      fd.append('subidos', JSON.stringify(subidos));
       const r = await api('/documentos', { method: 'POST', body: fd });
       toast(r.fallidos ? `${r.folio} cargado, pero ${r.fallidos} archivo(s) no se pudieron guardar` : `${r.folio} cargado al repositorio`, !!r.fallidos);
       setCargar(null); load();
     } catch (e) { toast(e.message, true); }
+    finally { setAvance({}); }
   });
 
   /* ---------- detalle y versiones ---------- */
@@ -187,12 +236,15 @@ export default function Documentos() {
     fd.append('nota', version.nota.trim());
     if (doc.tipo_info?.vence) fd.append('vence_el', version.vence_el);
     if (version.conservar) fd.append('conservar', '1');
-    for (const f of version.archivos) fd.append('archivos', f);
     try {
+      const { chicos, subidos } = await prepararArchivos(version.archivos);
+      for (const f of chicos) fd.append('archivos', f);
+      fd.append('subidos', JSON.stringify(subidos));
       const r = await api(`/documentos/${doc.id}/versiones`, { method: 'POST', body: fd });
       toast(`${doc.folio}: versión ${r.version_actual} cargada`);
       setVersion(null); load(); recargarDetalle(doc.id);
     } catch (e) { toast(e.message, true); }
+    finally { setAvance({}); }
   });
   const enviarEdicion = () => correr(async () => {
     try {
@@ -435,10 +487,10 @@ export default function Documentos() {
               <DateField value={cargar.vence_el} onChange={(e) => setCargar({ ...cargar, vence_el: e.target.value })} />
             </Field>
           )}
-          <Field label="Archivos" hint="PDF, imagen, Excel o Word; hasta 10 archivos de 20 MB.">
-            <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.doc,.docx"
-              onChange={(e) => setCargar({ ...cargar, archivos: [...e.target.files] })} />
-            {cargar.archivos.length > 0 && <ListaLocal archivos={cargar.archivos} />}
+          <Field label="Archivos" hint={AYUDA_ARCHIVOS}>
+            <input type="file" multiple accept={ACEPTA}
+              onChange={(e) => setCargar({ ...cargar, archivos: [...e.target.files].slice(0, 10) })} />
+            {cargar.archivos.length > 0 && <ListaLocal archivos={cargar.archivos} avance={avance} />}
           </Field>
           <Field label="Nota" hint="Opcional.">
             <textarea rows="2" value={cargar.nota} onChange={(e) => setCargar({ ...cargar, nota: e.target.value })} />
@@ -493,7 +545,7 @@ export default function Documentos() {
                   <ul className="doc-files">
                     {archivosVer[v.version].map((a, i) => (
                       <li key={i}>
-                        {a.url ? <a href={a.url} target="_blank" rel="noreferrer">📄 {a.nombre}</a> : <span>📄 {a.nombre} (no disponible)</span>}
+                        {a.url ? <a href={a.url} target="_blank" rel="noreferrer">{icono(a.mime)} {a.nombre}</a> : <span>{icono(a.mime)} {a.nombre} (no disponible)</span>}
                         <small>{fmtBytes(a.bytes)}</small>
                       </li>
                     ))}
@@ -526,10 +578,10 @@ export default function Documentos() {
               <DateField value={version.vence_el} onChange={(e) => setVersion({ ...version, vence_el: e.target.value })} />
             </Field>
           )}
-          <Field label="Archivos">
-            <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.doc,.docx"
-              onChange={(e) => setVersion({ ...version, archivos: [...e.target.files] })} />
-            {version.archivos.length > 0 && <ListaLocal archivos={version.archivos} />}
+          <Field label="Archivos" hint={AYUDA_ARCHIVOS}>
+            <input type="file" multiple accept={ACEPTA}
+              onChange={(e) => setVersion({ ...version, archivos: [...e.target.files].slice(0, 10) })} />
+            {version.archivos.length > 0 && <ListaLocal archivos={version.archivos} avance={avance} />}
           </Field>
           <label className="check-linea">
             <input type="checkbox" checked={version.conservar} onChange={(e) => setVersion({ ...version, conservar: e.target.checked })} />
@@ -584,11 +636,19 @@ export default function Documentos() {
   );
 }
 
-// Archivos elegidos en el equipo, antes de subirlos.
-function ListaLocal({ archivos }) {
+const icono = (mime) => (String(mime || '').startsWith('video/') ? '🎬' : String(mime || '').startsWith('image/') ? '🖼️' : '📄');
+
+// Archivos elegidos en el equipo, antes de subirlos; los grandes muestran el
+// avance de su subida directa.
+function ListaLocal({ archivos, avance = {} }) {
   return (
     <ul className="doc-files" style={{ marginTop: 8 }}>
-      {archivos.map((f, i) => <li key={i}><span>📄 {f.name}</span><small>{fmtBytes(f.size)}</small></li>)}
+      {archivos.map((f, i) => (
+        <li key={i}>
+          <span>{icono(mimeDe(f))} {f.name}{DIRECTO(f) && <small style={{ marginLeft: 6, color: 'var(--copper-deep)' }}>subida directa</small>}</span>
+          <small>{avance[f.name] != null ? `subiendo ${avance[f.name]}%` : fmtBytes(f.size)}</small>
+        </li>
+      ))}
     </ul>
   );
 }

@@ -169,9 +169,41 @@ try {
   const det3 = await api(`/documentos/${id}`, { role: 'coordinador' });
   const porV = Object.fromEntries((det3.data.versiones ?? []).map((v) => [v.version, v.archivos.length]));
   ok(porV[1] === 1 && porV[2] === 1 && porV[3] === 2, 'las versiones anteriores quedan intactas; la 3 suma el anexo', JSON.stringify(porV));
+  // (la versión 4 la agrega más abajo la subida directa)
   const firm = await api(`/documentos/${id}/versiones/1`, { role: 'vendor' });
   const url = firm.data.archivos?.[0]?.url;
   ok(!!url && (await fetch(url)).status === 200, 'la versión 1 se descarga con URL firmada');
+
+  console.log('\nSubida directa (video)');
+  // Un video no pasa por el servidor: se pide el permiso, se sube con PUT a la
+  // URL firmada y se registra como versión nueva.
+  const MP4 = Buffer.from('00000018667479706d703432', 'hex');   // cabecera ftyp de un MP4
+  const permiso = await api('/documentos/subida', { method: 'POST', role: 'coordinador',
+    body: { archivos: [{ nombre: 'destrucción.mp4', mime: 'video/mp4', bytes: MP4.length }] } });
+  ok(permiso.status === 200 && permiso.data.subidas?.[0]?.signedUrl && permiso.data.subidas[0].path.startsWith('subidas/'),
+    'entrega una URL firmada en la carpeta de espera', JSON.stringify(permiso.data).slice(0, 200));
+  const sub = permiso.data.subidas[0];
+  const put = await fetch(sub.signedUrl, { method: 'PUT', headers: { 'Content-Type': 'video/mp4' }, body: MP4 });
+  ok(put.status >= 200 && put.status < 300, 'el navegador sube directo al almacenamiento', String(put.status));
+  const vVideo = await api(`/documentos/${id}/versiones`, { method: 'POST', role: 'coordinador',
+    form: formulario({ nota: 'Video de la destrucción', vence_el: enDias(500), conservar: '1',
+      subidos: JSON.stringify([{ path: sub.path, nombre: sub.nombre, mime: sub.mime, bytes: sub.bytes }]) }) });
+  ok(vVideo.status === 200 && vVideo.data.version_actual === 4 && vVideo.data.fallidos === 0, 'se registra como versión 4 sin pasar por el servidor', JSON.stringify(vVideo.data).slice(0, 200));
+  const detV = await api(`/documentos/${id}`, { role: 'coordinador' });
+  const v4 = detV.data.versiones?.find((x) => x.version === 4);
+  ok(v4?.archivos?.length === 3 && v4.archivos.some((a) => a.mime === 'video/mp4' && a.nombre === 'destrucción.mp4'),
+    'la versión 4 conserva los 2 anteriores y suma el video', JSON.stringify(v4?.archivos));
+  const firmV = await api(`/documentos/${id}/versiones/4`, { role: 'vendor' });
+  const urlV = firmV.data.archivos?.find((a) => a.mime === 'video/mp4')?.url;
+  ok(!!urlV && (await fetch(urlV)).status === 200, 'el video se descarga con URL firmada desde la carpeta del documento');
+  const { data: ver4 } = await rest(`/documento_versiones?documento_id=eq.${id}&version=eq.4&select=archivos`).then((r) => r.json()).then((d) => ({ data: d }));
+  ok(ver4?.[0]?.archivos?.every((a) => a.path.startsWith(`${id}/`)), 'el archivo quedó movido a la carpeta del documento, no en la de espera');
+  const ajenoSub = await api(`/documentos/${id}/versiones`, { method: 'POST', role: 'coordinador',
+    form: formulario({ nota: 'x', vence_el: enDias(500), subidos: JSON.stringify([{ path: '1/v1-robado.pdf', nombre: 'r.pdf', mime: 'application/pdf', bytes: 1 }]) }) });
+  ok(ajenoSub.status === 400, 'una referencia fuera de la carpeta de espera no se adopta', JSON.stringify(ajenoSub.data));
+  const grande = await api('/documentos/subida', { method: 'POST', role: 'coordinador',
+    body: { archivos: [{ nombre: 'enorme.mp4', mime: 'video/mp4', bytes: 600 * 1024 * 1024 }] } });
+  ok(grande.status === 400 && /supera/.test(grande.data.error), 'más de 500 MB → 400');
 
   console.log('\nCorrección y anulación');
   const corr = await api(`/documentos/${id}`, { method: 'PATCH', role: 'coordinador', body: { vence_el: enDias(450) } });
