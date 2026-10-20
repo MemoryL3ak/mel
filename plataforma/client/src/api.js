@@ -41,6 +41,18 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
+// Descarga un archivo que entrega la API (p. ej. un Excel), con la sesión.
+export async function descargar(path, nombre) {
+  const k = llaves();
+  const token = localStorage.getItem(k.token);
+  const res = await fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Error ${res.status}`); }
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: nombre });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const fmtCLP = (n) => (n == null ? '—' : '$ ' + Math.round(Number(n)).toLocaleString('es-CL'));
 export const fmtUSD = (n) => (n == null ? '—' : 'US$ ' + Number(n).toLocaleString('en-US'));
 export const fmtKg = (n) => (n == null ? '—' : Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 }));

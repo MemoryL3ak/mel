@@ -7,13 +7,13 @@ import { api, llaves } from './api.js';
 export const SCREENS = {
   limpieza:    ['panel', 'programa', 'despachos', 'documentos'],
   vendor:      ['panel', 'despachos', 'estados', 'documentos'],
-  ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'documentos', 'auditoria'],
+  ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'documentos', 'indicadores', 'auditoria'],
   coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria', 'usuarios',
-                'memos', 'inventario', 'publicaciones', 'ofertas', 'compradores', 'documentos'],
+                'memos', 'inventario', 'publicaciones', 'ofertas', 'compradores', 'documentos', 'indicadores'],
   lampa:       ['panel', 'despachos', 'cuadratura', 'documentos'],
   // El vendor ve el memo para saber el origen de lo que publica, pero cargarlo
   // es de MEL: la pantalla filtra las acciones de escritura por rol.
-  admin_venta: ['memos', 'inventario', 'publicaciones', 'ofertas', 'compradores', 'documentos'],
+  admin_venta: ['memos', 'inventario', 'publicaciones', 'ofertas', 'compradores', 'documentos', 'indicadores'],
 };
 export const ROL_NOMBRE = {
   limpieza: 'Empresa de limpieza de patios',

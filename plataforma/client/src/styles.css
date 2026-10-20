@@ -911,3 +911,66 @@ tbody tr.tot:hover{background:var(--surface-2)}
 @media (max-width:720px){
   .doc-busca,.doc-busca .sel,.doc-busca input{width:100%;min-width:0}
 }
+
+/* =================== INDICADORES (Fase 4) =================== */
+/* Paleta de gráficos validada contra el blanco de las tarjetas: series en
+   orden fijo cobre · azul · verde · dorado; rampa cobre para etapas ordenadas. */
+.viz-root{
+  --viz-1:#B15A2B; --viz-2:#3F6FA8; --viz-3:#178F66; --viz-4:#C98500; --viz-gris:#D9D2C7;
+  --viz-o1:#D9925F; --viz-o2:#C9703F; --viz-o3:#B15A2B; --viz-o4:#8C4520; --viz-o5:#6A341A; --viz-o6:#4A2412;
+}
+.viz-cargando .viz-card,.viz-cargando .viz-kpis{opacity:.55;transition:opacity .2s}
+.viz-filtros{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin:0 0 16px}
+.viz-filtros label{display:flex;flex-direction:column;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);min-width:150px}
+.viz-filtros label:nth-child(2){min-width:330px}
+.viz-corte{font-family:var(--mono);font-size:11px;color:var(--muted);padding-bottom:12px}
+.viz-kpis{margin-bottom:16px}
+.viz-card{margin-bottom:16px}
+.viz-par{margin-bottom:0;align-items:start}
+.viz-par>.viz-card{margin-bottom:16px}
+.viz-plot{position:relative;padding:8px 14px 10px}
+.viz-plot svg{width:100%;height:auto;display:block;overflow:visible}
+.viz-grid{stroke:var(--line-2);stroke-width:1}
+.viz-base{stroke:var(--line);stroke-width:1}
+.viz-eje{font-size:11px;fill:var(--muted);font-family:var(--mono)}
+.viz-etiqueta{font-size:11.5px;font-weight:700;fill:var(--ink)}
+.viz-leyenda{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);padding:4px 4px 8px}
+.viz-leyenda i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-2px}
+.viz-tooltip{
+  position:absolute;top:30px;transform:translateX(-50%);min-width:150px;pointer-events:none;z-index:5;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);box-shadow:var(--shadow-up);padding:9px 12px;font-size:12.5px
+}
+.viz-tooltip b{display:block;margin-bottom:5px;color:var(--ink-2);font-weight:600}
+.viz-tooltip div{display:flex;align-items:center;gap:7px;margin-top:3px}
+.viz-tooltip i{width:12px;height:2px;border-radius:1px;flex-shrink:0}
+.viz-tooltip strong{color:var(--ink);font-variant-numeric:tabular-nums}
+.viz-tooltip span{color:var(--muted)}
+.viz-tooltip .tot{border-top:1px solid var(--line-2);margin-top:5px;padding-top:5px}
+.viz-vacio{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px;pointer-events:none}
+.viz-tabla td,.viz-tabla th{font-variant-numeric:tabular-nums}
+.viz-etapas{display:grid;gap:9px}
+.viz-etapa{display:grid;grid-template-columns:150px 1fr 120px;align-items:center;gap:12px;font-size:13px}
+.viz-etapa .n{color:var(--ink-2)}
+.viz-etapa .b{height:16px;background:var(--surface-3);border-radius:0 4px 4px 0}
+.viz-etapa .b i{display:block;height:100%;min-width:2px;border-radius:0 4px 4px 0}
+.viz-etapa .v{text-align:right;font-variant-numeric:tabular-nums}
+.viz-etapa .v small{display:block;color:var(--muted);font-size:11px}
+.viz-datos{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 18px}
+.viz-dato{display:flex;flex-direction:column;gap:2px}
+.viz-dato .lbl{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.viz-dato .val{font-size:22px;font-weight:800;line-height:1.15}
+.viz-dato .sub{font-size:12px;color:var(--ink-2)}
+.solo-print{display:none}
+@media (max-width:900px){.viz-par{grid-template-columns:1fr}.viz-datos{grid-template-columns:1fr}.viz-etapa{grid-template-columns:110px 1fr 90px}}
+/* Impresión del panel de indicadores (el botón PDF): solo el informe. */
+@media print{
+  body.print-indicadores *{visibility:visible}
+  body.print-indicadores .sidebar,body.print-indicadores .topbar,body.print-indicadores .no-print,body.print-indicadores .toasts{display:none !important}
+  body.print-indicadores .shell{display:block}
+  body.print-indicadores .content{padding:0;max-width:none}
+  body.print-indicadores .solo-print{display:block}
+  body.print-indicadores .viz-print-cab{font-family:var(--mono);font-size:11px;color:var(--ink-2);margin-bottom:12px}
+  body.print-indicadores .viz-card,body.print-indicadores .kpi{break-inside:avoid;box-shadow:none;border:1px solid var(--line)}
+  body.print-indicadores .viz-par{grid-template-columns:1fr 1fr}
+  body.print-indicadores .viz-tooltip{display:none}
+}
