@@ -44,4 +44,13 @@ export async function api(path, { method = 'GET', body } = {}) {
 export const fmtCLP = (n) => (n == null ? '—' : '$ ' + Math.round(Number(n)).toLocaleString('es-CL'));
 export const fmtUSD = (n) => (n == null ? '—' : 'US$ ' + Number(n).toLocaleString('en-US'));
 export const fmtKg = (n) => (n == null ? '—' : Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 }));
+// «2026-10» + desde/hasta → «EP octubre 2026 · 21 sep → 20 oct».
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MESES_LARGOS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+export const fmtPeriodo = (p) => {
+  if (!p?.periodo) return '';
+  const [a, m] = p.periodo.split('-').map(Number);
+  const dm = (iso) => { const [, mm, dd] = iso.split('-').map(Number); return `${dd} ${MESES_CORTOS[mm - 1]}`; };
+  return { titulo: `EP ${MESES_LARGOS[m - 1]} ${a}`, rango: `${dm(p.desde)} → ${dm(p.hasta)}` };
+};
 export const fmtTon = (n) => (n == null ? '—' : Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' t');

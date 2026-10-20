@@ -33,6 +33,7 @@ export default function Memos() {
   const [detalle, setDetalle] = useState(null);
   const [terreno, setTerreno] = useState(null);   // { componente, encontrado }
   const [nota, setNota] = useState('');
+  const [cantidad, setCantidad] = useState('');
   const toast = useToast();
 
   const load = () => api('/memos').then(setRows).catch((e) => toast(e.message, true));
@@ -95,7 +96,10 @@ export default function Memos() {
     const { componente, encontrado } = terreno;
     if (!encontrado && !nota.trim()) return toast('Indique por qué no se encontró', true);
     try {
-      await api(`/componentes/${componente.id}/terreno`, { method: 'POST', body: { encontrado, nota: nota.trim() } });
+      const enc = Math.round(Number(cantidad));
+      if (encontrado && !(enc >= 1)) return toast('Indique cuántas unidades se encontraron', true);
+      await api(`/componentes/${componente.id}/terreno`, { method: 'POST', body: {
+        encontrado, nota: nota.trim(), ...(encontrado ? { cant_encontrada: enc } : {}) } });
       toast(encontrado ? `${componente.codigo} confirmado en terreno` : `${componente.codigo} marcado como no encontrado`);
       setTerreno(null); setNota('');
       setDetalle(await api(`/memos/${detalle.id}`));
@@ -221,7 +225,7 @@ export default function Memos() {
                     <td><Chip tone={tono}>{txt}</Chip></td>
                     <td className="num acc"><div className="acciones">
                       {['por_identificar', 'no_encontrado'].includes(c.estado) && (
-                        <button className="btn sm" onClick={() => { setTerreno({ componente: c, encontrado: true }); setNota(''); }}>Encontrado</button>
+                        <button className="btn sm" onClick={() => { setTerreno({ componente: c, encontrado: true }); setNota(''); setCantidad(String(c.cant_encontrada ?? c.cant_comprometida ?? 1)); }}>Encontrado</button>
                       )}
                       {c.estado === 'por_identificar' && (
                         <button className="btn sm danger" onClick={() => { setTerreno({ componente: c, encontrado: false }); setNota(''); }}>No encontrado</button>
@@ -254,6 +258,11 @@ export default function Memos() {
             ? 'El componente fue identificado en terreno y queda disponible para transferir a la zona de consolidación y publicar.'
             : 'El memo lo declara, pero no apareció en terreno. Queda registrado como no encontrado y no se puede publicar.'}
         </p>
+        {terreno?.encontrado && (
+          <Field label="Unidades encontradas" hint={`El memo declara ${terreno.componente.cant_comprometida ?? 1}.`}>
+            <input type="number" min="1" step="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+          </Field>
+        )}
         <Field label={terreno?.encontrado ? 'Nota de terreno' : 'Motivo'}
           hint={terreno?.encontrado ? 'Opcional.' : 'Obligatorio: qué se revisó y qué se encontró en su lugar.'}>
           <textarea rows="2" value={nota} onChange={(e) => setNota(e.target.value)}

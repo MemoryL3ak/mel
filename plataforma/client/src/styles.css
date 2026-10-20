@@ -463,7 +463,7 @@ td.acc{background:var(--surface)}
 .acciones{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end;min-width:170px;max-width:250px;margin-left:auto}
 /* Nombres de material: se cortan tras cada coma (ver cortable en Inventario);
    el mínimo evita que la columna quede reducida a una palabra por línea. */
-td.parte{min-width:120px}
+td.parte{min-width:110px}
 /* Títulos largos (las etiquetas del formulario) pueden ir en dos líneas. */
 table.cabecera-libre th{white-space:normal;vertical-align:bottom;line-height:1.35}
 /* Texto largo de una celda: hasta dos líneas y el resto con «…». */
@@ -479,7 +479,7 @@ table.cabecera-libre th{white-space:normal;vertical-align:bottom;line-height:1.3
 .acciones.grilla>div>.btn{width:100%;padding-left:8px;padding-right:8px;white-space:nowrap}
 .acciones.grilla>.ancho{grid-column:1 / -1}
 /* Texto secundario de una celda en una sola línea, recortado con «…». */
-.recorte{display:block;max-width:115px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.recorte{display:block;max-width:95px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 th.acc{background:var(--surface-2)}
 tbody tr:hover td.acc{background:var(--surface-2)}
 /* Cotejo de pesajes en la recepción: lo declarado por MEL frente a lo pesado */

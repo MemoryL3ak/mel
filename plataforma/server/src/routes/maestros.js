@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { supa, q, ah, hoy, audit } from '../supa.js';
 import { auth } from '../auth.js';
-import { contrato, olvidarContrato, venceElPrecio } from '../contrato.js';
+import { contrato, olvidarContrato, venceElPrecio, periodoEP } from '../contrato.js';
 import { tiene } from '../esquema.js';
 import { valorDolar, historialDolar, fijarDolar } from '../dolar.js';
 
@@ -30,7 +30,11 @@ r.get('/maestros', auth(), ah(async (_req, res) => {
     if (p.vigente_desde <= h && !(p.categoria_id in vigente)) vigente[p.categoria_id] = p;
   }
   const n = (v) => (v == null ? null : Number(v));
+  // El período del estado de pago en curso, para que las pantallas acumulen
+  // por período y no por mes calendario.
+  const periodo = periodoEP((await contrato()).dia_corte);
   res.json({
+    periodo,
     patios,
     sitios,
     categorias: categorias.map((c) => {
