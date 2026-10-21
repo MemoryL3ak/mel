@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { supa, q, ah, hoy, semanaISO, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
-import { contrato, venceElPrecio, periodoEP } from '../contrato.js';
+import { contrato, venceElPrecio, periodoActivo } from '../contrato.js';
 import { tiene } from '../esquema.js';
 import { faltantes, vencimiento, puedeCargar } from '../documental.js';
 
@@ -16,9 +16,10 @@ r.get('/panel', auth(), ah(async (req, res) => {
   const desde14 = `${hace14.getFullYear()}-${String(hace14.getMonth() + 1).padStart(2, '0')}-${String(hace14.getDate()).padStart(2, '0')}`;
 
   // El acumulado se mide por período del estado de pago, no por mes
-  // calendario: con corte el 20, octubre es del 21-sep al 20-oct.
+  // calendario: con corte el 20, octubre es del 21-sep al 20-oct. Mientras el
+  // material no se mueva en el período nuevo, se sigue mostrando el cerrado.
   const cfgPeriodo = await contrato();
-  const periodo = periodoEP(cfgPeriodo.dia_corte);
+  const periodo = await periodoActivo(cfgPeriodo.dia_corte);
   const [transito, observados, trasladosTr, prog, eps, cuad, actividad, despMes, trasMes, desp14, cats, precios, cfg] = await Promise.all([
     q(supa.from('despachos').select('id, guia, fecha').eq('estado', 'en_transito').order('id')),
     q(supa.from('despachos').select('id, guia, obs_recepcion').eq('estado', 'observado').order('id')),

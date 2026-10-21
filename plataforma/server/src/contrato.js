@@ -51,6 +51,19 @@ export function periodoEP(diaCorte = 20, fecha = hoy()) {
   };
 }
 
+// Período que acumulan el panel, los despachos y los indicadores: el del EP en
+// curso, salvo que desde el corte el material todavía no se haya movido. En ese
+// caso sigue siendo el período recién cerrado, que es el que se está
+// valorizando: el día después del corte el panel no puede amanecer en cero.
+export async function periodoActivo(diaCorte) {
+  const actual = periodoEP(diaCorte);
+  const { data } = await supa.from('despachos').select('fecha')
+    .not('estado', 'in', '(anulado,pendiente_guia)').order('fecha', { ascending: false }).limit(1).maybeSingle();
+  const ultima = data?.fecha;
+  const periodo = ultima && ultima < actual.desde ? periodoEP(diaCorte, ultima) : actual;
+  return { ...periodo, cerrado: periodo.hasta < hoy() };
+}
+
 // Fecha en que vence una vigencia de precio (n meses después de su inicio).
 export function venceElPrecio(vigenteDesde, meses) {
   const [a, m, d] = String(vigenteDesde).split('-').map(Number);

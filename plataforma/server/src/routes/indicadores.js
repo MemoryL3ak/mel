@@ -9,7 +9,7 @@ import ExcelJS from 'exceljs';
 import { supa, q, ah, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
-import { contrato, periodoEP } from '../contrato.js';
+import { contrato, periodoEP, periodoActivo } from '../contrato.js';
 
 const r = Router();
 const ROLES = ['coordinador', 'ito', 'admin_venta'];
@@ -212,11 +212,14 @@ async function calcular(rol, query) {
   const cfg = await contrato();
   const corte = Number(cfg.dia_corte) || 20;
   const vigente = periodoEP(corte);
+  // Sin período pedido se abre el que tiene movimiento: recién pasado el corte
+  // el vigente todavía está vacío y el que interesa es el que acaba de cerrar.
+  const activo = await periodoActivo(corte);
   const anioPedido = Number(query.anio);
-  const anio = anioPedido >= 2020 && anioPedido <= 2100 ? anioPedido : Number(vigente.periodo.slice(0, 4));
+  const anio = anioPedido >= 2020 && anioPedido <= 2100 ? anioPedido : Number(activo.periodo.slice(0, 4));
   const periodos = periodosDelAnio(anio, corte);
   const sel = periodos.find((p) => p.periodo === String(query.periodo || ''))
-    ?? periodos.find((p) => p.periodo === vigente.periodo)
+    ?? periodos.find((p) => p.periodo === activo.periodo)
     ?? periodos[anio < Number(vigente.periodo.slice(0, 4)) ? 11 : 0];
   return {
     anio, corte, periodo: sel, periodos, vigente: vigente.periodo,

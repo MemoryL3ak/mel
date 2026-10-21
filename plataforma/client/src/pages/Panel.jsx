@@ -48,7 +48,8 @@ export default function Panel() {
   const { flujo, serie14, kpis, pendientes, actividad } = data;
   const nombre = user.name.split(' ')[0];
   // El acumulado es el del período del estado de pago en curso (21 → 20), no
-  // el del mes calendario: es la cifra que termina en el EP.
+  // el del mes calendario: es la cifra que termina en el EP. Recién pasado el
+  // corte, mientras nada se mueva, el servidor sigue entregando el cerrado.
   const per = fmtPeriodo(data.periodo);
   const mes = per ? per.titulo : MESES[new Date().getMonth()];
 
@@ -61,7 +62,11 @@ export default function Panel() {
           <div>
             <div className="hola">{saludo()}, {nombre} · así se mueve el material en el período del estado de pago</div>
             <h2>Flujo de enajenación · {mes}</h2>
-            {per && <div className="hola" style={{ marginTop: 4 }}>del {per.rango} · acumulado del EP en curso</div>}
+            {per && (
+              <div className="hola" style={{ marginTop: 4 }}>
+                del {per.rango} · {data.periodo.cerrado ? 'período cerrado: el siguiente aún no registra movimiento' : 'acumulado del EP en curso'}
+              </div>
+            )}
           </div>
           <span className="tag">Trazado de punta a punta</span>
         </div>
