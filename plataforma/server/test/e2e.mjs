@@ -192,9 +192,9 @@ try {
   ok(malo.status === 400 && trasFallo.data.rows.length === 0, 'carga con una fila inválida → no entra ninguna (atómica)');
   const bueno = await api('/programa/masivo', { method: 'POST', token: tl, body: {
     anio: SEM[0], semana: SEM[1],
-    filas: [{ dia: 'Lun', patio_id: PATIO, categoria_id: CAT, ton_estimadas: 10 }, { dia: 'Mar', patio_id: PATIO2, categoria_id: CAT2, ton_estimadas: 8 }],
+    filas: [{ dia: 'Lun', patio_id: PATIO, categoria_id: CAT, ton_estimadas: 10 }, { dia: 'Mar', patio_id: PATIO2, categoria_id: CAT2, ton_estimadas: 8 }, { dia: 'Dom', patio_id: PATIO, categoria_id: CAT, ton_estimadas: 4 }],
   } });
-  ok(bueno.status === 200 && bueno.data.length === 2, 'carga válida inserta las 2 actividades');
+  ok(bueno.status === 200 && bueno.data.length === 3, 'carga válida inserta las 3 actividades (incluido el domingo)');
 
   console.log('\nGestión de cuentas');
   const nu = await api('/usuarios', { method: 'POST', token: tc, body: { username: 'e2e.prueba', nombre: 'Cuenta de prueba E2E', role: 'limpieza' } });

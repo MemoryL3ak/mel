@@ -77,7 +77,8 @@ r.post('/programa/masivo', auth('limpieza', 'ito', 'coordinador'), ah(async (req
   }
   if (filas.length > 100) return res.status(400).json({ error: 'Máximo 100 actividades por carga' });
 
-  const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  // Los siete días: la empresa de limpieza también planifica retiros en domingo.
+  const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   const [patios, cats] = await Promise.all([
     q(supa.from('patios').select('id')),
     q(supa.from('categorias').select('id')),
