@@ -354,7 +354,8 @@ r.post('/componentes', OP, subir.fields(CAMPOS_COMP), ah(async (req, res) => {
   }
   // El memo es el respaldo de autorización del activo: sin él no hay origen.
   // Nace "por identificar" porque el memo lo declara, pero todavía nadie lo vio
-  // en terreno; recién confirmado pasa a estar disponible para publicar.
+  // en terreno. Eso no frena la venta: se puede publicar de inmediato y la
+  // conciliación en terreno registra después cuántas unidades aparecieron.
   const memo_id = await memoDeLaSolicitud(req, res);
   if (memo_id === false) return;
   const dup = await q(supa.from('componentes').select('id').eq('codigo', codigo));
@@ -450,18 +451,25 @@ r.post('/componentes/:id/terreno', OP, ah(async (req, res) => {
   const id = Number(req.params.id) || 0;
   const c = await q(supa.from('componentes').select('*').eq('id', id).maybeSingle());
   if (!c) return res.status(404).json({ error: 'Componente no encontrado' });
-  if (!['por_identificar', 'no_encontrado', 'planificado'].includes(c.estado)) {
-    return res.status(409).json({ error: 'El componente ya avanzó en el proceso: no se puede reabrir la identificación en terreno' });
+  if (c.estado === 'chatarra') {
+    return res.status(409).json({ error: 'El componente ya se convirtió en chatarra: no se puede reabrir la identificación en terreno' });
   }
   const encontrado = req.body?.encontrado !== false;
   const nota = (req.body?.nota || '').trim() || null;
   if (!encontrado && !nota) {
     return res.status(400).json({ error: 'Indique por qué el componente no se encontró en terreno' });
   }
+  // Publicar no espera a esta conciliación, así que un componente publicado o
+  // adjudicado también se cuenta en terreno; su estado no se toca. Lo que no
+  // apareció solo se registra antes de publicar: después, primero se cancela.
+  const avanzado = ['publicado', 'adjudicado', 'entregado'].includes(c.estado);
+  if (avanzado && !encontrado) {
+    return res.status(409).json({ error: 'El componente ya está publicado: cancele la publicación antes de registrarlo como no encontrado' });
+  }
   // La cantidad encontrada puede ser menor a la comprometida: el memo declara
   // 10 y en el patio aparecen 8. Esa diferencia es justamente lo que hay que
   // poder ver despues.
-  const cambios = { estado: encontrado ? 'planificado' : 'no_encontrado', nota_terreno: nota };
+  const cambios = { nota_terreno: nota, ...(avanzado ? {} : { estado: encontrado ? 'planificado' : 'no_encontrado' }) };
   if (tiene.cantidades) {
     const n = Math.round(Number(req.body?.cant_encontrada));
     cambios.cant_encontrada = encontrado ? (n >= 0 ? n : Number(c.cant_comprometida ?? 1)) : 0;
@@ -862,8 +870,13 @@ r.post('/publicaciones', OP, ah(async (req, res) => {
   const { componente_id, oferta_minima, plazo_dias, publicado_el } = req.body || {};
   if (!componente_id) return res.status(400).json({ error: 'Elija el componente a publicar' });
   const comp = await q(supa.from('componentes').select('*').eq('id', componente_id).single());
+  // La confirmación en terreno no es requisito: el memo ya autoriza la venta y
+  // un componente «por identificar» se publica igual; las unidades se cuentan
+  // después. Lo que se registró como no encontrado sí queda fuera.
   if (comp.estado === 'publicado') return res.status(409).json({ error: 'El componente ya está publicado' });
   if (['adjudicado', 'entregado'].includes(comp.estado)) return res.status(409).json({ error: 'El componente ya fue adjudicado' });
+  if (comp.estado === 'no_encontrado') return res.status(409).json({ error: 'El componente se registró como no encontrado en terreno: corrija su identificación antes de publicarlo' });
+  if (comp.estado === 'chatarra') return res.status(409).json({ error: 'El componente ya se convirtió en chatarra' });
   if (publicado_el && !/^\d{4}-\d{2}-\d{2}$/.test(publicado_el)) return res.status(400).json({ error: 'Fecha inválida' });
   const plazo = Number(plazo_dias) > 0 ? Number(plazo_dias) : 15;
 
@@ -921,7 +934,11 @@ r.post('/publicaciones/:id/cancelar', OP, ah(async (req, res) => {
   const p = await q(supa.from('publicaciones').select('*').eq('id', req.params.id).single());
   if (p.estado !== 'activa') return res.status(409).json({ error: 'Solo se cancela una publicación activa' });
   await q(supa.from('publicaciones').update({ estado: 'cancelada', cerrada_el: new Date().toISOString() }).eq('id', p.id).select('id').single());
-  await q(supa.from('componentes').update({ estado: 'planificado' }).eq('id', p.componente_id).select('id').single());
+  // Vuelve al estado que tenía: lo confirmado en terreno a «planificado»; lo
+  // que se publicó sin contar sigue «por identificar».
+  const c = await q(supa.from('componentes').select('*').eq('id', p.componente_id).single());
+  const contado = !tiene.memos || c.cant_encontrada != null || c.encontrado_el != null || c.nota_terreno != null;
+  await q(supa.from('componentes').update({ estado: contado ? 'planificado' : 'por_identificar' }).eq('id', p.componente_id).select('id').single());
   await audit(req.user.name, req.user.role, 'Canceló publicación', String(p.id));
   res.json({ ok: true });
 }));
