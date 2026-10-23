@@ -158,7 +158,7 @@ export default function Memos() {
         )}
       </div>
       <div className="audit-note" style={{ marginTop: 12 }}>
-        ⚙ Los componentes se cargan desde el inventario indicando su memo. Nacen «por identificar» y quedan disponibles para publicar recién cuando se confirman en terreno.
+        ⚙ Los componentes se cargan desde el inventario indicando su memo. Nacen «por identificar» y se pueden publicar desde el primer momento; la conciliación en terreno registra cuántas unidades aparecieron y cuáles no.
       </div>
 
       {/* ---- carga ---- */}

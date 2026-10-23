@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, fmtUSD, fmtCLP } from '../api.js';
 import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, hoyISO, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
@@ -9,8 +9,8 @@ const EYEBROW = 'Venta de obsoletos';
 // la columna de estado no empuje la tabla fuera de la tarjeta; el texto
 // completo aparece al pasar el mouse.
 const ESTADO = {
-  por_identificar: ['warn', 'Por identificar', 'Por identificar en terreno'],
-  no_encontrado: ['bad', 'No encontrado', 'No encontrado en terreno'],
+  por_identificar: ['warn', 'Por identificar', 'Por identificar en terreno · se puede publicar igual'],
+  no_encontrado: ['bad', 'No encontrado', 'No encontrado en terreno · no se publica'],
   planificado: ['neutral', 'Planificado', 'Confirmado en terreno, listo para publicar'],
   publicado: ['info', 'Publicado', 'Publicado en el portal'],
   adjudicado: ['ok', 'Adjudicado', 'Adjudicado'], entregado: ['ok', 'Entregado', 'Entregado al comprador'],
@@ -116,6 +116,7 @@ export default function Inventario() {
   // Pestañas: los pendientes quedaban debajo de un inventario largo y nadie los
   // veía. ?t= permite enlazar directo a una pestaña (p. ej. desde el panel).
   const [params, setParams] = useSearchParams();
+  const nav = useNavigate();
   const tab = params.get('t') ?? 'inv';
   const setTab = (t) => setParams(t === 'inv' ? {} : { t }, { replace: true });
   const [data, setData] = useState(null);
@@ -173,9 +174,7 @@ export default function Inventario() {
     if (f.ficha) fd.append('ficha', f.ficha);
     try {
       const c = await api('/componentes', { method: 'POST', body: fd });
-      toast(c.estado === 'por_identificar'
-        ? `${c.codigo} ingresado · confírmelo en terreno desde el memo para poder publicarlo`
-        : `Componente ${c.codigo} ingresado`);
+      toast(`Componente ${c.codigo} ingresado · ya se puede publicar`);
       setNuevo(false); setF(vacio); load();
     } catch (e) { toast(e.message, true); }
   });
@@ -208,7 +207,7 @@ export default function Inventario() {
     setErrores(null);
     try {
       const r = await api('/componentes/masivo', { method: 'POST', body: { filas, memo_id: memoMasivo || undefined } });
-      toast(`${r.cargados} componente(s) cargado(s) · confírmelos en terreno desde el memo`);
+      toast(`${r.cargados} componente(s) cargado(s) · ya se pueden publicar`);
       setMasivo(false); setTexto(''); setMemoMasivo(''); load();
     } catch (e) { setErrores(e.detalle ?? null); toast(e.message, true); }
   });
@@ -245,7 +244,7 @@ export default function Inventario() {
     if (ne != null && (ne < 0 || enc + ne > Number(c.cant_comprometida ?? enc))) return toast('Encontradas más no encontradas no pueden superar la cantidad comprometida', true);
     try {
       await api(`/componentes/${c.id}/terreno`, { method: 'POST', body: { encontrado: true, cant_encontrada: enc, ...(ne != null ? { cant_no_encontrada: ne } : {}), nota: terreno.nota.trim() } });
-      toast(`${c.codigo} confirmado en terreno · ${enc} de ${c.cant_comprometida ?? enc} · ya se puede publicar`);
+      toast(`${c.codigo} confirmado en terreno · ${enc} de ${c.cant_comprometida ?? enc}`);
       setTerreno(null); load();
     } catch (e) { toast(e.message, true); }
   });
@@ -314,7 +313,7 @@ export default function Inventario() {
   return (
     <div>
       <PageHead eyebrow={EYEBROW} title="Inventario y logística de obsoletos"
-        sub="Los componentes nacen «por identificar»: se publican recién cuando se confirman en terreno desde su memo de baja.">
+        sub="Los componentes nacen «por identificar» y se pueden publicar de inmediato; la confirmación en terreno registra después cuántas unidades aparecieron.">
         <button className="btn" onClick={() => setImportar({ previa: null })}>⇪ Importar planilla de materiales</button>
         <button className="btn" onClick={() => { setMasivo(true); setTexto(''); }}>⇪ Carga masiva</button>
         <button className="btn primary" onClick={() => { setNuevo(true); setF(vacio); }}>+ Ingresar componente</button>
@@ -395,9 +394,13 @@ export default function Inventario() {
                   {c.nota_terreno && <><br /><small style={{ color: 'var(--muted)' }}>{c.nota_terreno}</small></>}</td>
                 <td className="num acc">
                   <Acciones columnas="94px 68px" filas={[
-                    [['por_identificar', 'no_encontrado'].includes(c.estado) ? (
-                      <button className="btn sm primary" disabled={busy} onClick={() => confirmarTerreno(c)}
-                        title="Marcarlo como encontrado en terreno para poder publicarlo">Confirmar en terreno</button>
+                    [['por_identificar', 'planificado'].includes(c.estado) && (
+                      <button className="btn sm primary" onClick={() => nav(`/publicaciones?comp=${c.id}`)}
+                        title="Publicar en el portal: la confirmación en terreno no es requisito">Publicar</button>
+                    )],
+                    [['por_identificar', 'no_encontrado'].includes(c.estado) || (['publicado', 'adjudicado'].includes(c.estado) && c.cant_encontrada == null) ? (
+                      <button className="btn sm" disabled={busy} onClick={() => confirmarTerreno(c)}
+                        title="Registrar que se encontró en terreno y cuántas unidades">Confirmar en terreno</button>
                     ) : ['planificado', 'publicado', 'adjudicado'].includes(c.estado) && c.cant_encontrada > 0 && (
                       <button className="btn sm" disabled={busy} title="Registrar unidades enviadas y recibidas"
                         onClick={() => setMovimiento({ c, cant_enviada: String(c.cant_enviada ?? ''), cant_recibida: String(c.cant_recibida ?? '') })}>Movimiento</button>

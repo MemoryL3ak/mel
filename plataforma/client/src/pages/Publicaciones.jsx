@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, fmtUSD } from '../api.js';
 import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
 
@@ -37,19 +37,25 @@ export default function Publicaciones() {
   const [dias, setDias] = useState(15);
   const toast = useToast();
   const nav = useNavigate();
+  const [params] = useSearchParams();
 
   const load = () => {
     api('/publicaciones').then(setRows).catch((e) => toast(e.message, true));
     api('/componentes').then((d) => setComps(d.componentes ?? [])).catch(() => {});
   };
   useEffect(() => { load(); }, []);
+  // Desde el inventario se llega con el componente ya elegido: el botón
+  // «Publicar» de la fila abre este formulario sin tener que buscarlo de nuevo.
+  useEffect(() => {
+    const comp = params.get('comp');
+    if (comp) { setF((prev) => ({ ...prev, componente_id: comp })); setNuevo(true); }
+  }, []);
   if (!rows) return <div className="loading">Cargando publicaciones…</div>;
 
-  // Solo se publica lo confirmado en terreno. Lo que sigue "por identificar" no
-  // esta disponible, y el vacio tiene que decir por que: antes mandaba a
-  // ingresarlos al inventario, que es justo lo que el usuario ya habia hecho.
-  const disponibles = comps.filter((c) => c.estado === 'planificado');
-  const porIdentificar = comps.filter((c) => c.estado === 'por_identificar').length;
+  // Se publica lo que el memo autoriza: confirmado en terreno o todavía «por
+  // identificar». La conciliación en terreno no es requisito (se registra
+  // después); lo que se marcó como no encontrado sí queda fuera.
+  const disponibles = comps.filter((c) => ['planificado', 'por_identificar'].includes(c.estado));
 
   async function publicar() {
     if (!f.componente_id) return toast('Elija el componente a publicar', true);
@@ -133,19 +139,14 @@ export default function Publicaciones() {
           <button className="btn" onClick={() => setNuevo(false)}>Cancelar</button>
           <button className="btn primary" onClick={publicar}>Publicar</button>
         </>}>
-        <Field label="Componente" hint="Solo componentes del inventario que aún no están publicados.">
+        <Field label="Componente" hint="Componentes del inventario sin publicar. La confirmación en terreno no es requisito: se registra después, desde el inventario o el memo.">
           <Select value={f.componente_id} onChange={(e) => setF({ ...f, componente_id: e.target.value })}>
             <option value="">— Elija un componente —</option>
-            {disponibles.map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+            {disponibles.map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}{c.estado === 'por_identificar' ? ' · por identificar en terreno' : ''}</option>)}
           </Select>
         </Field>
         {disponibles.length === 0 && (
-          porIdentificar > 0
-            ? <small style={{ color: 'var(--warn-tx)' }}>
-                Hay <b>{porIdentificar} componente(s)</b> esperando confirmación en terreno. Confírmelos en
-                «<a href="/memos" style={{ color: 'inherit' }}>Memos de baja</a>» para poder publicarlos.
-              </small>
-            : <small style={{ color: 'var(--muted)' }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>
+          <small style={{ color: 'var(--muted)' }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>
         )}
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="Oferta mínima (USD)" hint="Opcional. Las ofertas bajo este monto se rechazan.">
