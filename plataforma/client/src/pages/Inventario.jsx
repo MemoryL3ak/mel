@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, fmtUSD, fmtCLP } from '../api.js';
 import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, hoyISO, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
+import { useAuth } from '../auth.jsx';
 
 const EYEBROW = 'Venta de obsoletos';
 // [tono, etiqueta corta del chip, texto completo]. El chip es corto para que
@@ -117,6 +118,10 @@ export default function Inventario() {
   // veía. ?t= permite enlazar directo a una pestaña (p. ej. desde el panel).
   const [params, setParams] = useSearchParams();
   const nav = useNavigate();
+  // La empresa de limpieza solo consulta: ve qué hay, dónde está y en qué
+  // estado va, sin valores ni acciones. El servidor filtra lo mismo.
+  const { user } = useAuth();
+  const soloLectura = user?.role === 'limpieza';
   const tab = params.get('t') ?? 'inv';
   const setTab = (t) => setParams(t === 'inv' ? {} : { t }, { replace: true });
   const [data, setData] = useState(null);
@@ -151,7 +156,7 @@ export default function Inventario() {
       setPatios(m.patios ?? []); setCategorias(m.categorias ?? []);
     }).catch(() => {});
     // El componente cuelga del memo que autoriza su baja; los cerrados ya no reciben.
-    api('/memos').then((ms) => setMemos(ms.filter((m) => m.estado !== 'cerrado'))).catch(() => {});
+    if (!soloLectura) api('/memos').then((ms) => setMemos(ms.filter((m) => m.estado !== 'cerrado'))).catch(() => {});
   }, []);
   if (!data) return <div className="loading">Cargando inventario…</div>;
 
@@ -313,10 +318,14 @@ export default function Inventario() {
   return (
     <div>
       <PageHead eyebrow={EYEBROW} title="Inventario y logística de obsoletos"
-        sub="Los componentes nacen «por identificar» y se pueden publicar de inmediato; la confirmación en terreno registra después cuántas unidades aparecieron.">
-        <button className="btn" onClick={() => setImportar({ previa: null })}>⇪ Importar planilla de materiales</button>
-        <button className="btn" onClick={() => { setMasivo(true); setTexto(''); }}>⇪ Carga masiva</button>
-        <button className="btn primary" onClick={() => { setNuevo(true); setF(vacio); }}>+ Ingresar componente</button>
+        sub={soloLectura
+          ? 'Consulta de los componentes obsoletos: dónde están, cuántas unidades hay y en qué estado va cada uno.'
+          : 'Los componentes nacen «por identificar» y se pueden publicar de inmediato; la confirmación en terreno registra después cuántas unidades aparecieron.'}>
+        {!soloLectura && <>
+          <button className="btn" onClick={() => setImportar({ previa: null })}>⇪ Importar planilla de materiales</button>
+          <button className="btn" onClick={() => { setMasivo(true); setTexto(''); }}>⇪ Carga masiva</button>
+          <button className="btn primary" onClick={() => { setNuevo(true); setF(vacio); }}>+ Ingresar componente</button>
+        </>}
       </PageHead>
 
       <Tabs active={tab} onChange={setTab} tabs={[
@@ -360,7 +369,7 @@ export default function Inventario() {
             formulario de ingreso (CAMPO), más el estado del proceso. */}
         <thead><tr><th>{CAMPO.memo}</th><th>{CAMPO.codigo}</th><th>{CAMPO.nombre}</th><th>{CAMPO.especificaciones}</th>
           <th>{CAMPO.sitio}</th><th>{CAMPO.ubicacion}</th><th className="num" title="Comprometida · encontrada / no encontrada · enviada / recibida">{CAMPO.cantidad}</th>
-          <th className="num">{CAMPO.valor}</th><th>Estado</th><th className="acc"></th></tr></thead>
+          {!soloLectura && <th className="num">{CAMPO.valor}</th>}<th>Estado</th><th className="acc"></th></tr></thead>
         <tbody>
           {data.componentes.map((c) => {
             const [tono, txt] = ESTADO[c.estado] ?? ['neutral', c.estado];
@@ -386,13 +395,21 @@ export default function Inventario() {
                     </small>
                   )}
                 </td>
+                {!soloLectura && (
                 <td className="num" title={c.monto_clp != null ? `Valor contable SAP: ${fmtCLP(c.monto_clp)}` : undefined}>
                   {fmtUSD(c.valor_referencial)}
                   {c.monto_clp != null && <small style={{ display: 'block', color: 'var(--muted)' }}>SAP {fmtCLP(c.monto_clp)}</small>}
                 </td>
+                )}
                 <td title={ESTADO[c.estado]?.[2]}><Chip tone={tono}>{txt}{c.estado === 'publicado' && c.dia != null ? ` · día ${c.dia}` : ''}</Chip>
                   {c.nota_terreno && <><br /><small style={{ color: 'var(--muted)' }}>{c.nota_terreno}</small></>}</td>
                 <td className="num acc">
+                  {soloLectura ? (
+                  <Acciones columnas="94px 68px" filas={[
+                    [<BotonDocs hito="componente" refId={c.id} />,
+                      c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>],
+                  ]} />
+                  ) : (
                   <Acciones columnas="94px 68px" filas={[
                     [['por_identificar', 'planificado'].includes(c.estado) && (
                       <button className="btn sm primary" onClick={() => nav(`/publicaciones?comp=${c.id}`)}
@@ -410,6 +427,7 @@ export default function Inventario() {
                     [c.fotos > 0 && <button className="btn sm" onClick={() => abrirAdjuntos(c)}>Adjuntos</button>,
                       ['planificado', 'por_identificar', 'no_encontrado'].includes(c.estado) && <button className="btn sm danger" onClick={() => setEliminar(c)}>Eliminar</button>],
                   ]} />
+                  )}
                 </td>
               </tr>
             );
@@ -437,10 +455,12 @@ export default function Inventario() {
                   <td><small style={{ color: 'var(--ink-2)' }}>{c.motivo || '—'}</small></td>
                   <td className="num">{c.desde ?? '—'}</td>
                   <td className="num acc">
+                    {!soloLectura && (
                     <button className="btn sm primary" disabled={busy}
                       onClick={() => { setClasificar(c); setCf({ patio_id: '', categoria_id: '', peso: '', unidad: 't', fecha: hoyISO() }); }}>
                       Clasificar y derivar
                     </button>
+                    )}
                   </td>
                 </tr>
               ))}

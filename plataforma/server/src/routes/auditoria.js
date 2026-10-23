@@ -18,6 +18,7 @@ const MATRIZ = [
   ['Cuadratura semanal',          { limpieza: 'none', vendor: 'none', ito: 'full', coordinador: 'full' }],
   ['Estados de pago',             { limpieza: 'none', vendor: 'part', ito: 'full', coordinador: 'full' }],
   ['Auditoría',                   { limpieza: 'none', vendor: 'none', ito: 'part', coordinador: 'full' }],
+  ['Inventario de obsoletos',     { limpieza: 'part', vendor: 'none', ito: 'none', coordinador: 'full' }],
 ];
 
 r.get('/seguridad/matriz', auth('ito', 'coordinador'), (_req, res) => {

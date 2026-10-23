@@ -5,7 +5,9 @@ import { api, llaves } from './api.js';
 // El repositorio documental lo ven todos los perfiles internos: cada uno ve en
 // él solo los tipos que carga o consulta, según el catálogo de tipos.
 export const SCREENS = {
-  limpieza:    ['panel', 'programa', 'despachos', 'documentos'],
+  // La empresa de limpieza (KDM) consulta el inventario de obsoletos: retira
+  // los no vendidos y carga los adjudicados. Solo lectura, sin valores.
+  limpieza:    ['panel', 'programa', 'despachos', 'inventario', 'documentos'],
   vendor:      ['panel', 'despachos', 'estados', 'documentos'],
   ito:         ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'documentos', 'indicadores', 'auditoria'],
   coordinador: ['panel', 'programa', 'despachos', 'valorizacion', 'cuadratura', 'estados', 'auditoria', 'usuarios',

@@ -16,6 +16,12 @@ import { leerPlanilla, agrupar } from '../planilla.js';
 
 const r = Router();
 const OP = auth('coordinador', 'admin_venta');
+// Lectura del inventario para la empresa de limpieza de patios (KDM): retira
+// lo que no se vendió y carga lo adjudicado, así que necesita ver qué hay, dónde
+// está y en qué estado va. Solo consulta, sin valores: el resto del módulo
+// (memos, publicaciones, ofertas, compradores) sigue siendo de MEL y de la
+// administración de venta.
+const VE = auth('coordinador', 'admin_venta', 'limpieza');
 // El memo de baja lo recibe y carga MEL: el vendor lo lee, no lo emite.
 const MEL = auth('coordinador');
 const num = (v) => (v == null ? null : Number(v));
@@ -272,8 +278,10 @@ r.delete('/memos/:id', MEL, ah(async (req, res) => {
 
 /* ============================ inventario ============================ */
 
-r.get('/componentes', OP, ah(async (_req, res) => {
+r.get('/componentes', VE, ah(async (req, res) => {
   if (!tiene.obsoletos) return res.json({ componentes: [], pendientes: [] });
+  // La empresa de limpieza ve la pieza y su estado, no lo que vale.
+  const sinValores = req.user.role === 'limpieza';
   const [comp, sitios, pubs, adj] = await Promise.all([
     q(supa.from('componentes').select('*').order('id', { ascending: false })),
     q(supa.from('sitios').select('id,codigo,nombre')),
@@ -339,6 +347,7 @@ r.get('/componentes', OP, ah(async (_req, res) => {
       estado: a.estado,
     };
   });
+  if (sinValores) for (const c of componentes) { delete c.valor_referencial; delete c.precio_unitario_clp; delete c.monto_clp; }
   res.json({ componentes, pendientes, porClasificar });
 }));
 
@@ -379,7 +388,7 @@ r.post('/componentes', OP, subir.fields(CAMPOS_COMP), ah(async (req, res) => {
 
 // URLs firmadas (1 h) de los adjuntos de un componente: fotos y ficha técnica.
 // El tipo se deduce del nombre del archivo (foto-… / ficha-…).
-r.get('/componentes/:id/adjuntos', OP, ah(async (req, res) => {
+r.get('/componentes/:id/adjuntos', VE, ah(async (req, res) => {
   const carpeta = `OBS/${Number(req.params.id)}`;
   const { data: lista, error } = await supa.storage.from('evidencia').list(carpeta);
   if (error) throw new Error(error.message);
