@@ -764,7 +764,7 @@ export default function Inventario() {
             valor={cf.peso} unidad={cf.unidad}
             onValor={(v) => setCf({ ...cf, peso: v })}
             onUnidad={(u) => setCf({ ...cf, unidad: u })} />
-          <Field label="Fecha de retiro" hint="Define la semana del programa. No opera domingo.">
+          <Field label="Fecha de retiro" hint="Define la semana y el día del programa de limpieza.">
             <DateField value={cf.fecha} onChange={(e) => setCf({ ...cf, fecha: e.target.value })} />
           </Field>
         </div>

@@ -7,12 +7,38 @@ const CHIP = {
   programado: ['info', 'Programado'], ejecutado: ['ok', 'Ejecutado'],
   reprogramado: ['warn', 'Reprogramado'], cancelado: ['neutral', 'Cancelado'],
 };
-const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+// Los siete días: la empresa de limpieza también planifica retiros en domingo.
+const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 // Parser de carga masiva: acepta pegado desde Excel (tabulaciones) o CSV
 // con ";" o ",". Columnas: Día | Patio | Material | Toneladas.
 const sinTilde = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
-const DIA_MAP = { lun: 'Lun', mar: 'Mar', mie: 'Mié', jue: 'Jue', vie: 'Vie', sab: 'Sáb' };
+const DIA_MAP = { lun: 'Lun', mar: 'Mar', mie: 'Mié', jue: 'Jue', vie: 'Vie', sab: 'Sáb', dom: 'Dom' };
+
+// Clave de comparación para patios y materiales: sin tildes, mayúsculas,
+// espacios ni signos, y sin ceros a la izquierda en los números. En la
+// planilla cada uno escribe el código como lo recuerda: «LD1», «ld-01» y
+// «Patio LD01» tienen que apuntar al mismo patio.
+const clave = (s) => sinTilde(String(s ?? '')).replace(/[^a-z0-9]/g, '').replace(/(^|[^0-9])0+(?=[0-9])/g, '$1');
+
+// Busca en un maestro por los campos indicados. Primero igualdad exacta; si
+// no, que uno contenga al otro. Con varias candidatas gana la más específica
+// (el nombre más largo que viene completo en el texto) y, si aun así empatan,
+// se avisa en vez de elegir a ciegas: «Manganeso» calza con dos categorías.
+function buscar(lista, texto, campos) {
+  const k = clave(texto);
+  const claves = (x) => campos.map((c) => clave(x[c])).filter(Boolean);
+  if (!k) return { error: 'no reconocido' };
+  const exacto = lista.find((x) => claves(x).includes(k));
+  if (exacto) return { item: exacto };
+  const parciales = lista.filter((x) => claves(x).some((kc) => kc.includes(k) || k.includes(kc)));
+  if (parciales.length === 1) return { item: parciales[0] };
+  if (!parciales.length) return { error: 'no reconocido' };
+  const largo = (x) => Math.max(0, ...claves(x).filter((kc) => k.includes(kc)).map((kc) => kc.length));
+  const [a, b] = [...parciales].sort((x, y) => largo(y) - largo(x));
+  if (largo(a) > largo(b)) return { item: a };
+  return { error: 'ambiguo', opciones: parciales };
+}
 
 function parsearMasivo(texto, maestros) {
   const filas = [];
@@ -28,13 +54,15 @@ function parsearMasivo(texto, maestros) {
     fila.dia = DIA_MAP[sinTilde(c[0]).slice(0, 3)];
     if (!fila.dia) fila.error = `Día no reconocido: «${c[0]}»`;
 
-    const p = maestros.patios.find((x) => sinTilde(x.codigo) === sinTilde(c[1]) || sinTilde(x.nombre).includes(sinTilde(c[1])));
-    if (p) { fila.patio_id = p.id; fila.patio = p.codigo; }
-    else fila.error ??= `Patio no reconocido: «${c[1]}»`;
+    const p = buscar(maestros.patios, c[1], ['codigo', 'nombre']);
+    if (p.item) { fila.patio_id = p.item.id; fila.patio = p.item.codigo; }
+    else if (p.error === 'ambiguo') fila.error ??= `Patio ambiguo: «${c[1]}» (${p.opciones.map((x) => x.codigo).join(', ')})`;
+    else fila.error ??= `Patio no reconocido: «${c[1]}» · válidos: ${maestros.patios.map((x) => x.codigo).join(', ')}`;
 
-    const m = maestros.categorias.find((x) => sinTilde(x.nombre) === sinTilde(c[2]) || sinTilde(x.nombre).includes(sinTilde(c[2])));
-    if (m) { fila.categoria_id = m.id; fila.categoria = m.nombre; }
-    else fila.error ??= `Material no reconocido: «${c[2]}»`;
+    const m = buscar(maestros.categorias, c[2], ['nombre']);
+    if (m.item) { fila.categoria_id = m.item.id; fila.categoria = m.item.nombre; }
+    else if (m.error === 'ambiguo') fila.error ??= `Material ambiguo: «${c[2]}» (${m.opciones.map((x) => x.nombre).join(' / ')})`;
+    else fila.error ??= `Material no reconocido: «${c[2]}» · escríbalo como aparece en el maestro de materiales`;
 
     const tRaw = c[3];
     const ton = parseFloat(tRaw.includes(',') ? tRaw.replace(/\./g, '').replace(',', '.') : tRaw);
@@ -232,9 +260,13 @@ export default function Programa() {
                 fr.readAsText(f);
               }} />
             </Field>
-            <Field label="O pegar desde Excel">
+            <Field label="O pegar desde Excel"
+              hint={'Día: Lun a Dom, abreviado o completo (Domingo). Patio: ' + (maestros?.patios ?? []).map((p) => p.codigo).join(', ') + '. Material: como aparece en el maestro de materiales.'}>
+              {/* El ejemplo sale de los maestros reales: los nombres fijos de la
+                  Fase 1 ya no existen y el propio parser los rechazaría. */}
               <textarea rows="5" value={texto} onChange={(e) => setTexto(e.target.value)}
-                placeholder={'Lun\tHOP01\tFierro pesado\t24\nMar\tLD01\tFierro liviano\t14'} />
+                placeholder={['Lunes', maestros?.patios?.[0]?.codigo ?? 'HOP01', maestros?.categorias?.[0]?.nombre ?? 'Material', '24'].join('\t') + '\n'
+                  + ['Domingo', maestros?.patios?.[1]?.codigo ?? 'LD01', maestros?.categorias?.[1]?.nombre ?? 'Material', '14'].join('\t')} />
             </Field>
             {filas.length > 0 && (
               <>
@@ -253,7 +285,9 @@ export default function Programa() {
                           <td>{f.patio ?? f.raw[1]}</td>
                           <td>{f.categoria ?? f.raw[2]}</td>
                           <td className="num">{f.ton_estimadas ?? f.raw[3]}</td>
-                          <td>{f.error ? <Chip tone="bad">{f.error}</Chip> : <Chip tone="ok">OK</Chip>}</td>
+                          {/* El error se deja envolver: con el chip de una línea el
+                              motivo quedaba cortado y había que desplazar la tabla. */}
+                          <td>{f.error ? <span className="chip bad" style={{ whiteSpace: 'normal' }}>{f.error}</span> : <Chip tone="ok">OK</Chip>}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -85,8 +85,8 @@ async function folioInternoChatarra() {
   }
 }
 
-// Días que acepta `programa` (no opera domingo), indexados por getDay().
-const DIAS = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+// Día de la semana tal como lo guarda `programa`, indexado por getDay().
+const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 async function subirFotos(componenteId, archivos = []) {
   let n = 0;
@@ -791,7 +791,6 @@ r.post('/componentes/:id/clasificar', OP, ah(async (req, res) => {
   // `programa` planifica en toneladas y exige año, semana y día de la semana.
   const { anio, semana } = semanaISO(new Date(fecha + 'T12:00:00'));
   const dia = DIAS[new Date(fecha + 'T12:00:00').getDay()];
-  if (!dia) return res.status(400).json({ error: 'El programa de limpieza no opera los domingos' });
   const ton = Math.round((peso / 1000) * 10) / 10;
   if (!(ton > 0)) return res.status(400).json({ error: 'El peso estimado es demasiado bajo: el programa se planifica en toneladas (mínimo 100 kg)' });
 

@@ -42,6 +42,8 @@ el coordinador desde la pantalla.
    - `db/0017_planilla_materiales.sql` (importación de la planilla de
      materiales: valor SAP en pesos, área, planta, estado de terreno por
      cantidades; sitio Puerto Coloso)
+   - `db/0018_programa_domingo.sql` (el programa de limpieza acepta el domingo;
+     aplicar antes de desplegar el código que lo envía)
 
    Después de aplicar `0015`, desde `server/` correr `npm run indexar:documentos`:
    registra en el repositorio las guías, certificados, respaldos, actas y memos
