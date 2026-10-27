@@ -48,8 +48,28 @@ const COLUMNAS = [
   { campo: 'sitio', titulo: CAMPO.sitio, ej: 'MEL', ayuda: 'MEL o La Negra' },
   { campo: 'ubicacion', titulo: CAMPO.ubicacion, ej: 'Sector B-3 · Fila 2' },
   { campo: 'cantidad', titulo: CAMPO.cantidad, ej: '1', num: true, ayuda: 'unidades que declara el memo; por defecto 1' },
-  { campo: 'valor_referencial', titulo: CAMPO.valor, ej: '28500', num: true },
+  { campo: 'valor_referencial', titulo: CAMPO.valor, ej: '28500', num: true, monto: true, ayuda: 'en dólares; acepta decimales (3.502,92 o 3502.92) y se redondea al dólar' },
 ];
+
+// Monto escrito como lo deja Excel en español ("3.502,92") o en inglés
+// ("3,502.92", "3502.92"). Antes se borraba todo lo que no fuera dígito y
+// "3.502,92" quedaba en 350.292: cien veces el valor. El último separador es
+// el decimal cuando hay dos distintos; con uno solo, tres cifras detrás son
+// miles ("28.500", "28,500") y otra cantidad son decimales ("3502,5").
+// Se redondea al dólar porque la columna guarda dólares enteros.
+function leerMonto(v) {
+  let t = String(v ?? '').replace(/[^\d.,]/g, '');
+  if (!t) return '';
+  const coma = t.lastIndexOf(','), punto = t.lastIndexOf('.');
+  if (coma >= 0 && punto >= 0) {
+    t = coma > punto ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  } else if (coma >= 0 || punto >= 0) {
+    const partes = t.split(coma >= 0 ? ',' : '.');
+    t = partes.length === 2 && partes[1].length !== 3 ? partes.join('.') : partes.join('');
+  }
+  const n = Number(t);
+  return Number.isFinite(n) ? String(Math.round(n)) : '';
+}
 
 // Separa una línea en columnas: tabulación (pegado desde Excel) o punto y
 // coma (la plantilla CSV). Respeta las comillas con que Excel envuelve un
@@ -81,7 +101,7 @@ function parseMasivo(texto) {
     const fila = {};
     COLUMNAS.forEach((col, i) => {
       const v = c[i] || '';
-      fila[col.campo] = col.num ? v.replace(/[^\d]/g, '') : v;
+      fila[col.campo] = col.monto ? leerMonto(v) : col.num ? v.replace(/[^\d]/g, '') : v;
     });
     return fila;
   }).filter((f) => (f.codigo || f.nombre) && !/^c[oó]digo/i.test(f.codigo));
