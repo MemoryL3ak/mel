@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtTon } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Select, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { Select, Chip, Empty, Field, Modal, PageHead, SemanaEP, useToast } from '../ui.jsx';
 
 const CHIP = {
   programado: ['info', 'Programado'], ejecutado: ['ok', 'Ejecutado'],
@@ -208,6 +208,7 @@ export default function Programa() {
             {c.pct_tonelaje != null && ` · cumplimiento tonelaje ${c.pct_tonelaje}%`}
           </small>
         </div>
+        <SemanaEP ep={data.ep} />
         <div className="tbl-wrap"><table>
           <thead><tr><th>Día</th><th>Patio</th><th>Material</th><th className="num">Estimado</th><th className="num">Real</th><th>Estado</th><th>Observación</th><th></th></tr></thead>
           <tbody>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, fmtCLP, fmtKg, fmtPeriodo } from '../api.js';
+import { api, fmtCLP, fmtKg, fmtPeriodo, nombreEDP } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Chip, KPI, PageHead, useToast } from '../ui.jsx';
 
@@ -51,7 +51,11 @@ export default function Panel() {
   // el del mes calendario: es la cifra que termina en el EP. Recién pasado el
   // corte, mientras nada se mueva, el servidor sigue entregando el cerrado.
   const per = fmtPeriodo(data.periodo);
-  const mes = per ? per.titulo : MESES[new Date().getMonth()];
+  const mes = per ? nombreEDP(data.periodo) : MESES[new Date().getMonth()];
+  // Semanas ISO del período y la de hoy: el programa y la cuadratura se
+  // recorren por semana y así se sabe en qué parte del EDP se va.
+  const pp = data.periodo;
+  const semanas = pp?.semana_inicio && `semanas ${pp.semana_inicio.semana} a ${pp.semana_fin.semana} · hoy semana ${pp.semana_hoy}`;
 
   return (
     <div>
@@ -64,7 +68,7 @@ export default function Panel() {
             <h2>Flujo de enajenación · {mes}</h2>
             {per && (
               <div className="hola" style={{ marginTop: 4 }}>
-                del {per.rango} · {data.periodo.cerrado ? 'período cerrado: el siguiente aún no registra movimiento' : 'acumulado del EP en curso'}
+                del {per.rango}{semanas && <> · {semanas}</>} · {data.periodo.cerrado ? 'período cerrado: el siguiente aún no registra movimiento' : 'acumulado del EP en curso'}
               </div>
             )}
           </div>

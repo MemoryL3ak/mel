@@ -2,10 +2,11 @@
 // MEL (guías de despacho), La Negra (recepciones) y Lampa (traslados
 // recepcionados), por categoría. El cierre guarda un snapshot inmutable.
 import { Router } from 'express';
-import { supa, q, ah, audit, semanaISO } from '../supa.js';
+import { supa, q, ah, audit, semanaISO, rangoSemanaISO } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { valorDolar } from '../dolar.js';
+import { contrato, epDeSemana } from '../contrato.js';
 
 // Sobre este porcentaje, los descuentos de una categoría dejan de ser ruido
 // y pasan a ser algo que la semana tiene que explicar antes de cerrarse.
@@ -13,19 +14,8 @@ const UMBRAL_DESCUENTO_PCT = 5;
 
 const r = Router();
 
-// Lunes y domingo de una semana ISO.
-function rangoSemana(anio, semana) {
-  const simple = new Date(Date.UTC(anio, 0, 4)); // 4-ene siempre cae en la semana 1
-  const day = simple.getUTCDay() || 7;
-  const lunes1 = new Date(simple);
-  lunes1.setUTCDate(simple.getUTCDate() - day + 1);
-  const ini = new Date(lunes1);
-  ini.setUTCDate(lunes1.getUTCDate() + (semana - 1) * 7);
-  const fin = new Date(ini);
-  fin.setUTCDate(ini.getUTCDate() + 6);
-  const f = (d) => d.toISOString().slice(0, 10);
-  return { desde: f(ini), hasta: f(fin) };
-}
+// Lunes y domingo de una semana ISO (compartida con el programa y el panel).
+const rangoSemana = rangoSemanaISO;
 
 // Descuentos por ítem de las guías de la semana, agrupados por guía.
 async function descuentosDeSemana(ids) {
@@ -246,8 +236,9 @@ r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) =>
     q(supa.from('cuadraturas').select('*').order('anio', { ascending: false }).order('semana', { ascending: false }).limit(12)),
   ]);
   const cerrada = cerradas.find((c) => c.anio === anio && c.semana === semana) ?? null;
+  const ep = await epDeSemana(anio, semana, (await contrato()).dia_corte);
   res.json({
-    anio, semana, actual, desde, hasta, detalle, alertas, anuladas, cerrada, historico: cerradas,
+    anio, semana, actual, desde, hasta, ep, detalle, alertas, anuladas, cerrada, historico: cerradas,
     cambios_desde_cierre: cerrada ? cambioDesdeElCierre(cerrada.detalle, detalle) : false,
   });
 }));

@@ -65,4 +65,15 @@ export const fmtPeriodo = (p) => {
   const dm = (iso) => { const [, mm, dd] = iso.split('-').map(Number); return `${dd} ${MESES_CORTOS[mm - 1]}`; };
   return { titulo: `EP ${MESES_LARGOS[m - 1]} ${a}`, rango: `${dm(p.desde)} → ${dm(p.hasta)}` };
 };
+// «2026-11-20» → «viernes 20 nov».
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+export const fmtDia = (iso) => {
+  const [a, m, d] = String(iso).split('-').map(Number);
+  return `${DIAS[new Date(a, m - 1, d).getDay()]} ${d} ${MESES_CORTOS[m - 1]}`;
+};
+// Nombre de un período de EP con su N° de EDP: «EDP 10 · EP noviembre 2026».
+export const nombreEDP = (p) => {
+  const t = fmtPeriodo(p).titulo;
+  return p?.numero != null ? `EDP ${p.numero} · ${t}` : t;
+};
 export const fmtTon = (n) => (n == null ? '—' : Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' t');

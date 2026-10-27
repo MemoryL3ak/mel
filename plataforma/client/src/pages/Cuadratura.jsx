@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
-import { Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { Chip, Empty, Field, Modal, PageHead, SemanaEP, useToast } from '../ui.jsx';
 import { useAuth } from '../auth.jsx';
 
 export default function Cuadratura() {
@@ -109,6 +109,7 @@ export default function Cuadratura() {
               {data.cerrada.confirmada_el ? `Confirmada por ${data.cerrada.confirmada_por}` : 'Pendiente de confirmación de Lampa'}</Chip></>}
           </small>
         </div>
+        <SemanaEP ep={data.ep} />
         {(() => {
           const todas = data.cerrada?.detalle ?? data.detalle;
           const filas = cat === 'todas' ? todas : todas.filter((x) => x.categoria === cat);

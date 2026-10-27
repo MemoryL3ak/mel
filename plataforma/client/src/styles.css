@@ -911,6 +911,11 @@ tbody tr.tot:hover{background:var(--surface-2)}
 @media (max-width:720px){
   .doc-busca,.doc-busca .sel,.doc-busca input{width:100%;min-width:0}
 }
+/* Línea bajo el encabezado de la semana: a qué EDP pertenece y en qué semana va. */
+.semana-ep{padding:9px 20px;font-size:12.5px;color:var(--ink-2);background:var(--surface-2);border-bottom:1px solid var(--line-2)}
+.semana-ep b{color:var(--ink)}
+.semana-ep.corte{background:var(--warn-bg);color:var(--warn-tx);border-bottom-color:var(--warn-line)}
+.semana-ep.corte b{color:inherit}
 /* Buscador del inventario de obsoletos: ancho para un SKU más parte del nombre. */
 .inv-busca{width:min(420px,100%)}
 @media (max-width:720px){

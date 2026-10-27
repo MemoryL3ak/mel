@@ -1,8 +1,33 @@
 // Componentes base del sistema de diseño.
 import { createContext, useContext, useState, useRef, useEffect, useLayoutEffect, Children, isValidElement } from 'react';
 import { createPortal } from 'react-dom';
+import { fmtDia, fmtPeriodo, nombreEDP } from './api.js';
 
 export const Chip = ({ tone = 'neutral', children }) => <span className={`chip ${tone}`}>{children}</span>;
+
+// A qué estado de pago pertenece una semana (respuesta `ep` del servidor). El
+// programa y la cuadratura se recorren por semana ISO y el contrato cobra del
+// 21 al 20: sin esto, después de varias semanas se pierde la cuenta de en qué
+// EDP se va. La semana del corte muestra los dos.
+export function SemanaEP({ ep }) {
+  if (!ep?.tramos?.length) return null;
+  if (ep.tramos.length === 2) {
+    const [a, b] = ep.tramos;
+    return (
+      <div className="semana-ep corte">
+        <b>Semana de corte.</b> El <b>{nombreEDP(a)}</b> cierra el {fmtDia(ep.corte)}.
+        {' '}El <b>{nombreEDP(b)}</b> parte el {fmtDia(b.desde)} y va de la semana {b.semana_inicio.semana} a la {b.semana_fin.semana}.
+      </div>
+    );
+  }
+  const t = ep.tramos[0];
+  return (
+    <div className="semana-ep">
+      <b>{nombreEDP(t)}</b> · semana {t.semana_n} de {t.semanas}
+      {' '}· va de la semana {t.semana_inicio.semana} a la {t.semana_fin.semana} ({fmtPeriodo(t).rango})
+    </div>
+  );
+}
 
 // Posición de un menú flotante junto a su campo. El menú se dibuja en <body>
 // (portal) con posición fija: dentro de un modal, el cuerpo del modal se

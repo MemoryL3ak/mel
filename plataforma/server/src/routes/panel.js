@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { supa, q, ah, hoy, semanaISO, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
-import { contrato, venceElPrecio, periodoActivo } from '../contrato.js';
+import { contrato, venceElPrecio, periodoActivo, periodoConSemanas } from '../contrato.js';
 import { tiene } from '../esquema.js';
 import { faltantes, vencimiento, puedeCargar } from '../documental.js';
 
@@ -142,7 +142,8 @@ r.get('/panel', auth(), ah(async (req, res) => {
 
   const ejec = prog.filter((p) => p.estado === 'ejecutado');
   res.json({
-    periodo,
+    // Con el N° de EDP y las semanas ISO en que parte y corta, más la de hoy.
+    periodo: { ...(await periodoConSemanas(periodo)), semana_hoy: semana },
     flujo,
     serie14,
     kpis: {

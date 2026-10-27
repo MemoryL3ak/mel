@@ -38,6 +38,24 @@ export function semanaISO(d = new Date()) {
   return { anio: x.getUTCFullYear(), semana: Math.ceil(((x - y0) / 86400000 + 1) / 7) };
 }
 
+// Semana ISO de una fecha 'AAAA-MM-DD'.
+export function semanaDeFecha(iso) {
+  const [a, m, d] = String(iso).split('-').map(Number);
+  return semanaISO(new Date(a, m - 1, d));
+}
+
+// Lunes y domingo de una semana ISO, como 'AAAA-MM-DD'.
+export function rangoSemanaISO(anio, semana) {
+  const simple = new Date(Date.UTC(anio, 0, 4)); // 4-ene siempre cae en la semana 1
+  const day = simple.getUTCDay() || 7;
+  const ini = new Date(simple);
+  ini.setUTCDate(simple.getUTCDate() - day + 1 + (semana - 1) * 7);
+  const fin = new Date(ini);
+  fin.setUTCDate(ini.getUTCDate() + 6);
+  const f = (d) => d.toISOString().slice(0, 10);
+  return { desde: f(ini), hasta: f(fin) };
+}
+
 export const fmtFecha = (ts) =>
   new Date(ts).toLocaleString('es-CL', { timeZone: 'America/Santiago', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 

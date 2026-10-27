@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { supa, q, ah, audit, semanaISO } from '../supa.js';
 import { auth } from '../auth.js';
+import { contrato, epDeSemana } from '../contrato.js';
 
 const r = Router();
 const SEL = '*, patios(codigo, nombre), categorias(nombre)';
@@ -18,8 +19,11 @@ r.get('/programa', auth(), ah(async (req, res) => {
   const ejec = rows.filter((x) => x.estado === 'ejecutado');
   const estTon = ejec.reduce((a, x) => a + Number(x.ton_estimadas), 0);
   const realTon = ejec.reduce((a, x) => a + Number(x.ton_reales ?? 0), 0);
+  // A qué EDP pertenece la semana: después de tantas semanas se pierde la
+  // cuenta de en cuál va el período y cuándo corta.
+  const ep = await epDeSemana(anio, semana, (await contrato()).dia_corte);
   res.json({
-    anio, semana, actual,
+    anio, semana, actual, ep,
     rows,
     cumplimiento: {
       actividades: { ejecutadas: ejec.length, total: rows.length },
