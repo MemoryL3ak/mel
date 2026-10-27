@@ -51,6 +51,9 @@ const COLUMNAS = [
   { campo: 'valor_referencial', titulo: CAMPO.valor, ej: '28500', num: true, monto: true, ayuda: 'en dólares; acepta decimales (3.502,92 o 3502.92) y se redondea al dólar' },
 ];
 
+// Texto comparable para el buscador: sin tildes ni mayúsculas.
+const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 // Monto escrito como lo deja Excel en español ("3.502,92") o en inglés
 // ("3,502.92", "3502.92"). Antes se borraba todo lo que no fuera dígito y
 // "3.502,92" quedaba en 350.292: cien veces el valor. El último separador es
@@ -164,6 +167,7 @@ export default function Inventario() {
   const [terreno, setTerreno] = useState(null);       // confirmación en terreno con cantidad
   const [movimiento, setMovimiento] = useState(null); // enviadas / recibidas
   const [importar, setImportar] = useState(null);     // importación de la planilla de materiales
+  const [busca, setBusca] = useState('');             // buscador del inventario (SKU, nombre, ubicación…)
   const toast = useToast();
 
   const load = () => api('/componentes').then(setData).catch((e) => toast(e.message, true));
@@ -383,15 +387,33 @@ export default function Inventario() {
         );
       })()}
 
-      {tab === 'inv' && (
-      <div className="card"><div className="tbl-wrap"><table className="densa cabecera-libre">
+      {tab === 'inv' && (() => {
+        // Buscador: cada palabra tiene que aparecer en el SKU, el nombre, las
+        // especificaciones, la ubicación, el sitio o el memo, sin importar
+        // tildes ni mayúsculas. Con planillas de cientos de materiales, ubicar
+        // un SKU recorriendo la tabla era lo lento.
+        const palabras = normalizar(busca).split(/\s+/).filter(Boolean);
+        const visibles = palabras.length
+          ? data.componentes.filter((c) => {
+            const texto = normalizar([c.codigo, c.nombre, c.especificaciones, c.ubicacion, c.sitio, c.memo, c.area_usuaria].join(' '));
+            return palabras.every((p) => texto.includes(p));
+          })
+          : data.componentes;
+        return (
+      <div className="card">
+        <div className="card-h">
+          <input type="search" className="inv-busca" value={busca} onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por SKU, nombre, especificación o ubicación" aria-label="Buscar en el inventario" />
+          <small>{palabras.length ? `${visibles.length} de ${data.componentes.length} componentes` : `${data.componentes.length} componentes`}</small>
+        </div>
+        <div className="tbl-wrap"><table className="densa cabecera-libre">
         {/* Mismas columnas, en el mismo orden y con las mismas etiquetas que el
             formulario de ingreso (CAMPO), más el estado del proceso. */}
         <thead><tr><th>{CAMPO.memo}</th><th>{CAMPO.codigo}</th><th>{CAMPO.nombre}</th><th>{CAMPO.especificaciones}</th>
           <th>{CAMPO.sitio}</th><th>{CAMPO.ubicacion}</th><th className="num" title="Comprometida · encontrada / no encontrada · enviada / recibida">{CAMPO.cantidad}</th>
           {!soloLectura && <th className="num">{CAMPO.valor}</th>}<th>Estado</th><th className="acc"></th></tr></thead>
         <tbody>
-          {data.componentes.map((c) => {
+          {visibles.map((c) => {
             const [tono, txt] = ESTADO[c.estado] ?? ['neutral', c.estado];
             return (
               <tr key={c.id}>
@@ -455,8 +477,12 @@ export default function Inventario() {
         </tbody>
       </table></div>
         {data.componentes.length === 0 && <Empty title="Inventario vacío">Ingrese el primer componente obsoleto para planificar su venta.</Empty>}
+        {data.componentes.length > 0 && visibles.length === 0 && (
+          <Empty title="Sin resultados">Ningún componente coincide con «{busca.trim()}». Revise el SKU o busque por parte del nombre.</Empty>
+        )}
       </div>
-      )}
+        );
+      })()}
 
       {tab === 'clasificar' && (
         <div className="card">

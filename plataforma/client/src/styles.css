@@ -911,6 +911,12 @@ tbody tr.tot:hover{background:var(--surface-2)}
 @media (max-width:720px){
   .doc-busca,.doc-busca .sel,.doc-busca input{width:100%;min-width:0}
 }
+/* Buscador del inventario de obsoletos: ancho para un SKU más parte del nombre. */
+.inv-busca{width:min(420px,100%)}
+@media (max-width:720px){
+  .card-h:has(.inv-busca){flex-wrap:wrap}
+  .inv-busca{width:100%}
+}
 
 /* =================== INDICADORES (Fase 4) =================== */
 /* Paleta de gráficos validada contra el blanco de las tarjetas: series en
