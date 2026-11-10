@@ -918,9 +918,18 @@ tbody tr.tot:hover{background:var(--surface-2)}
 .semana-ep.corte b{color:inherit}
 /* Buscador del inventario de obsoletos: ancho para un SKU más parte del nombre. */
 .inv-busca{width:min(420px,100%)}
+/* Lista de resultados del buscador de componentes al publicar: una fila por
+   componente, con el SKU a la izquierda y el valor a la derecha. */
+.lista-comp{display:grid;gap:4px;margin-top:8px;max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius-s);padding:4px;background:var(--surface)}
+.lista-comp-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:8px 10px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.lista-comp-item:hover,.lista-comp-item:focus-visible{border-color:var(--copper-line);background:var(--copper-tint);outline:none}
+.lista-comp-item small{color:var(--muted)}
+/* Buscador de guías en Despachos: el N° de GD, el código interno, la GT o el CDF. */
+.busca-guia{width:min(340px,100%);margin-left:auto}
+.card-h:has(.busca-guia) small{flex-shrink:0}
 @media (max-width:720px){
-  .card-h:has(.inv-busca){flex-wrap:wrap}
-  .inv-busca{width:100%}
+  .card-h:has(.inv-busca),.card-h:has(.busca-guia){flex-wrap:wrap}
+  .inv-busca,.busca-guia{width:100%;margin-left:0}
 }
 
 /* =================== INDICADORES (Fase 4) =================== */

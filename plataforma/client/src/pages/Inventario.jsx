@@ -167,6 +167,7 @@ export default function Inventario() {
   const [terreno, setTerreno] = useState(null);       // confirmación en terreno con cantidad
   const [movimiento, setMovimiento] = useState(null); // enviadas / recibidas
   const [importar, setImportar] = useState(null);     // importación de la planilla de materiales
+  const [fichas, setFichas] = useState(null);         // carga masiva de fichas técnicas { archivos, resultado }
   const [busca, setBusca] = useState('');             // buscador del inventario (SKU, nombre, ubicación…)
   const toast = useToast();
 
@@ -337,6 +338,27 @@ export default function Inventario() {
     } catch (e) { toast(e.message, true); }
   }
 
+  // Carga masiva de fichas técnicas: el nombre de cada archivo trae el SKU y
+  // con eso se asocia al componente. La misma regla que aplica el servidor se
+  // muestra aquí antes de subir, para ver qué va a calzar y qué no.
+  const componenteDeArchivo = (nombre) => {
+    const tokens = String(nombre).replace(/\.[^.]+$/, '').split(/[^0-9A-Za-z]+/).filter(Boolean).map((t) => t.toLowerCase());
+    const porCodigo = new Map(data.componentes.map((c) => [String(c.codigo).trim().toLowerCase(), c]));
+    return porCodigo.get(tokens[0]) ?? tokens.map((t) => porCodigo.get(t)).find(Boolean) ?? null;
+  };
+  const subirFichas = () => correr(async () => {
+    const archivos = fichas?.archivos ?? [];
+    if (!archivos.length) return toast('Elija las fichas técnicas que va a subir', true);
+    const fd = new FormData();
+    for (const a of archivos) fd.append('fichas', a);
+    try {
+      const r = await api('/componentes/fichas/masivo', { method: 'POST', body: fd });
+      setFichas({ archivos: [], resultado: r });
+      toast(`${r.cargadas} ficha(s) técnica(s) cargada(s) en ${r.componentes} componente(s)${r.sin_asociar ? ` · ${r.sin_asociar} sin asociar` : ''}`);
+      load();
+    } catch (e) { toast(e.message, true); }
+  });
+
   const previa = parseMasivo(texto);
 
   return (
@@ -348,6 +370,8 @@ export default function Inventario() {
         {!soloLectura && <>
           <button className="btn" onClick={() => setImportar({ previa: null })}>⇪ Importar planilla de materiales</button>
           <button className="btn" onClick={() => { setMasivo(true); setTexto(''); }}>⇪ Carga masiva</button>
+          <button className="btn" onClick={() => setFichas({ archivos: [], resultado: null })}
+            title="Subir muchas fichas técnicas de una vez: cada archivo se asocia por el SKU en su nombre">⇪ Fichas técnicas</button>
           <button className="btn primary" onClick={() => { setNuevo(true); setF(vacio); }}>+ Ingresar componente</button>
         </>}
       </PageHead>
@@ -696,6 +720,68 @@ export default function Inventario() {
         })()}
       </Modal>
 
+      {/* ---- carga masiva de fichas técnicas ---- */}
+      <Modal open={!!fichas} title="Carga masiva de fichas técnicas" onClose={() => setFichas(null)} ancho
+        footer={<>
+          <button className="btn" onClick={() => setFichas(null)} disabled={busy}>{fichas?.resultado ? 'Cerrar' : 'Cancelar'}</button>
+          {!fichas?.resultado && (
+            <button className="btn primary" onClick={subirFichas} disabled={busy || !fichas?.archivos.length}>
+              {busy ? 'Subiendo…' : `Subir ${fichas?.archivos.length || ''} ficha(s)`}
+            </button>
+          )}
+        </>}>
+        {fichas && !fichas.resultado && (() => {
+          const filas = fichas.archivos.map((a) => ({ archivo: a, comp: componenteDeArchivo(a.name) }));
+          const calzan = filas.filter((x) => x.comp).length;
+          return (<>
+            <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
+              Elija todas las fichas de una vez. <b>El nombre de cada archivo debe traer el código SKU</b> del componente
+              (por ejemplo <span className="mono">1000234.pdf</span> o <span className="mono">1000234 - Motor WEG.pdf</span>):
+              con eso se asocia sola. Se aceptan PDF, Excel o imagen, hasta 8 MB cada una. Si un componente ya tiene
+              ficha, la nueva se suma.
+            </p>
+            <Field label="Fichas técnicas" hint="Puede seleccionar hasta 80 archivos por carga.">
+              <input type="file" multiple accept={FICHA_ACCEPT}
+                onChange={(e) => setFichas({ ...fichas, archivos: Array.from(e.target.files).slice(0, 80) })} />
+            </Field>
+            {filas.length > 0 && (<>
+              <div className={`alerta ${calzan === filas.length ? 'info' : ''}`} style={{ marginBottom: 10 }}>
+                <b>{calzan} de {filas.length} archivo(s) con componente</b>
+                <span>{calzan < filas.length
+                  ? 'Los que no calzan con ningún SKU del inventario no se suben: renómbrelos y vuelva a elegirlos.'
+                  : 'Todos los archivos tienen un componente al que ir.'}</span>
+              </div>
+              <div className="tbl-wrap"><table className="densa">
+                <thead><tr><th>Archivo</th><th>Componente</th></tr></thead>
+                <tbody>
+                  {filas.map(({ archivo, comp }) => (
+                    <tr key={archivo.name}>
+                      <td className="mono" style={{ overflowWrap: 'anywhere' }}>{archivo.name}</td>
+                      <td>{comp
+                        ? <><span className="mono">{comp.codigo}</span> · {cortable(comp.nombre)}{comp.fotos > 0 && <small style={{ color: 'var(--muted)' }}> · ya tiene {comp.fotos} adjunto(s)</small>}</>
+                        : <span style={{ color: 'var(--bad-tx)' }}>Sin coincidencia con ningún SKU</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </>)}
+          </>);
+        })()}
+        {fichas?.resultado && (() => {
+          const r = fichas.resultado;
+          const fallidos = r.resultado.filter((x) => !x.ok);
+          return (<>
+            <div className="alerta info"><b>Carga lista</b>
+              <span>{r.cargadas} ficha(s) técnica(s) en {r.componentes} componente(s){r.sin_asociar ? ` · ${r.sin_asociar} archivo(s) sin asociar` : ''}.</span>
+            </div>
+            {fallidos.length > 0 && (
+              <div className="aviso bad" style={{ marginTop: 10 }}><b>{fallidos.length} archivo(s) no entraron</b>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{fallidos.map((x) => <li key={x.archivo}><span className="mono">{x.archivo}</span>: {x.motivo}</li>)}</ul></div>
+            )}
+          </>);
+        })()}
+      </Modal>
+
       {/* ---- eliminar ---- */}
       <Modal open={!!eliminar} title="Eliminar componente" onClose={() => setEliminar(null)}
         footer={<>
@@ -767,9 +853,9 @@ export default function Inventario() {
             </ul>
           </div>
         )}
-        <Field label="Memo de baja" hint="Toda la carga queda respaldada por este memo: es la lista que declara.">
+        <Field label="Memo de baja · opcional" hint="Toda la carga queda respaldada por este memo, si lo hay: es la lista que declara.">
           <Select value={memoMasivo} onChange={(e) => setMemoMasivo(e.target.value)}>
-            <option value="">— Elija el memo —</option>
+            <option value="">— Sin memo —</option>
             {memos.map((m) => <option key={m.id} value={m.id}>{m.folio} · {m.area_usuaria}</option>)}
           </Select>
         </Field>
@@ -897,15 +983,17 @@ function DatosSAP({ c }) {
 function Campos({ v, set, sitios, memos, conArchivos }) {
   return (<>
     {memos && (
-      <Field label={CAMPO.memo}
-        hint="El memo firmado del área usuaria que autoriza enajenar este componente. Se carga en «Memos de baja».">
+      // El memo es opcional (observación de MEL, nov-2026): el componente puede
+      // ingresar sin él y quedar «sin memo» en el inventario.
+      <Field label={`${CAMPO.memo} · opcional`}
+        hint="El memo firmado del área usuaria que autoriza enajenar este componente, cargado en «Memos de baja». Si todavía no existe, déjelo sin memo.">
         <Select value={v.memo_id} onChange={(e) => set({ ...v, memo_id: e.target.value })}>
-          <option value="">— Elija el memo —</option>
+          <option value="">— Sin memo —</option>
           {memos.map((m) => <option key={m.id} value={m.id}>{m.folio} · {m.area_usuaria}</option>)}
         </Select>
         {memos.length === 0 && (
-          <small style={{ color: 'var(--warn-tx)', display: 'block', marginTop: 6 }}>
-            No hay memos abiertos. Cargue primero el memo en «Memos de baja».
+          <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>
+            No hay memos abiertos: el componente queda sin memo.
           </small>
         )}
       </Field>

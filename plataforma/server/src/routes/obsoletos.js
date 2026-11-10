@@ -138,16 +138,15 @@ async function subirDocMemo(memoId, archivo, quien = null) {
   return 1;
 }
 
-// Valida el memo que respalda un alta de componentes. Devuelve el id del memo,
-// null si la migración aún no está aplicada, o false cuando ya respondió con el
-// error: al llamador le basta con cortar.
+// Memo que respalda un alta de componentes. Es OPCIONAL (observación de MEL,
+// nov-2026): un componente puede ingresar sin memo y recibirlo después. Si
+// viene, tiene que existir. Devuelve el id del memo, null si no viene o la
+// migración aún no está aplicada, o false cuando ya respondió con el error:
+// al llamador le basta con cortar.
 async function memoDeLaSolicitud(req, res) {
   if (!tiene.memos) return null;
   const memo_id = Number(req.body?.memo_id) || null;
-  if (!memo_id) {
-    res.status(400).json({ error: 'Seleccione el memo de baja que respalda este componente' });
-    return false;
-  }
+  if (!memo_id) return null;
   const memo = await q(supa.from('memos').select('id').eq('id', memo_id).maybeSingle());
   if (!memo) { res.status(400).json({ error: 'El memo indicado no existe' }); return false; }
   return memo_id;
@@ -400,6 +399,54 @@ r.get('/componentes/:id/adjuntos', VE, ah(async (req, res) => {
     archivos: firmadas.map((f, i) => ({ url: f.signedUrl, tipo: lista[i].name.startsWith('ficha-') ? 'ficha' : 'foto' }))
       .filter((f) => f.url),
   });
+}));
+
+// Carga masiva de fichas técnicas. Cada archivo se asocia al componente cuyo
+// código (SKU SAP) aparece en el nombre del archivo: «1000234.pdf»,
+// «1000234 - Motor.pdf» o «Ficha_1000234.xlsx» van todos al 1000234. Se
+// aceptan los mismos formatos que la ficha del alta. Los que no calzan con
+// ningún código se devuelven en la respuesta, sin frenar al resto.
+const subirFichas = multer({
+  storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',
+  limits: { files: 80, fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, f, cb) => cb(null, !!FICHA[f.mimetype]),
+});
+const tokensDe = (nombre) => String(nombre || '').replace(/\.[^.]+$/, '').split(/[^0-9A-Za-z]+/).filter(Boolean);
+
+r.post('/componentes/fichas/masivo', OP, subirFichas.array('fichas'), ah(async (req, res) => {
+  if (!tiene.obsoletos) return sinTabla(res);
+  const archivos = req.files ?? [];
+  if (!archivos.length) return res.status(400).json({ error: 'Adjunte las fichas técnicas (PDF, Excel o imagen); el nombre de cada archivo debe traer el código SKU' });
+  const comps = await q(supa.from('componentes').select('id,codigo,nombre,fotos'));
+  const porCodigo = new Map(comps.map((c) => [String(c.codigo).trim().toLowerCase(), c]));
+  const marca = Date.now();
+  const resultado = [];
+  const sumados = new Map();   // id → adjuntos nuevos
+  let n = 0;
+  for (const f of archivos) {
+    // Primero el código al inicio del nombre (lo normal); si no, cualquier
+    // trozo del nombre que coincida con un código.
+    const tokens = tokensDe(f.originalname).map((t) => t.toLowerCase());
+    const comp = porCodigo.get(tokens[0]) ?? tokens.map((t) => porCodigo.get(t)).find(Boolean);
+    if (!comp) { resultado.push({ archivo: f.originalname, ok: false, motivo: 'ningún código del inventario coincide con el nombre del archivo' }); continue; }
+    const ext = FICHA[f.mimetype];
+    const path = `OBS/${comp.id}/ficha-${marca}-${++n}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
+    if (error) { resultado.push({ archivo: f.originalname, codigo: comp.codigo, ok: false, motivo: error.message }); continue; }
+    sumados.set(comp.id, (sumados.get(comp.id) ?? 0) + 1);
+    resultado.push({ archivo: f.originalname, codigo: comp.codigo, nombre: comp.nombre, ok: true });
+  }
+  for (const [id, extra] of sumados) {
+    const c = comps.find((x) => x.id === id);
+    await q(supa.from('componentes').update({ fotos: Number(c.fotos ?? 0) + extra }).eq('id', id).select('id').single());
+  }
+  const cargadas = resultado.filter((x) => x.ok).length;
+  if (cargadas) {
+    await audit(req.user.name, req.user.role, 'Carga masiva de fichas técnicas',
+      `${cargadas} ficha(s) en ${sumados.size} componente(s)${resultado.length - cargadas ? ` · ${resultado.length - cargadas} archivo(s) sin asociar` : ''}`);
+  }
+  res.json({ cargadas, componentes: sumados.size, sin_asociar: resultado.length - cargadas, resultado });
 }));
 
 // Elimina toda la carpeta de adjuntos de un componente en el bucket.

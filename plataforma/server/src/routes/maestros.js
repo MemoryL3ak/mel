@@ -33,9 +33,13 @@ r.get('/maestros', auth(), ah(async (_req, res) => {
   // El período del estado de pago en curso, para que las pantallas acumulen
   // por período y no por mes calendario (el recién cerrado mientras el nuevo
   // no registre movimiento, igual que el panel).
-  const periodo = await periodoActivo((await contrato()).dia_corte);
+  const cfg = await contrato();
+  const periodo = await periodoActivo(cfg.dia_corte);
   res.json({
     periodo,
+    // Tolerancias de la diferencia de pesaje MEL / La Negra: la recepción las
+    // muestra en vivo para decir qué peso va a regir antes de guardar.
+    tolerancias: { mel: Number(cfg.tol_mel_pct), lampa: Number(cfg.tol_lampa_pct) },
     patios,
     sitios,
     categorias: categorias.map((c) => {
@@ -58,7 +62,9 @@ r.get('/valorizacion', auth('ito', 'coordinador'), ah(async (_req, res) => {
   const [categorias, precios, desp, cfg, dol, histDolar] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
     q(supa.from('precios').select('*').order('vigente_desde', { ascending: false })),
-    q(supa.from('despachos').select('categoria_id, categoria_final_id, kg_destino, valor, estado').not('kg_destino', 'is', null)),
+    // Los kilos del año son los valorizados: el peso que rige según contrato
+    // cuando la base ya lo guarda, el de La Negra para las guías anteriores.
+    q(supa.from('despachos').select(`categoria_id, categoria_final_id, kg_destino, valor, estado${tiene.regla_peso ? ', kg_contrato' : ''}`).not('kg_destino', 'is', null)),
     contrato(),
     valorDolar().catch(() => null),
     historialDolar(30).catch(() => []),
@@ -90,7 +96,7 @@ r.get('/valorizacion', auth('ito', 'coordinador'), ah(async (_req, res) => {
       vence_el: vence,
       dias_para_vencer: dias,
       estado_precio: vig == null ? 'sin_precio' : dias < 0 ? 'vencido' : dias <= 15 ? 'por_vencer' : 'vigente',
-      kg_ytd: propios.reduce((a, d) => a + Number(d.kg_destino), 0),
+      kg_ytd: propios.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino), 0),
       valor_ytd: propios.reduce((a, d) => a + Number(d.valor ?? 0), 0),
     };
   });
@@ -191,7 +197,7 @@ r.post('/dolar', auth('ito', 'coordinador'), ah(async (req, res) => {
 // `editable` es false mientras no se aplique la migración que crea la tabla:
 // así la pantalla no ofrece un botón que iba a fallar.
 r.get('/contrato', auth(), ah(async (_req, res) =>
-  res.json({ ...(await contrato()), editable: tiene.contrato })));
+  res.json({ ...(await contrato()), editable: tiene.contrato, regla_peso: tiene.regla_peso })));
 
 r.patch('/contrato', auth('coordinador'), ah(async (req, res) => {
   if (!tiene.contrato) {
@@ -199,9 +205,20 @@ r.patch('/contrato', auth('coordinador'), ah(async (req, res) => {
   }
   const permitidos =['numero', 'gerencia', 'glosa', 'mandante', 'contratista', 'firma_mandante',
     'firma_contratista', 'monto_original', 'modificaciones', 'iva_pct', 'dia_corte', 'meses_vigencia_precio',
-    'comision_vendor_pct'];
+    'comision_vendor_pct', ...(tiene.regla_peso ? ['tol_mel_pct', 'tol_lampa_pct'] : [])];
   const cambios = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => permitidos.includes(k)));
   if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios que guardar' });
+  // Las tolerancias son porcentajes y la de Lampa tiene que quedar sobre la
+  // de MEL: si no, la franja de acuerdo manual desaparece o se invierte.
+  if (cambios.tol_mel_pct !== undefined || cambios.tol_lampa_pct !== undefined) {
+    const actual = await contrato();
+    const mel = Number(cambios.tol_mel_pct ?? actual.tol_mel_pct);
+    const lampa = Number(cambios.tol_lampa_pct ?? actual.tol_lampa_pct);
+    if (!(mel >= 0) || !(lampa >= 0)) return res.status(400).json({ error: 'Las tolerancias de peso deben ser porcentajes válidos' });
+    if (lampa < mel) return res.status(400).json({ error: 'La tolerancia desde la que rige Lampa no puede ser menor que la de MEL' });
+    if (cambios.tol_mel_pct !== undefined) cambios.tol_mel_pct = mel;
+    if (cambios.tol_lampa_pct !== undefined) cambios.tol_lampa_pct = lampa;
+  }
   const row = await q(supa.from('contrato').update(cambios).eq('id', 1).select().single());
   olvidarContrato();
   await audit(req.user.name, req.user.role, 'Actualizó datos del contrato', Object.keys(cambios).join(', '));

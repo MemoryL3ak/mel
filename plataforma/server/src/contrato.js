@@ -20,7 +20,31 @@ const DEFECTO = {
   dia_corte: 20,
   meses_vigencia_precio: 3,
   comision_vendor_pct: 0,
+  // Tolerancias de la diferencia de pesaje entre MEL y La Negra (0019).
+  tol_mel_pct: 3,
+  tol_lampa_pct: 5,
 };
+
+// Regla del contrato para la diferencia entre el pesaje de MEL (origen) y el
+// de La Negra (destino): hasta la tolerancia de MEL rige el peso de MEL; desde
+// la tolerancia de Lampa rige el de La Negra; en la franja intermedia no hay
+// regla automática y las partes lo acuerdan a mano (queda 'pendiente' hasta
+// entonces, valorizando provisionalmente el peso de La Negra). La diferencia
+// se mide en valor absoluto sobre el peso de origen.
+export function reglaPeso(kgOrigen, kgDestino, cfg = DEFECTO) {
+  const o = Number(kgOrigen), d = Number(kgDestino);
+  const difPct = o > 0 ? Math.abs((d - o) / o) * 100 : 0;
+  const tolMel = Number(cfg?.tol_mel_pct ?? DEFECTO.tol_mel_pct);
+  const tolLampa = Number(cfg?.tol_lampa_pct ?? DEFECTO.tol_lampa_pct);
+  const dif = Math.round(difPct * 100) / 100;
+  if (difPct <= tolMel) {
+    return { regla: 'mel', kg: o, dif_pct: dif, texto: `Diferencia de peso ${dif.toFixed(2)}% (hasta ${tolMel}%): rige el peso MEL según contrato` };
+  }
+  if (difPct < tolLampa) {
+    return { regla: 'pendiente', kg: d, dif_pct: dif, texto: `Diferencia de peso ${dif.toFixed(2)}% (entre ${tolMel}% y ${tolLampa}%): el peso que rige se acuerda entre MEL y Lampa` };
+  }
+  return { regla: 'lampa', kg: d, dif_pct: dif, texto: `Diferencia de peso ${dif.toFixed(2)}% (${tolLampa}% o más): rige el peso de La Negra según contrato` };
+}
 
 let cache = null;
 let cacheAt = 0;

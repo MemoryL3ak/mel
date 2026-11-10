@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, fmtUSD } from '../api.js';
-import { DateField, Select, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
+import { DateField, Chip, Empty, Field, Modal, PageHead, hoyISO, useToast } from '../ui.jsx';
 
 const EYEBROW = 'Venta de obsoletos';
 const ESTADO = {
@@ -35,6 +35,7 @@ export default function Publicaciones() {
   const [convertir, setConvertir] = useState(null);
   const [ampliar, setAmpliar] = useState(null);
   const [dias, setDias] = useState(15);
+  const [buscaComp, setBuscaComp] = useState('');   // buscador del componente a publicar (SKU o nombre)
   const toast = useToast();
   const nav = useNavigate();
   const [params] = useSearchParams();
@@ -55,10 +56,29 @@ export default function Publicaciones() {
   // Se publica lo que el memo autoriza: confirmado en terreno o todavía «por
   // identificar». La conciliación en terreno no es requisito (se registra
   // después); lo que se marcó como no encontrado sí queda fuera.
-  const disponibles = comps.filter((c) => ['planificado', 'por_identificar'].includes(c.estado));
+  const publicable = (c) => ['planificado', 'por_identificar'].includes(c.estado);
+  const disponibles = comps.filter(publicable);
+  // El componente elegido (desde el inventario o desde el buscador). Puede ser
+  // uno que ya no se puede publicar: se muestra igual, con el motivo, en vez
+  // de aparecer como si no existiera.
+  const elegido = f.componente_id ? comps.find((c) => String(c.id) === String(f.componente_id)) ?? null : null;
+  const MOTIVO_NO = {
+    publicado: 'ya está publicado en el portal', adjudicado: 'ya fue adjudicado', entregado: 'ya fue entregado',
+    no_encontrado: 'se registró como no encontrado en terreno', chatarra: 'ya se convirtió en chatarra',
+  };
+  // Buscador: cada palabra tiene que aparecer en el SKU, el nombre, las
+  // especificaciones o el sitio. Con cientos de materiales, el desplegable
+  // no servía para encontrar uno: había que recorrerlo entero.
+  const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const palabras = normalizar(buscaComp).split(/\s+/).filter(Boolean);
+  const encontrados = palabras.length
+    ? disponibles.filter((c) => { const t = normalizar([c.codigo, c.nombre, c.especificaciones, c.sitio].join(' ')); return palabras.every((p) => t.includes(p)); })
+    : disponibles;
+  const abrirNuevo = () => { setF({ componente_id: '', oferta_minima: '', plazo_dias: 15, publicado_el: hoyISO() }); setBuscaComp(''); setNuevo(true); };
 
   async function publicar() {
     if (!f.componente_id) return toast('Elija el componente a publicar', true);
+    if (elegido && !publicable(elegido)) return toast(`${elegido.codigo} ${MOTIVO_NO[elegido.estado] ?? 'no se puede publicar'}`, true);
     try {
       await api('/publicaciones', { method: 'POST', body: {
         componente_id: Number(f.componente_id),
@@ -96,7 +116,7 @@ export default function Publicaciones() {
       <PageHead eyebrow={EYEBROW} title="Publicaciones"
         sub="Control automático de tiempos: a los 15 días sin adjudicar, el componente se convierte en chatarra y queda pendiente de clasificar para el programa de limpieza.">
         <a className="btn" href="/portal" target="_blank" rel="noreferrer">Ver portal público ↗</a>
-        <button className="btn primary" onClick={() => setNuevo(true)}>+ Publicar componente</button>
+        <button className="btn primary" onClick={abrirNuevo}>+ Publicar componente</button>
       </PageHead>
 
       <div className="card"><div className="tbl-wrap"><table>
@@ -139,14 +159,53 @@ export default function Publicaciones() {
           <button className="btn" onClick={() => setNuevo(false)}>Cancelar</button>
           <button className="btn primary" onClick={publicar}>Publicar</button>
         </>}>
-        <Field label="Componente" hint="Componentes del inventario sin publicar. La confirmación en terreno no es requisito: se registra después, desde el inventario o el memo.">
-          <Select value={f.componente_id} onChange={(e) => setF({ ...f, componente_id: e.target.value })}>
-            <option value="">— Elija un componente —</option>
-            {disponibles.map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}{c.estado === 'por_identificar' ? ' · por identificar en terreno' : ''}</option>)}
-          </Select>
-        </Field>
-        {disponibles.length === 0 && (
-          <small style={{ color: 'var(--muted)' }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>
+        {elegido ? (
+          // El componente ya está elegido (desde el inventario o el buscador):
+          // se muestra con sus datos, no como una opción más de una lista.
+          <Field label="Componente">
+            <div className={`alerta ${publicable(elegido) ? 'info' : 'bad'}`} style={{ alignItems: 'flex-start' }}>
+              <b className="mono">{elegido.codigo}</b>
+              <span>
+                <b>{elegido.nombre}</b>
+                {elegido.especificaciones && <><br /><small>{elegido.especificaciones}</small></>}
+                <br /><small>
+                  {elegido.sitio ? `${elegido.sitio} · ` : ''}{elegido.ubicacion ? `${elegido.ubicacion} · ` : ''}
+                  {elegido.valor_referencial != null ? `valor referencial ${fmtUSD(elegido.valor_referencial)}` : 'sin valor referencial'}
+                  {elegido.estado === 'por_identificar' ? ' · por identificar en terreno (se publica igual)' : ''}
+                </small>
+                {!publicable(elegido) && <><br /><b>No se puede publicar: {MOTIVO_NO[elegido.estado] ?? elegido.estado}.</b></>}
+              </span>
+              <button type="button" className="btn sm" style={{ marginLeft: 'auto', flexShrink: 0 }}
+                onClick={() => { setF({ ...f, componente_id: '' }); setBuscaComp(''); }}>Cambiar</button>
+            </div>
+          </Field>
+        ) : (
+          <Field label="Componente" hint="Busque por SKU o por parte del nombre y elija uno. La confirmación en terreno no es requisito: se registra después, desde el inventario o el memo.">
+            <input type="search" value={buscaComp} onChange={(e) => setBuscaComp(e.target.value)} autoFocus
+              placeholder="SKU, nombre o especificación" aria-label="Buscar componente" />
+            {disponibles.length === 0 ? (
+              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>
+            ) : encontrados.length === 0 ? (
+              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>Ningún componente sin publicar coincide con «{buscaComp.trim()}».</small>
+            ) : (
+              <div className="lista-comp">
+                {encontrados.slice(0, 12).map((c) => (
+                  <button type="button" key={c.id} className="lista-comp-item" onClick={() => setF({ ...f, componente_id: String(c.id) })}>
+                    <span className="mono">{c.codigo}</span>
+                    <span><b>{c.nombre}</b>{c.sitio && <small> · {c.sitio}</small>}{c.estado === 'por_identificar' && <small> · por identificar</small>}</span>
+                    <span className="mono" style={{ marginLeft: 'auto', color: 'var(--muted)' }}>{c.valor_referencial != null ? fmtUSD(c.valor_referencial) : ''}</span>
+                  </button>
+                ))}
+                {encontrados.length > 12 && (
+                  <small style={{ color: 'var(--muted)', padding: '6px 10px' }}>… y {encontrados.length - 12} más: afine la búsqueda.</small>
+                )}
+              </div>
+            )}
+          </Field>
+        )}
+        {f.componente_id && !elegido && comps.length > 0 && (
+          <div className="alerta bad" style={{ marginBottom: 12 }}><b>Componente no encontrado</b>
+            <span>El componente elegido ya no está en el inventario. <button type="button" className="btn sm" onClick={() => setF({ ...f, componente_id: '' })}>Elegir otro</button></span></div>
         )}
         <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
           <Field label="Oferta mínima (USD)" hint="Opcional. Las ofertas bajo este monto se rechazan.">

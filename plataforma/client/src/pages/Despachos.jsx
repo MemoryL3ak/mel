@@ -24,6 +24,21 @@ const descTexto = (d) => d.tipo === 'pct' ? `${d.valor} %`
   : d.tipo === 'clp' ? fmtCLP(d.valor)
   : `${fmtKg(d.valor)} kg`;
 
+// Qué peso rige según el contrato cuando MEL y La Negra pesan distinto:
+// [tono, etiqueta corta, explicación]. La regla la aplica el servidor al
+// recepcionar; aquí solo se muestra.
+const REGLA = {
+  mel: ['ok', 'Rige MEL', 'Diferencia dentro de la tolerancia de MEL: se valoriza el peso de origen.'],
+  lampa: ['info', 'Rige La Negra', 'Diferencia desde la tolerancia de Lampa: se valoriza el peso de La Negra.'],
+  pendiente: ['warn', 'Por acordar', 'Diferencia en la franja intermedia del contrato: MEL y Lampa deben acordar el peso.'],
+  acuerdo: ['neutral', 'Acordado', 'Peso fijado a mano por el ITO de MEL o el auditor de Lampa, con justificación.'],
+};
+
+// Buscador por N° de guía: solo letras y dígitos, en minúsculas, para que
+// «CI-0012», «ci 0012» y «0012» encuentren lo mismo. Un campo vacío acepta todo.
+const clave = (s) => String(s ?? '').toLowerCase().replace(/[^0-9a-z]/g, '');
+const coincide = (q, ...campos) => { const k = clave(q); return !k || campos.some((c) => clave(c).includes(k)); };
+
 // Precio vigente de una categoría, en la unidad en que esté pactado. Va al
 // lado del nombre en los desplegables, como referencia de quien elige.
 const usd = (v) => Number(v).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -142,19 +157,28 @@ export default function Despachos() {
     kg_destino: '', bruto_destino: '', unidad: unidadGuardada(), categoria_final_id: '', observacion: '', foto: [],
     ticket_numero: '', vale_numero: '', tara: '', unidad_tara: unidadGuardada(), con_madera: true,
     descuentos: [], nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
+    fecha_recepcion: hoyISO(),   // el día en que llegó la carga, según el ticket
   });
   const [form, setForm] = useState(formVacio);
   const [detalle, setDetalle] = useState(null);
   const [evidencia, setEvidencia] = useState(null);   // urls firmadas del detalle abierto
   const [anular, setAnular] = useState(null);         // guía que se está anulando
   const [corregir, setCorregir] = useState(null);     // recepción que se está corrigiendo
-  const [cForm, setCForm] = useState({ bruto_destino: '', kg_destino: '', tara_kg: '', ticket_numero: '', vale_numero: '', motivo: '' });
+  const cFormVacio = () => ({
+    bruto_destino: '', kg_destino: '', tara_kg: '', ticket_numero: '', vale_numero: '', motivo: '', fecha_recepcion: '',
+    // descuentos: los que ya tiene la guía, los ids marcados para salir, los
+    // nuevos que se agregan al guardar y la fila que se está escribiendo
+    descuentos: [], quitar: [], nuevos: [], nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
+  });
+  const [cForm, setCForm] = useState(cFormVacio);
   const [aForm, setAForm] = useState({ motivo: '', reemplazar: false });
   // Descuento que se agrega desde el detalle de una guía ya recepcionada.
   const [dForm, setDForm] = useState({ tipo: 'kg', valor: '', glosa: '' });
   const [rForm, setRForm] = useState(recepVacia);
   const [tForm, setTForm] = useState({ categoria_id: null, kg: '', unidad: unidadGuardada() });
-  const [lampa, setLampa] = useState({ valor: '', unidad: 'kg' });
+  const [lampa, setLampa] = useState({ valor: '', unidad: 'kg', fecha: hoyISO() });
+  const [busca, setBusca] = useState('');            // buscador por N° de guía, en las cuatro pestañas
+  const [rKg, setRKg] = useState('');                // peso acordado en el modal de resolución / ajuste
   const [cdfFile, setCdfFile] = useState([]);        // documento(s) del CDF a adjuntar
   const [verCdf, setVerCdf] = useState(null);        // { traslado, archivos } del CDF abierto
   const [adjCdf, setAdjCdf] = useState(null);        // traslado al que se le adjunta el CDF despues
@@ -188,7 +212,18 @@ export default function Despachos() {
   const puedeRecepTras = ['vendor', 'coordinador', 'lampa'].includes(user.role);
   const puedeCorrTras = ['vendor', 'coordinador', 'lampa', 'ito'].includes(user.role);
   const puedeResolver = ['ito', 'coordinador'].includes(user.role);
+  // La diferencia de pesaje la resuelve o ajusta el ITO de MEL, el coordinador
+  // o el auditor de Lampa (usuario «lampa»), con justificación.
+  const puedeAjustar = ['ito', 'coordinador', 'lampa'].includes(user.role);
   const puedeEditar = ['limpieza', 'ito', 'coordinador'].includes(user.role);
+  const tol = maestros?.tolerancias;   // tolerancias del contrato para la diferencia de pesaje
+  // Caja de búsqueda compartida por las cuatro pestañas. Es una función y no
+  // un componente: definido como componente dentro del render se volvería a
+  // montar en cada tecla y el campo perdería el foco.
+  const buscador = (placeholder) => (
+    <input type="search" className="busca-guia" value={busca} onChange={(e) => setBusca(e.target.value)}
+      placeholder={placeholder} aria-label="Buscar guía o movimiento" />
+  );
   const puedeAnular = ['limpieza', 'ito', 'coordinador'].includes(user.role);
 
   const post = (path, body, okMsg, cierra) => async () => {
@@ -252,11 +287,16 @@ export default function Despachos() {
       const tara = aKg(rForm.tara, rForm.unidad_tara);
       if (tara) fd.append('tara_kg', tara);
       if (fn.tm) fd.append('con_madera', rForm.con_madera ? 'true' : 'false');
+      if (fn.fecha_recepcion && rForm.fecha_recepcion) fd.append('fecha_recepcion', rForm.fecha_recepcion);
       if (rForm.descuentos.length) fd.append('descuentos', JSON.stringify(rForm.descuentos));
       for (const f of rForm.foto ?? []) fd.append('recepcion', f);
       const d = await api(`/despachos/${recep.id}/recepcionar`, { method: 'POST', body: fd });
       toast(d.estado === 'observado'
-        ? `Recepción registrada con diferencia de ${d.dif_pct}%: queda observada para el ITO`
+        ? (d.regla_peso === 'pendiente'
+          ? `Recepción registrada con diferencia de ${d.dif_pct}%: queda observada hasta que MEL y Lampa acuerden el peso`
+          : `Recepción registrada con diferencia de ${d.dif_pct}%: queda observada para el ITO`)
+        : d.regla_peso === 'lampa' ? `Recepción registrada · diferencia de ${d.dif_pct}%: rige el peso de La Negra según contrato`
+        : d.regla_peso === 'mel' && d.dif_pct ? `Recepción registrada · diferencia de ${d.dif_pct}%: rige el peso MEL según contrato`
         : 'Recepción registrada dentro de la tolerancia');
       setRecep(null);
       load();
@@ -271,6 +311,7 @@ export default function Despachos() {
     try {
       const fd = new FormData();
       fd.append('kg_lampa', kg);
+      if (fn.fecha_recepcion && lampa.fecha) fd.append('fecha_recepcion', lampa.fecha);
       for (const f of cdfFile ?? []) fd.append('cdf', f);
       await api(`/traslados/${recepTras.id}/recepcionar`, { method: 'POST', body: fd });
       toast('Recepción en Lampa registrada; certificado emitido');
@@ -298,11 +339,63 @@ export default function Despachos() {
   function abrirCorregir(d) {
     setCorregir(d);
     setCForm({
+      ...cFormVacio(),
       // La base guarda el neto; el bruto se reconstruye para poder editarlo.
       bruto_destino: d.bruto_kg ?? d.kg_destino ?? '',
       kg_destino: d.kg_destino ?? '', tara_kg: d.tara_kg ?? '',
       ticket_numero: d.ticket_numero ?? '', vale_numero: d.vale_numero ?? '', motivo: '',
       con_madera: d.con_madera ?? true,
+      descuentos: d.descuentos ?? [],
+      fecha_recepcion: d.fecha_recepcion ?? '',
+    });
+  }
+  // Resolver una observación o ajustar a mano el peso que rige. El peso parte
+  // vacío a propósito: hay que decidirlo, no confirmar el que ya estaba.
+  function abrirResolver(d) {
+    setResolver(d);
+    setObs('');
+    setRKg('');
+  }
+  async function resolverDiferencia() {
+    if (!obs.trim()) return toast('Indique la justificación', true);
+    const body = { observacion: obs.trim() };
+    if (fn.regla_peso) {
+      const kg = Number(String(rKg).replace(',', '.'));
+      const exige = resolver.regla_peso === 'pendiente' || resolver.estado === 'recepcionado';
+      if (exige && !(kg > 0)) return toast('Indique el peso que rige: el de MEL, el de La Negra o el acordado', true);
+      if (kg > 0) body.kg_contrato = kg;
+    }
+    try {
+      const r = await api(`/despachos/${resolver.id}/resolver`, { method: 'POST', body });
+      toast(resolver.estado === 'observado'
+        ? `${r.guia} validada${body.kg_contrato ? ` · rigen ${fmtKg(r.kg_contrato)} kg` : ''}`
+        : `${r.guia} ajustada · rigen ${fmtKg(r.kg_contrato)} kg`);
+      setResolver(null); load();
+    } catch (e) { toast(e.message, true); }
+  }
+  // Peso neto que resulta de lo que hay escrito en el modal de corrección.
+  const netoCorr = () => {
+    const b = Number(cForm.bruto_destino) || 0;
+    const t = Number(cForm.tara_kg) || 0;
+    return b ? Math.max(b - t, 0) : Number(corregir?.kg_destino) || 0;
+  };
+  // Descuento por diferencia que se suma a la corrección; se guarda junto con
+  // ella, con el mismo motivo.
+  function agregarDescCorr() {
+    const d = cForm.nuevoDesc;
+    if (!(Number(d.valor) > 0) || !d.glosa.trim()) return toast('Indique monto y glosa del descuento', true);
+    if (d.tipo === 'pct' && Number(d.valor) > 100) return toast('El porcentaje no puede superar el 100%', true);
+    if (d.tipo === 'clp' && !Number.isInteger(Number(d.valor))) return toast('El descuento en pesos debe ser un monto entero', true);
+    if (d.tipo === 'kg') {
+      const neto = netoCorr();
+      const yaKg = [...cForm.descuentos.filter((x) => !cForm.quitar.includes(x.id)), ...cForm.nuevos]
+        .filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0);
+      if (neto && yaKg + Number(d.valor) >= neto) return toast('Los kilos descontados no pueden igualar ni superar el peso recibido', true);
+    }
+    setCForm({
+      ...cForm,
+      nuevos: [...cForm.nuevos, { tipo: d.tipo, valor: Number(d.valor), glosa: d.glosa.trim() }],
+      nuevoDesc: { tipo: 'kg', valor: '', glosa: '' },
     });
   }
   async function guardarCorreccion() {
@@ -316,6 +409,8 @@ export default function Despachos() {
         tara_kg: cForm.tara_kg === '' ? undefined : Number(cForm.tara_kg),
         ticket_numero: cForm.ticket_numero, vale_numero: cForm.vale_numero,
         ...(fn.tm && corregir.precio_usd_tm != null ? { con_madera: cForm.con_madera } : {}),
+        ...(fn.desc_item ? { descuentos: cForm.nuevos, quitar_descuentos: cForm.quitar } : {}),
+        ...(fn.fecha_recepcion ? { fecha_recepcion: cForm.fecha_recepcion } : {}),
         motivo: cForm.motivo.trim() } });
       toast(`Recepción de ${corregir.guia} corregida`);
       setCorregir(null); load();
@@ -332,7 +427,9 @@ export default function Despachos() {
     if (!c.motivo.trim()) return toast('Indique el motivo de la corrección', true);
     try {
       const r = await api(`/traslados/${c.t.id}`, { method: 'PATCH', body: {
-        categoria_id: c.categoria_id, kg, ...(kgLampa ? { kg_lampa: kgLampa } : {}), motivo: c.motivo.trim() } });
+        categoria_id: c.categoria_id, kg, ...(kgLampa ? { kg_lampa: kgLampa } : {}),
+        ...(fn.fecha_recepcion && c.t.estado === 'recepcionado' ? { fecha_recepcion: c.fecha_recepcion ?? '' } : {}),
+        motivo: c.motivo.trim() } });
       toast(r.cuadratura_cerrada
         ? `${c.t.guia} corregido · la cuadratura S${r.cuadratura_cerrada.semana} ya estaba cerrada: rehaga su cierre en Cuadratura`
         : `${c.t.guia} corregido`);
@@ -514,7 +611,8 @@ export default function Despachos() {
           ['recepcionado', 'Recepcionadas', rows.filter((d) => d.estado === 'recepcionado').length],
           ...(anuladas ? [['anulado', 'Anuladas', anuladas]] : []),
         ];
-        const visibles = filtro === 'todas' ? rows : rows.filter((d) => d.estado === filtro);
+        const visibles = (filtro === 'todas' ? rows : rows.filter((d) => d.estado === filtro))
+          .filter((d) => coincide(busca, d.guia, d.guia_mel, d.ticket_numero, d.vale_numero));
         return (
         <div className="card">
           <div className="card-h">
@@ -525,6 +623,7 @@ export default function Despachos() {
                 </button>
               ))}
             </div>
+            {buscador('Buscar por N° de guía MEL, código interno o ticket')}
             <small>{visibles.length} de {rows.length} guía(s)</small>
           </div>
           <div className="tbl-wrap"><table className="densa cabecera-libre">
@@ -546,7 +645,16 @@ export default function Despachos() {
                 <td className="mono">{d.fecha}</td><td>{d.patio}</td>
                 <td>{d.categoria}{d.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {d.categoria_final}</span>}</td>
                 <td className="num">{fmtKg(d.kg_origen)}</td>
-                <td className="num">{d.kg_destino != null ? fmtKg(d.kg_destino) : '—'}</td>
+                <td className="num">
+                  {d.kg_destino != null ? fmtKg(d.kg_destino) : '—'}
+                  {/* Qué peso se valoriza cuando los dos pesajes difieren. */}
+                  {d.regla_peso && REGLA[d.regla_peso] && (
+                    <><br /><small title={REGLA[d.regla_peso][2]}
+                      style={{ color: d.regla_peso === 'pendiente' ? 'var(--warn-tx)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
+                      {REGLA[d.regla_peso][1].toLowerCase()}{d.regla_peso === 'acuerdo' ? ` · ${fmtKg(d.kg_contrato)} kg` : ''}
+                    </small></>
+                  )}
+                </td>
                 <td className="num">
                   {fmtCLP(d.valor)}
                   {d.descuentos?.length > 0 && (
@@ -572,8 +680,15 @@ export default function Despachos() {
                         setRForm({ ...recepVacia(), con_madera: d.con_madera ?? true });
                       }}>Recepcionar</button>
                     );
-                    const resolver = d.estado === 'observado' && puedeResolver && (
-                      <button className="btn sm" onClick={() => { setResolver(d); setObs(''); }}>Resolver</button>
+                    const resolver = d.estado === 'observado' && puedeAjustar && (
+                      <button className="btn sm" onClick={() => abrirResolver(d)}>Resolver</button>
+                    );
+                    // Una recepción ya validada con diferencia de pesaje se puede
+                    // ajustar a mano (ITO de MEL o auditor de Lampa), con justificación.
+                    const ajustar = fn.regla_peso && puedeAjustar && d.estado === 'recepcionado' && !d.ep_folio
+                      && d.kg_destino != null && Number(d.kg_destino) !== Number(d.kg_origen) && (
+                      <button className="btn sm" onClick={() => abrirResolver(d)}
+                        title="Fijar a mano el peso que rige entre el de MEL y el de La Negra, con justificación">Ajustar diferencia</button>
                     );
                     const completar = puedeEditar && d.estado === 'pendiente_guia' && (
                       <button className="btn sm primary" onClick={() => abrirEditar(d, true)}
@@ -587,7 +702,7 @@ export default function Despachos() {
                     // ITO, no quien la digitó.
                     const corregir = puedeResolver && ['recepcionado', 'observado'].includes(d.estado) && !d.ep_folio && (
                       <button className="btn sm" onClick={() => abrirCorregir(d)}
-                        title="Corregir los kilos o el pesaje de la recepción">Corregir recepción</button>
+                        title="Corregir los kilos, el pesaje o los descuentos de la recepción">Corregir recepción</button>
                     );
                     // Una guía no se borra: se anula con motivo y queda en el libro.
                     const anular = fn.anulacion && d.estado !== 'anulado' && !d.ep_folio && puedeAnular && (
@@ -601,6 +716,7 @@ export default function Despachos() {
                         [detalle, principal],
                         [editar, anular],
                         [null, principal !== corregir && corregir],
+                        [null, ajustar],
                       ]} />
                     );
                   })()}
@@ -621,13 +737,15 @@ export default function Despachos() {
       })()}
 
       {tab === 'd2' && (() => {
-        const porValidar = rows.filter((d) => d.estado === 'en_transito');
-        const validadas = rows.filter((d) => d.kg_destino != null);
+        const deGuia = (d) => coincide(busca, d.guia, d.guia_mel, d.ticket_numero, d.vale_numero);
+        const porValidar = rows.filter((d) => d.estado === 'en_transito' && deGuia(d));
+        const validadas = rows.filter((d) => d.kg_destino != null && deGuia(d));
         return (
           <>
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-h">
                 <h3>Guías por validar</h3>
+                {buscador('Buscar por N° de guía MEL, código interno o ticket')}
                 <small>{porValidar.length ? `${porValidar.length} camión(es) por pesar en La Negra` : 'nada pendiente'}</small>
               </div>
               {porValidar.length === 0 ? (
@@ -666,15 +784,32 @@ export default function Despachos() {
             <div className="card">
               <div className="card-h"><h3>Recepciones validadas</h3><small>registro de los pesajes ya declarados</small></div>
               <div className="tbl-wrap"><table>
-                <thead><tr><th>Código interno</th><th>Recepción</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Diferencia</th><th>Clasificación</th><th>Validación</th><th>Observación</th></tr></thead>
+                <thead><tr><th>Código interno</th><th>Recepción</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Diferencia</th>
+                  {fn.regla_peso && <th className="num" title="Peso que se valoriza según la regla del contrato">Rige</th>}
+                  <th>Clasificación</th><th>Validación</th><th>Observación</th></tr></thead>
                 <tbody>
                   {validadas.map((d) => (
                     <tr key={d.id}>
-                      <td className="mono">{d.guia}</td>
-                      <td>{d.recepcionado_el}</td>
+                      <td>
+                        <span className="mono">{d.guia}</span>
+                        {d.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {d.guia_mel}</small></>}
+                      </td>
+                      <td>
+                        {/* La fecha digitada del ticket manda; la marca del sistema queda como respaldo. */}
+                        {d.fecha_recepcion
+                          ? <><span className="mono">{d.fecha_recepcion}</span><br /><small style={{ color: 'var(--muted)' }}>registrada {d.recepcionado_el}</small></>
+                          : d.recepcionado_el}
+                      </td>
                       <td className="num">{fmtKg(d.kg_origen)}</td>
                       <td className="num">{fmtKg(d.kg_destino)}</td>
-                      <td className="num" style={Math.abs(d.dif_pct) > 2 ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>{d.dif_pct?.toFixed(2)} %</td>
+                      <td className="num" style={Math.abs(d.dif_pct) > (tol?.mel ?? 2) ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>{d.dif_pct?.toFixed(2)} %</td>
+                      {fn.regla_peso && (
+                        <td className="num" title={d.regla_peso ? REGLA[d.regla_peso]?.[2] : 'Recepción anterior a la regla: se valoriza el peso de La Negra'}>
+                          {d.regla_peso && REGLA[d.regla_peso]
+                            ? <><Chip tone={REGLA[d.regla_peso][0]}>{REGLA[d.regla_peso][1]}</Chip><br /><small className="mono">{fmtKg(d.kg_contrato)} kg</small></>
+                            : <small style={{ color: 'var(--muted)' }}>La Negra</small>}
+                        </td>
+                      )}
                       <td>{d.categoria_final ? <Chip tone="warn">Reclasificado · {d.categoria_final}</Chip> : d.categoria}</td>
                       <td><Chip tone={d.estado === 'observado' ? 'warn' : 'ok'}>{d.estado === 'observado' ? 'Observada' : 'Validada'}</Chip></td>
                       <td style={{ color: 'var(--ink-2)', maxWidth: 240 }}>{d.obs_recepcion || '—'}</td>
@@ -688,20 +823,31 @@ export default function Despachos() {
         );
       })()}
 
-      {tab === 'd3' && (
-        <div className="card"><div className="tbl-wrap"><table>
+      {tab === 'd3' && (() => {
+        const visibles = traslados.filter((t) => coincide(busca, t.guia, t.cert_folio));
+        return (
+        <div className="card">
+          <div className="card-h">
+            <h3>Traslados La Negra → Lampa</h3>
+            {buscador('Buscar por N° de guía GT o certificado')}
+            <small>{clave(busca) ? `${visibles.length} de ${traslados.length}` : `${traslados.length}`} traslado(s)</small>
+          </div>
+          <div className="tbl-wrap"><table>
           <thead><tr><th>Guía traslado</th><th>Fecha</th><th>Categoría</th><th className="num">Kg despachados</th><th className="num">Kg Lampa</th><th>Estado</th><th>Certificado</th><th></th></tr></thead>
           <tbody>
-            {traslados.map((t) => (
+            {visibles.map((t) => (
               <tr key={t.id}>
                 <td className="mono">{t.guia}</td><td className="mono">{t.fecha}</td><td>{t.categoria}</td>
                 <td className="num">{fmtKg(t.kg)}</td>
-                <td className="num">{t.kg_lampa != null ? fmtKg(t.kg_lampa) : '—'}</td>
+                <td className="num">
+                  {t.kg_lampa != null ? fmtKg(t.kg_lampa) : '—'}
+                  {t.fecha_recepcion && <><br /><small className="mono" style={{ color: 'var(--muted)' }} title="Fecha de recepción en Lampa">{t.fecha_recepcion}</small></>}
+                </td>
                 <td><Chip tone={t.estado === 'recepcionado' ? 'ok' : 'info'}>{t.estado === 'recepcionado' ? 'Recepcionado' : 'En tránsito'}</Chip></td>
                 <td className="mono">{t.cert_folio || '—'}</td>
                 <td className="num">
                   {t.estado === 'en_transito' && puedeRecepTras && (
-                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setLampa({ valor: '', unidad: unidadGuardada() }); setCdfFile([]); }}>Recepcionar en Lampa</button>
+                    <button className="btn sm primary" onClick={() => { setRecepTras(t); setLampa({ valor: '', unidad: unidadGuardada(), fecha: hoyISO() }); setCdfFile([]); }}>Recepcionar en Lampa</button>
                   )}
                   {t.estado === 'recepcionado' && t.cert_fotos > 0 && (
                     <button className="btn sm" onClick={() => abrirCdf(t)}>Ver CDF</button>
@@ -717,6 +863,7 @@ export default function Despachos() {
                       onClick={() => setCorrTras({
                         t, categoria_id: t.categoria_id, kg: String(t.kg), unidad: 'kg',
                         kg_lampa: t.kg_lampa != null ? String(t.kg_lampa) : '', unidad_lampa: 'kg', motivo: '',
+                        fecha_recepcion: t.fecha_recepcion ?? '',
                       })}>Corregir</button>
                   )}{' '}
                   <BotonDocs hito="traslado" refId={t.id} />
@@ -726,20 +873,34 @@ export default function Despachos() {
           </tbody>
         </table></div>
           {traslados.length === 0 && <Empty title="Sin traslados a Lampa">El vendor consolida el material en La Negra y lo re-despacha a Lampa con guía GT.</Empty>}
+          {traslados.length > 0 && visibles.length === 0 && (
+            <Empty title="Sin resultados">Ningún traslado coincide con «{busca.trim()}». Busque por el N° de la guía GT o del certificado.</Empty>
+          )}
         </div>
-      )}
+        );
+      })()}
 
-      {tab === 'd4' && (
-        <div className="card"><div className="tbl-wrap"><table>
-          <thead><tr><th>Certificado</th><th>Guía traslado</th><th>Categoría</th><th className="num">Kg certificados</th><th>Emisión</th><th>Documento</th></tr></thead>
+      {tab === 'd4' && (() => {
+        const visibles = certificados.filter((t) => coincide(busca, t.cert_folio, t.guia));
+        return (
+        <div className="card">
+          <div className="card-h">
+            <h3>Certificados de disposición final</h3>
+            {buscador('Buscar por N° de certificado o guía GT')}
+            <small>{clave(busca) ? `${visibles.length} de ${certificados.length}` : `${certificados.length}`} certificado(s)</small>
+          </div>
+          <div className="tbl-wrap"><table>
+          <thead><tr><th>Certificado</th><th>Guía traslado</th><th>Categoría</th><th className="num">Kg certificados</th><th>Recepción en Lampa</th><th>Documento</th></tr></thead>
           <tbody>
-            {certificados.map((t) => (
+            {visibles.map((t) => (
               <tr key={t.id}>
                 <td className="mono">{t.cert_folio}</td>
                 <td className="mono">{t.guia}</td>
                 <td>{t.categoria}</td>
                 <td className="num">{fmtKg(t.kg_lampa)}</td>
-                <td>{t.recepcionado_el}</td>
+                <td>{t.fecha_recepcion
+                  ? <><span className="mono">{t.fecha_recepcion}</span><br /><small style={{ color: 'var(--muted)' }}>emitido {t.recepcionado_el}</small></>
+                  : t.recepcionado_el}</td>
                 <td>{t.cert_fotos > 0
                   ? <button className="btn sm" onClick={() => abrirCdf(t)}>Ver documento</button>
                   : puedeRecepTras
@@ -750,8 +911,12 @@ export default function Despachos() {
           </tbody>
         </table></div>
           {certificados.length === 0 && <Empty title="Sin certificados emitidos">Cada recepción en Lampa emite automáticamente su certificado de disposición final foliado.</Empty>}
+          {certificados.length > 0 && visibles.length === 0 && (
+            <Empty title="Sin resultados">Ningún certificado coincide con «{busca.trim()}». Busque por el N° del certificado o de la guía GT.</Empty>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ---- modales ---- */}
       <Modal open={!!detalle} title={detalle && `Código interno ${detalle.guia}`} onClose={() => setDetalle(null)}
@@ -772,7 +937,13 @@ export default function Despachos() {
                 {detalle.tara_origen_kg != null && <><br /><small style={{ color: 'var(--muted)' }}>Tara {fmtKg(detalle.tara_origen_kg)} · bruto {fmtKg(detalle.bruto_origen_kg)} kg</small></>}</div>
               <div><small style={{ color: 'var(--muted)' }}>Pesaje La Negra</small><br />
                 <b>{detalle.kg_destino != null ? `${fmtKg(detalle.kg_destino)} kg` : 'pendiente'}</b>
-                {detalle.dif_pct != null && <span style={{ color: Math.abs(detalle.dif_pct) > 2 ? 'var(--bad-tx)' : 'var(--muted)', fontSize: 12 }}> ({detalle.dif_pct.toFixed(2)}%)</span>}</div>
+                {detalle.dif_pct != null && <span style={{ color: Math.abs(detalle.dif_pct) > (tol?.mel ?? 2) ? 'var(--bad-tx)' : 'var(--muted)', fontSize: 12 }}> ({detalle.dif_pct.toFixed(2)}%)</span>}
+                {detalle.fecha_recepcion && <><br /><small style={{ color: 'var(--muted)' }}>recibida el {detalle.fecha_recepcion}</small></>}</div>
+              {detalle.regla_peso && REGLA[detalle.regla_peso] && (
+                <div title={REGLA[detalle.regla_peso][2]}><small style={{ color: 'var(--muted)' }}>Peso que rige (contrato)</small><br />
+                  <b>{fmtKg(detalle.kg_contrato)} kg</b>
+                  <span style={{ color: 'var(--muted)', fontSize: 12 }}> · {REGLA[detalle.regla_peso][1].toLowerCase()}</span></div>
+              )}
               <div><small style={{ color: 'var(--muted)' }}>Precio congelado</small><br />
                 <b>{detalle.precio_usd_tm != null ? `USD ${detalle.precio_usd_tm}/TM`
                   : detalle.precio_usd != null ? `USD ${detalle.precio_usd}/kg`
@@ -1043,7 +1214,12 @@ export default function Despachos() {
           const origen = Number(recep.kg_origen);
           const dif = kg == null ? null : kg - origen;
           const pct = dif == null ? null : (dif / origen) * 100;
-          const fuera = pct != null && Math.abs(pct) > 2;
+          // Regla del contrato, en vivo: qué peso va a regir con lo que hay
+          // escrito. Sin la migración 0019, la tolerancia única del 2%.
+          const abs = pct == null ? null : Math.abs(pct);
+          const regla = !fn.regla_peso || !tol || abs == null ? null
+            : abs <= tol.mel ? 'mel' : abs < tol.lampa ? 'pendiente' : 'lampa';
+          const fuera = regla ? regla === 'pendiente' : abs != null && abs > 2;
           return (
             <>
               <div className="cotejo">
@@ -1055,8 +1231,10 @@ export default function Despachos() {
               {dif != null && (
                 <div className={`dif-live ${fuera ? 'bad' : 'ok'}`}>
                   Diferencia: <b>{dif > 0 ? '+' : ''}{fmtKg(dif)} kg ({pct > 0 ? '+' : ''}{pct.toFixed(2)} %)</b>
-                  {fuera
-                    ? ' — supera el 2%: la guía quedará observada para que el ITO la revise.'
+                  {regla === 'mel' ? ` — hasta ${tol.mel}%: rige el peso MEL según contrato, se valorizan ${fmtKg(origen)} kg.`
+                    : regla === 'pendiente' ? ` — entre ${tol.mel}% y ${tol.lampa}%: la guía quedará observada hasta que MEL y Lampa acuerden el peso.`
+                    : regla === 'lampa' ? ` — ${tol.lampa}% o más: rige el peso de La Negra según contrato, se valorizan ${fmtKg(kg)} kg.`
+                    : fuera ? ' — supera el 2%: la guía quedará observada para que el ITO la revise.'
                     : ' — dentro de la tolerancia del 2%.'}
                 </div>
               )}
@@ -1074,6 +1252,11 @@ export default function Despachos() {
             </>
           );
         })()}
+        {fn.fecha_recepcion && (
+          <Field label="Fecha de recepción" hint="El día en que la carga llegó a La Negra, según el ticket. Se propone hoy.">
+            <DateField value={rForm.fecha_recepcion} onChange={(e) => setRForm({ ...rForm, fecha_recepcion: e.target.value })} />
+          </Field>
+        )}
         {/* Alternativa A o B del contrato. Se decide mirando la carga, y el
             precio que se elija aquí queda congelado con la guía. */}
         {/* Si se reclasificó, el precio que rige es el de la categoría final:
@@ -1146,15 +1329,55 @@ export default function Despachos() {
         </Field>
       </Modal>
 
-      <Modal open={!!resolver} title={resolver && `Resolver observación · ${resolver.guia}`} onClose={() => setResolver(null)}
+      <Modal open={!!resolver}
+        title={resolver && (resolver.estado === 'observado' ? `Resolver observación · ${resolver.guia}` : `Ajustar diferencia · ${resolver.guia}`)}
+        onClose={() => setResolver(null)}
         footer={<>
           <button className="btn" onClick={() => setResolver(null)}>Cancelar</button>
-          <button className="btn primary" onClick={post(`/despachos/${resolver?.id}/resolver`, { observacion: obs }, 'Observación resuelta', () => setResolver(null))}>Validar recepción</button>
+          <button className="btn primary" onClick={resolverDiferencia}>
+            {resolver?.estado === 'observado' ? 'Validar recepción' : 'Guardar ajuste'}
+          </button>
         </>}>
-        <p style={{ marginTop: 0, color: 'var(--ink-2)' }}>{resolver?.obs_recepcion}</p>
-        <Field label="Resolución del ITO (obligatoria)" hint="Queda en la guía y en la bitácora de auditoría.">
-          <textarea rows="2" value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ej.: diferencia justificada por humedad; se valida el peso de destino." />
-        </Field>
+        {resolver && (() => {
+          const origen = Number(resolver.kg_origen);
+          const destino = Number(resolver.kg_destino);
+          const elegido = Number(String(rKg).replace(',', '.'));
+          const exige = fn.regla_peso && (resolver.regla_peso === 'pendiente' || resolver.estado === 'recepcionado');
+          return (<>
+            {resolver.obs_recepcion && <p style={{ marginTop: 0, color: 'var(--ink-2)' }}>{resolver.obs_recepcion}</p>}
+            {fn.regla_peso && resolver.kg_destino != null && <>
+              <div className="cotejo">
+                <span><small>Pesaje MEL (origen)</small><b className="mono">{fmtKg(origen)} kg</b></span>
+                <span className="vs">frente a</span>
+                <span><small>Pesaje La Negra</small><b className="mono">{fmtKg(destino)} kg</b>
+                  {resolver.dif_pct != null && <small> {resolver.dif_pct > 0 ? '+' : ''}{resolver.dif_pct.toFixed(2)} %</small>}</span>
+              </div>
+              {resolver.regla_peso && REGLA[resolver.regla_peso] && (
+                <div className="audit-note" style={{ marginBottom: 12 }}>
+                  Hoy rige: <b>&nbsp;{fmtKg(resolver.kg_contrato)} kg</b>&nbsp;· {REGLA[resolver.regla_peso][2]}
+                </div>
+              )}
+              <Field label={exige ? 'Peso que rige (kg)' : 'Peso que rige (kg) · opcional'}
+                hint={resolver.regla_peso === 'pendiente'
+                  ? `La diferencia está entre ${tol?.mel}% y ${tol?.lampa}%: el contrato deja el peso al acuerdo entre MEL y Lampa. Elija uno de los dos o escriba el acordado.`
+                  : 'El peso que se valoriza. El precio congelado no cambia; la guía se revaloriza con sus descuentos.'}>
+                <div className="alternativas" style={{ marginBottom: 8 }}>
+                  {[[origen, 'Peso MEL', 'báscula de origen'], [destino, 'Peso La Negra', 'romana del vendor']].map(([val, tit, sub]) => (
+                    <button key={tit} type="button" className={`alt${elegido === val ? ' sel' : ''}`} onClick={() => setRKg(String(val))}>
+                      <b>{tit}</b><small>{sub}</small><span className="mono">{fmtKg(val)} kg</span>
+                    </button>
+                  ))}
+                </div>
+                <input type="number" min="0" step="0.1" value={rKg} onChange={(e) => setRKg(e.target.value)}
+                  placeholder="o el peso acordado, en kg" />
+              </Field>
+            </>}
+            <Field label="Justificación (obligatoria)" hint="Queda en la guía y en la bitácora de auditoría, con quién la hizo.">
+              <textarea rows="2" value={obs} onChange={(e) => setObs(e.target.value)}
+                placeholder="Ej.: diferencia justificada por humedad; MEL y Lampa acuerdan el peso de La Negra." />
+            </Field>
+          </>);
+        })()}
       </Modal>
 
       <Modal open={!!corregir} title={corregir && `Corregir recepción · ${corregir.guia}`} onClose={() => setCorregir(null)}
@@ -1165,10 +1388,15 @@ export default function Despachos() {
         <div className="aviso">
           <b>El precio no se recalcula</b>
           <p>Quedó congelado al recepcionar y se mantiene. Corregir el peso cambia los kilos y el
-          valor que resulta de ellos, <b>no lo que valía el material ese día</b>. Si la diferencia
-          contra el peso de origen queda sobre 2%, la guía vuelve a marcarse observada.
+          valor que resulta de ellos, <b>no lo que valía el material ese día</b>.
+          {fn.regla_peso && tol
+            ? <> Si cambia el peso de La Negra, la regla del contrato se aplica de nuevo: hasta {tol.mel}% rige MEL,
+              desde {tol.lampa}% rige La Negra y, entre medio, la guía queda observada hasta acordar el peso.</>
+            : <> Si la diferencia contra el peso de origen queda sobre 2%, la guía vuelve a marcarse observada.</>}
           {fn.tm && corregir?.precio_usd_tm != null && <> Solo si cambia la alternativa se aplica el precio de la
-          otra, vigente a la fecha de la guía, con el mismo dólar congelado.</>}</p>
+          otra, vigente a la fecha de la guía, con el mismo dólar congelado.</>}
+          {fn.desc_item && <> Los descuentos por humedad, material ajeno o mermas que faltaron al
+          recepcionar se agregan o se quitan desde aquí, con el mismo motivo.</>}</p>
         </div>
         {fn.tm && corregir?.precio_usd_tm != null && (
           <AlternativaMadera label="¿La carga venía con madera?"
@@ -1201,6 +1429,56 @@ export default function Despachos() {
             </Field>
           </div>
         )}
+        {fn.fecha_recepcion && (
+          <Field label="Fecha de recepción" hint={corregir?.fecha_recepcion ? `Actual: ${corregir.fecha_recepcion}` : 'No se registró al recepcionar.'}>
+            <DateField value={cForm.fecha_recepcion} onChange={(e) => setCForm({ ...cForm, fecha_recepcion: e.target.value })} />
+          </Field>
+        )}
+        {fn.desc_item && <>
+        <div className="ev-tit">Descuentos de la carga <small>humedad, material ajeno, mermas</small></div>
+        {cForm.descuentos.length === 0 && cForm.nuevos.length === 0 && (
+          <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
+            Esta guía no tiene descuentos aplicados.
+          </div>
+        )}
+        {cForm.descuentos.map((d) => {
+          const sale = cForm.quitar.includes(d.id);
+          return (
+            <div className="pend" key={d.id} style={sale ? { opacity: .55 } : undefined}>
+              <Chip tone="bad">{descTexto(d)}</Chip>
+              <span style={sale ? { textDecoration: 'line-through' } : undefined}>
+                {d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small>
+              </span>
+              {sale
+                ? <button className="btn sm go" onClick={() => setCForm({ ...cForm, quitar: cForm.quitar.filter((id) => id !== d.id) })}>Mantener</button>
+                : <button className="btn sm danger go" onClick={() => setCForm({ ...cForm, quitar: [...cForm.quitar, d.id] })}>Quitar</button>}
+            </div>
+          );
+        })}
+        {cForm.nuevos.map((d, i) => (
+          <div className="pend" key={`n${i}`}>
+            <Chip tone="bad">{descTexto(d)}</Chip>
+            <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· nuevo, se guarda con la corrección</small></span>
+            <button className="btn sm danger go"
+              onClick={() => setCForm({ ...cForm, nuevos: cForm.nuevos.filter((_, j) => j !== i) })}>Quitar</button>
+          </div>
+        ))}
+        <div className="desc-nuevo">
+          <Select value={cForm.nuevoDesc.tipo}
+            onChange={(e) => setCForm({ ...cForm, nuevoDesc: { ...cForm.nuevoDesc, tipo: e.target.value } })}>
+            {TIPO_DESC.map(([id, label, u]) => <option key={id} value={id}>{label} ({u})</option>)}
+          </Select>
+          <input type="number" min="0" step={cForm.nuevoDesc.tipo === 'clp' ? '1' : '0.01'} placeholder="0"
+            value={cForm.nuevoDesc.valor}
+            onChange={(e) => setCForm({ ...cForm, nuevoDesc: { ...cForm.nuevoDesc, valor: e.target.value } })} />
+          <input placeholder="Motivo del descuento" value={cForm.nuevoDesc.glosa}
+            onChange={(e) => setCForm({ ...cForm, nuevoDesc: { ...cForm.nuevoDesc, glosa: e.target.value } })} />
+          <button className="btn sm" onClick={agregarDescCorr}>Agregar</button>
+        </div>
+        <small style={{ color: 'var(--muted)', display: 'block', marginBottom: 14 }}>
+          {TIPO_DESC.find(([t]) => t === cForm.nuevoDesc.tipo)?.[3]} Se aplica al guardar la corrección y la guía se revaloriza.
+        </small>
+        </>}
         <Field label="Motivo de la corrección" hint="Obligatorio. Queda en la bitácora junto al antes y el después.">
           <textarea rows="2" value={cForm.motivo} onChange={(e) => setCForm({ ...cForm, motivo: e.target.value })}
             placeholder="Error de digitación: el ticket de báscula indica 12.040 kg." />
@@ -1298,6 +1576,11 @@ export default function Despachos() {
               onValor={(v) => setCorrTras({ ...corrTras, kg_lampa: v })}
               onUnidad={(u) => setCorrTras({ ...corrTras, unidad_lampa: u })} />
           )}
+          {fn.fecha_recepcion && corrTras.t.estado === 'recepcionado' && (
+            <Field label="Fecha de recepción en Lampa" hint={corrTras.t.fecha_recepcion ? `Registrada: ${corrTras.t.fecha_recepcion}.` : 'No se registró al recepcionar.'}>
+              <DateField value={corrTras.fecha_recepcion ?? ''} onChange={(e) => setCorrTras({ ...corrTras, fecha_recepcion: e.target.value })} />
+            </Field>
+          )}
           <Field label="Motivo de la corrección" hint="Obligatorio. Queda en la bitácora.">
             <textarea rows="2" value={corrTras.motivo} onChange={(e) => setCorrTras({ ...corrTras, motivo: e.target.value })}
               placeholder="Se ingresaron toneladas como kilos: la guía GT indica 10.000 kg." />
@@ -1315,6 +1598,11 @@ export default function Despachos() {
           valor={lampa.valor} unidad={lampa.unidad}
           onValor={(v) => setLampa({ ...lampa, valor: v })}
           onUnidad={(u) => setLampa({ ...lampa, unidad: u })} />
+        {fn.fecha_recepcion && (
+          <Field label="Fecha de recepción" hint="El día en que la carga llegó a Lampa, según el ticket. Se propone hoy.">
+            <DateField value={lampa.fecha} onChange={(e) => setLampa({ ...lampa, fecha: e.target.value })} />
+          </Field>
+        )}
         {fn.cdf_doc && (
           <Field label="Documento del certificado de disposición final (opcional)"
             hint="Adjunte el CDF firmado en PDF o foto. Queda asociado al certificado foliado.">

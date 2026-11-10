@@ -140,11 +140,21 @@ try {
   ok(foto.status === 200, 'respaldo descargable (URL firmada válida)');
 
   // La recepción es una declaración propia del vendor, con su propio ticket.
+  // Con la regla del contrato (0019), 4% cae en la franja que MEL y Lampa
+  // acuerdan a mano: queda observada y, mientras tanto, se valoriza el peso de
+  // La Negra. Sin la migración, observada por superar el 2% de antes.
+  const fn = maestros.funciones ?? {};
   const fdRec = new FormData();
   fdRec.set('kg_destino', '4800');
+  fdRec.set('fecha_recepcion', '2026-11-09');
   fdRec.append('recepcion', new Blob([PNG], { type: 'image/png' }), 'romana-ln.png');
   const rec = await api(`/despachos/${d.data.id}/recepcionar`, { method: 'POST', token: tv, form: fdRec });
   ok(rec.data.estado === 'observado', 'diferencia de peso 4% → queda observado');
+  if (fn.regla_peso) {
+    ok(rec.data.regla_peso === 'pendiente' && rec.data.kg_contrato === 4800,
+      'en la franja 3–5% el peso queda pendiente de acuerdo (provisorio: La Negra)', `${rec.data.regla_peso} / ${rec.data.kg_contrato}`);
+  }
+  if (fn.fecha_recepcion) ok(rec.data.fecha_recepcion === '2026-11-09', 'la recepción guarda la fecha digitada del ticket');
   const ev2 = await api(`/despachos/${d.data.id}/evidencia`, { token: tv });
   ok((ev2.data.archivos ?? []).some((a) => a.etiqueta === 'Ticket de báscula La Negra'),
     'el ticket de báscula de La Negra queda adjunto a la guía');
@@ -161,8 +171,36 @@ try {
   ok(rec.data.valor === esperado && esperado > 0, `precio congelado y valor calculado (${unidad})`);
 
   ok((await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: {} })).status === 400, 'resolver sin observación → rechazado');
-  const resu = await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: { observacion: 'Merma verificada en báscula (prueba E2E)' } });
-  ok(resu.data.estado === 'recepcionado', 'ITO resuelve el observado con observación');
+  if (fn.regla_peso) {
+    const sinKg = await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: { observacion: 'sin peso (prueba E2E)' } });
+    ok(sinKg.status === 400, 'en la franja de acuerdo, resolver sin indicar el peso → rechazado', sinKg.data.error);
+  }
+  // En la franja de acuerdo se indica el peso acordado; se conserva el de La
+  // Negra para que el resto de la prueba siga valorizando 4.800 kg.
+  const resu = await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: {
+    observacion: 'Merma verificada en báscula (prueba E2E)', ...(fn.regla_peso ? { kg_contrato: 4800 } : {}) } });
+  ok(resu.data.estado === 'recepcionado', 'ITO resuelve el observado con observación', resu.data.error);
+  if (fn.regla_peso) {
+    ok(resu.data.regla_peso === 'acuerdo' && resu.data.kg_contrato === 4800 && resu.data.valor === rec.data.valor,
+      'el acuerdo fija el peso que rige sin tocar el precio congelado');
+  }
+
+  // Corrección de la recepción con descuentos por diferencias: se agregan y
+  // se quitan en el mismo acto, con motivo, y la guía se revaloriza. Un
+  // descuento solo no reabre la observación que el ITO ya resolvió.
+  const corr = await api(`/despachos/${d.data.id}/recepcion`, { method: 'PATCH', token: ti, body: {
+    descuentos: [{ tipo: 'kg', valor: 100, glosa: 'Humedad (prueba E2E)' }],
+    motivo: 'Descuento omitido al recepcionar (prueba E2E)' } });
+  ok(corr.status === 200 && corr.data.descuentos?.length === 1, 'corregir la recepción agrega un descuento por diferencia', corr.data.error);
+  ok(corr.data.valor < resu.data.valor, 'la guía se revaloriza con el descuento');
+  ok(corr.data.estado === 'recepcionado', 'el descuento no reabre la observación resuelta');
+  const demas = await api(`/despachos/${d.data.id}/recepcion`, { method: 'PATCH', token: ti, body: {
+    descuentos: [{ tipo: 'kg', valor: 4800, glosa: 'Imposible (prueba E2E)' }], motivo: 'prueba' } });
+  ok(demas.status === 400, 'un descuento en kilos igual al peso recibido → rechazado');
+  const sinDesc = await api(`/despachos/${d.data.id}/recepcion`, { method: 'PATCH', token: ti, body: {
+    quitar_descuentos: [corr.data.descuentos[0].id], motivo: 'Se revierte el descuento (prueba E2E)' } });
+  ok(sinDesc.data.descuentos?.length === 0 && sinDesc.data.valor === resu.data.valor,
+    'quitar el descuento desde la corrección devuelve el valor original', sinDesc.data.error);
 
   // Una vigencia nueva no debe tocar lo ya valorizado, sea cual sea la unidad.
   const antes = { kg: rec.data.precio_kg, usd: rec.data.precio_usd, tm: rec.data.precio_usd_tm, valor: rec.data.valor };
@@ -175,11 +213,30 @@ try {
   ok(despues.precio_kg === antes.kg && despues.precio_usd_tm === antes.tm && despues.valor === antes.valor,
     'cambio de precio no altera guías ya valorizadas');
 
+  // Ajuste de la diferencia sobre una recepción ya validada: el ITO de MEL o
+  // el auditor de Lampa fijan a mano el peso que rige, con justificación, y la
+  // guía se revaloriza con el precio congelado. Sin peso no hay ajuste.
+  if (fn.regla_peso) {
+    const sinPeso = await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: { observacion: 'nada (prueba E2E)' } });
+    ok(sinPeso.status === 400, 'ajustar una recepción validada sin indicar el peso → rechazado', sinPeso.data.error);
+    const aj = await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: ti, body: {
+      observacion: 'MEL y Lampa acuerdan el peso de origen (prueba E2E)', kg_contrato: 5000 } });
+    const esperado5000 = rec.data.precio_usd_tm != null
+      ? Math.round((5000 / 1000) * rec.data.precio_usd_tm * rec.data.dolar)
+      : rec.data.precio_usd != null ? Math.round(5000 * rec.data.precio_usd * rec.data.dolar) : Math.round(5000 * rec.data.precio_kg);
+    ok(aj.status === 200 && aj.data.regla_peso === 'acuerdo' && aj.data.kg_contrato === 5000 && aj.data.kg_destino === 4800,
+      'ajustar la diferencia fija el peso que rige y conserva los dos pesajes', aj.data.error);
+    ok(aj.data.valor === esperado5000, 'la guía se revaloriza con el peso acordado y el precio congelado', `${aj.data.valor} ≠ ${esperado5000}`);
+    const lampaAj = await api(`/despachos/${d.data.id}/resolver`, { method: 'POST', token: tv, body: { observacion: 'x', kg_contrato: 4800 } });
+    ok(lampaAj.status === 403, 'el vendor no ajusta la diferencia (solo ITO, coordinador o Lampa)');
+  }
+
   const tr = await api('/traslados', { method: 'POST', token: tv, body: { categoria_id: CAT, kg: 4800 } });
   creado.trasladoId = tr.data.id;
   ok(/^GT-\d+$/.test(tr.data.guia), `traslado a Lampa con folio (${tr.data.guia})`);
-  const lampa = await api(`/traslados/${tr.data.id}/recepcionar`, { method: 'POST', token: tv, body: { kg_lampa: 4795 } });
+  const lampa = await api(`/traslados/${tr.data.id}/recepcionar`, { method: 'POST', token: tv, body: { kg_lampa: 4795, fecha_recepcion: '2026-11-10' } });
   ok(/^CDF-\d+$/.test(lampa.data.cert_folio), `Lampa emite certificado de disposición final (${lampa.data.cert_folio})`);
+  if (fn.fecha_recepcion) ok(lampa.data.fecha_recepcion === '2026-11-10', 'la recepción en Lampa guarda la fecha digitada');
   ok((await api(`/traslados/${tr.data.id}/recepcionar`, { method: 'POST', token: tv, body: { kg_lampa: 1 } })).status === 409, 'doble recepción del traslado → rechazada');
 
   console.log('\nCarga masiva atómica del programa');

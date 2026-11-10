@@ -50,7 +50,10 @@ export default function Cuadratura() {
     } catch (e) { toast(e.message, true); }
   }
 
-  const hayDif = data.detalle.some((x) => x.observados > 0 || (x.dif_pct != null && Math.abs(x.dif_pct) > 2));
+  // Desde qué diferencia de kilos una fila tiene algo que explicar: la
+  // tolerancia de MEL del contrato (el servidor la manda); 2% en bases sin ella.
+  const umbral = data.umbral_pct ?? 2;
+  const hayDif = data.detalle.some((x) => x.observados > 0 || (x.dif_pct != null && Math.abs(x.dif_pct) > umbral));
 
   return (
     <div>
@@ -149,7 +152,7 @@ export default function Cuadratura() {
               </thead>
               <tbody>
                 {filas.map((x) => {
-                  const fueraTol = x.dif_pct != null && Math.abs(x.dif_pct) > 2;
+                  const fueraTol = x.dif_pct != null && Math.abs(x.dif_pct) > umbral;
                   const abrible = (x.guias ?? []).length > 0;
                   return (
                     <tr key={x.categoria} style={abrible ? { cursor: 'pointer' } : undefined}
@@ -321,7 +324,7 @@ export default function Cuadratura() {
                 <span><small>Kilos</small>
                   <b className="mono">{fmtKg(fila.kg_mel)} → {fmtKg(fila.kg_lanegra)}</b></span>
                 <span><small>Diferencia</small>
-                  <b className="mono" style={Math.abs(fila.dif_pct ?? 0) > 2 ? { color: 'var(--bad-tx)' } : undefined}>
+                  <b className="mono" style={Math.abs(fila.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)' } : undefined}>
                     {fila.dif_pct != null ? `${fila.dif_pct.toFixed(2)} %` : '—'}
                     {fila.dif_monto != null && <> · {fmtCLP(fila.dif_monto)}</>}
                   </b></span>
@@ -342,7 +345,7 @@ export default function Cuadratura() {
                       <td className="mono">{g.fecha}</td>
                       <td className="num">{g.kg_origen != null ? fmtKg(g.kg_origen) : '—'}</td>
                       <td className="num">{g.kg_destino != null ? fmtKg(g.kg_destino) : '—'}</td>
-                      <td className="num" style={Math.abs(g.dif_pct ?? 0) > 2 ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
+                      <td className="num" style={Math.abs(g.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
                         {g.dif_kg != null ? `${fmtKg(g.dif_kg)} (${g.dif_pct.toFixed(2)} %)` : '—'}
                       </td>
                       <td className="num">
@@ -392,7 +395,7 @@ export default function Cuadratura() {
           {cerrar === 'rehacer'
             ? 'Se reemplaza lo cerrado por los datos actuales, que incluyen las correcciones. El cierre anterior queda en la bitácora, y el responsable de Lampa debe confirmarlo de nuevo.'
             : hayDif
-              ? 'La semana registra diferencias sobre el 2% o recepciones observadas: la observación es obligatoria y quedará en el registro.'
+              ? `La semana registra diferencias sobre el ${umbral}% o recepciones observadas: la observación es obligatoria y quedará en el registro.`
               : 'Los movimientos cuadran dentro de la tolerancia. El cierre guarda un registro inmutable de la semana.'}
         </p>
         <Field label={cerrar === 'rehacer' ? 'Motivo (obligatorio)' : hayDif ? 'Observación (obligatoria)' : 'Observación (opcional)'}>

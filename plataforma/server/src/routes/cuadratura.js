@@ -29,8 +29,16 @@ async function descuentosDeSemana(ids) {
   return m;
 }
 
+// Diferencia de kilos (en %) desde la que una fila de la semana tiene algo que
+// explicar: la tolerancia de MEL del contrato cuando la base ya la guarda
+// (hasta ahí rige el peso de MEL y no hay nada que discutir); 2% antes.
+async function umbralDiferencia() {
+  return tiene.regla_peso ? Number((await contrato()).tol_mel_pct) : 2;
+}
+
 async function calcular(anio, semana) {
   const { desde, hasta } = rangoSemana(anio, semana);
+  const umbral = await umbralDiferencia();
   const [cats, precios, despTodos, tras, dolHoy] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
     q(supa.from('precios').select('*').order('vigente_desde', { ascending: false })),
@@ -75,13 +83,17 @@ async function calcular(anio, semana) {
 
   // Valor que habría tenido la recepción sin descuentos: la diferencia contra
   // lo efectivamente valorizado es, exactamente, lo que costaron los descuentos.
+  // Se calcula sobre los kilos que se valorizan (el peso que rige según
+  // contrato, o el de La Negra en guías anteriores a 0019): si se tomara
+  // el pesaje físico, la diferencia de la regla se leería como descuento.
   const brutoDe = (d) => {
     if (d.kg_destino == null) return 0;
+    const kg = Number(d.kg_contrato ?? d.kg_destino);
     if (d.precio_usd_tm != null && d.dolar != null) {
-      return Math.round((Number(d.kg_destino) / 1000) * Number(d.precio_usd_tm) * Number(d.dolar));
+      return Math.round((kg / 1000) * Number(d.precio_usd_tm) * Number(d.dolar));
     }
-    if (d.precio_usd != null && d.dolar != null) return Math.round(Number(d.kg_destino) * Number(d.precio_usd) * Number(d.dolar));
-    return Math.round(Number(d.kg_destino) * Number(d.precio_kg ?? 0));
+    if (d.precio_usd != null && d.dolar != null) return Math.round(kg * Number(d.precio_usd) * Number(d.dolar));
+    return Math.round(kg * Number(d.precio_kg ?? 0));
   };
 
   const detalle = cats.map((c) => {
@@ -173,8 +185,8 @@ async function calcular(anio, semana) {
   // Lo que la semana tiene que explicar, dicho una vez y en un solo lugar.
   const alertas = [];
   for (const x of detalle) {
-    if (x.dif_pct != null && Math.abs(x.dif_pct) > 2) {
-      alertas.push({ tono: 'bad', categoria: x.categoria, texto: `Diferencia de peso de ${x.dif_pct.toFixed(2)}% entre MEL y La Negra.` });
+    if (x.dif_pct != null && Math.abs(x.dif_pct) > umbral) {
+      alertas.push({ tono: 'bad', categoria: x.categoria, texto: `Diferencia de peso de ${x.dif_pct.toFixed(2)}% entre MEL y La Negra (sobre el ${umbral}%).` });
     }
     if (x.observados) {
       alertas.push({ tono: 'warn', categoria: x.categoria, texto: `${x.observados} recepción(es) observada(s) sin resolver.` });
@@ -202,7 +214,7 @@ async function calcular(anio, semana) {
   }
 
   return {
-    desde, hasta, detalle, alertas,
+    desde, hasta, detalle, alertas, umbral_pct: umbral,
     anuladas: anuladas.map((d) => ({
       guia: d.guia, fecha: d.fecha, motivo: d.motivo_anulacion ?? null, anulada_por: d.anulada_por ?? null,
     })),
@@ -231,14 +243,14 @@ r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) =>
   const actual = semanaISO();
   const anio = Number(req.query.anio || actual.anio);
   const semana = Number(req.query.semana || actual.semana);
-  const [{ desde, hasta, detalle, alertas, anuladas }, cerradas] = await Promise.all([
+  const [{ desde, hasta, detalle, alertas, anuladas, umbral_pct }, cerradas] = await Promise.all([
     calcular(anio, semana),
     q(supa.from('cuadraturas').select('*').order('anio', { ascending: false }).order('semana', { ascending: false }).limit(12)),
   ]);
   const cerrada = cerradas.find((c) => c.anio === anio && c.semana === semana) ?? null;
   const ep = await epDeSemana(anio, semana, (await contrato()).dia_corte);
   res.json({
-    anio, semana, actual, desde, hasta, ep, detalle, alertas, anuladas, cerrada, historico: cerradas,
+    anio, semana, actual, desde, hasta, ep, detalle, alertas, anuladas, cerrada, historico: cerradas, umbral_pct,
     cambios_desde_cierre: cerrada ? cambioDesdeElCierre(cerrada.detalle, detalle) : false,
   });
 }));
@@ -259,18 +271,18 @@ r.post('/cuadratura/cerrar', auth('ito', 'coordinador'), ah(async (req, res) => 
   if (rehacer && !(observacion || '').trim()) {
     return res.status(400).json({ error: 'Indique por qué se rehace el cierre' });
   }
-  const { detalle } = await calcular(Number(anio), Number(semana));
+  const { detalle, umbral_pct } = await calcular(Number(anio), Number(semana));
   if (!detalle.length) return res.status(400).json({ error: 'La semana no registra movimientos que cuadrar' });
 
   // Un descuento fuerte es una diferencia como cualquier otra: si se llevó más
   // del umbral de lo valorizado, la semana no se cierra sin explicarlo.
   const descFuerte = detalle.some((x) => x.desc_pct != null && x.desc_pct >= UMBRAL_DESCUENTO_PCT);
-  const conDif = descFuerte || detalle.some((x) => x.observados > 0 || (x.dif_pct != null && Math.abs(x.dif_pct) > 2));
+  const conDif = descFuerte || detalle.some((x) => x.observados > 0 || (x.dif_pct != null && Math.abs(x.dif_pct) > umbral_pct));
   if (conDif && !(observacion || '').trim()) {
     return res.status(400).json({
       error: descFuerte
         ? `Hay categorías con descuentos sobre el ${UMBRAL_DESCUENTO_PCT}% de lo valorizado: la observación es obligatoria`
-        : 'Hay diferencias sobre el 2% u observados: la observación es obligatoria',
+        : `Hay diferencias sobre el ${umbral_pct}% u observados: la observación es obligatoria`,
     });
   }
   const row = await q(supa.from('cuadraturas').upsert({

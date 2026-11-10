@@ -395,6 +395,13 @@ export default function Valorizacion() {
                 ['Día de corte del período', `día ${contrato.dia_corte} de cada mes`],
                 ['Vigencia de los precios', `${contrato.meses_vigencia_precio} meses`],
                 ['Comisión al vendor (obsoletos)', `${Number(contrato.comision_vendor_pct ?? 0)} %`],
+                // Regla de la diferencia de pesaje entre MEL y La Negra: hasta la
+                // primera tolerancia rige MEL, desde la segunda rige La Negra, y
+                // entre medio el peso se acuerda a mano.
+                ...(contrato.regla_peso ? [
+                  ['Diferencia de peso · rige MEL', `hasta ${Number(contrato.tol_mel_pct)} %`],
+                  ['Diferencia de peso · rige La Negra', `desde ${Number(contrato.tol_lampa_pct)} % (entre medio, se acuerda)`],
+                ] : []),
               ].map(([k, v]) => (
                 <div key={k}><small style={{ color: 'var(--muted)' }}>{k}</small><br /><b>{v}</b></div>
               ))}
@@ -402,6 +409,8 @@ export default function Valorizacion() {
             <div className="audit-note">
               Estos datos alimentan el encabezado y las firmas del documento del estado de pago,
               el cálculo del IVA, el período que abarca cada EP y el plazo de vigencia de los precios.
+              {contrato.regla_peso && <> Las tolerancias de peso deciden, en cada recepción, si se valoriza el
+              pesaje de MEL o el de La Negra cuando difieren.</>}
             </div>
           </div>
         </div>
@@ -425,6 +434,10 @@ export default function Valorizacion() {
         {campoContrato('dia_corte', 'Día de corte del período', { type: 'number', hint: 'El EP va del día siguiente al corte del mes anterior hasta este día.' })}
         {campoContrato('meses_vigencia_precio', 'Vigencia de los precios (meses)', { type: 'number', hint: 'Pasado ese plazo la plataforma avisa que hay que renegociar.' })}
         {campoContrato('comision_vendor_pct', 'Comisión al vendor por venta de obsoletos (%)', { type: 'number', hint: 'Se aplica sobre el monto de cada adjudicación de la venta de obsoletos.' })}
+        {contrato?.regla_peso && <>
+          {campoContrato('tol_mel_pct', 'Diferencia de peso hasta la que rige MEL (%)', { type: 'number', hint: 'Si el pesaje de La Negra difiere del de MEL hasta este porcentaje, se valoriza el peso de MEL.' })}
+          {campoContrato('tol_lampa_pct', 'Diferencia de peso desde la que rige La Negra (%)', { type: 'number', hint: 'Desde este porcentaje se valoriza el peso de La Negra. Entre ambas tolerancias la recepción queda observada hasta que MEL y Lampa acuerden el peso.' })}
+        </>}
       </Modal>
 
       <Modal open={!!nuevo} title={nuevo && `Nueva vigencia · ${nuevo.nombre}`} onClose={() => setNuevo(null)}

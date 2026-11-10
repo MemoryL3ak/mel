@@ -39,19 +39,21 @@ async function detalleEP(ep) {
     const k = d.catf?.nombre ?? d.cat?.nombre ?? '—';
     porCat[k] ??= { categoria: k, guias: 0, kg: 0, valor: 0 };
     porCat[k].guias += 1;
-    porCat[k].kg += Number(d.kg_destino ?? 0);
+    // Kilos valorizados: el peso que rige según contrato (MEL, La Negra o el
+    // acordado); las guías anteriores a 0019 siguen con el de La Negra.
+    porCat[k].kg += Number(d.kg_contrato ?? d.kg_destino ?? 0);
     porCat[k].valor += Number(d.valor ?? 0);
   }
   return {
     lineas: Object.values(porCat).sort((a, b) => b.valor - a.valor),
     descuentos_lineas: descs,
     n_guias: desp.length,
-    kg_total: desp.reduce((a, d) => a + Number(d.kg_destino ?? 0), 0),
+    kg_total: desp.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino ?? 0), 0),
     // Anexo: el detalle guía por guía que respalda el monto del EP.
     guias: desp.map((d) => ({
       id: d.id, guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha,
       categoria: d.catf?.nombre ?? d.cat?.nombre ?? '—',
-      kg: Number(d.kg_destino ?? 0),
+      kg: Number(d.kg_contrato ?? d.kg_destino ?? 0),
       precio_kg: d.precio_kg == null ? null : Number(d.precio_kg),
       valor: Number(d.valor ?? 0),
     })),

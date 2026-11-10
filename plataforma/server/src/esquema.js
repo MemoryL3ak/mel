@@ -53,6 +53,9 @@ export const tiene = {
   documentos: false,          // Fase 3: doc_tipos, documentos, documento_versiones
   // db/0017_planilla_materiales.sql
   planilla: false,            // componentes: valor SAP en pesos, área, planta, estado de la planilla…
+  // db/0019_regla_peso.sql
+  regla_peso: false,          // despachos.kg_contrato/regla_peso + contrato.tol_mel_pct/tol_lampa_pct
+  fecha_recepcion: false,     // despachos.fecha_recepcion, traslados.fecha_recepcion
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -76,6 +79,7 @@ const ORIGEN = {
   desp_obs: '0014_despacho_obs.sql',
   documentos: '0015_documental.sql',
   planilla: '0017_planilla_materiales.sql',
+  regla_peso: '0019_regla_peso.sql', fecha_recepcion: '0019_regla_peso.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -146,6 +150,13 @@ async function revisar() {
 
   t.planilla = t.obsoletos && (await existe('componentes',
     'precio_unitario_clp,monto_clp,area,subarea,planta,estado_planilla,cant_no_encontrada,guias_gd,importado_el'));
+
+  // La regla de pesos necesita las dos columnas de la guía y las tolerancias
+  // del contrato; sin ellas se sigue valorizando el peso de La Negra.
+  t.regla_peso = (await existe('despachos', 'kg_contrato,regla_peso'))
+    && (await existe('contrato', 'tol_mel_pct,tol_lampa_pct'));
+  t.fecha_recepcion = (await existe('despachos', 'fecha_recepcion'))
+    && (await existe('traslados', 'fecha_recepcion'));
 
   t.documentos = (await existe('doc_tipos', 'codigo,hito,roles_carga,roles_ver,exigible_en'))
     && (await existe('documentos', 'id,folio,tipo,ref_id,vence_el,aviso_por_vencer_el'))
