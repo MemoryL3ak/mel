@@ -28,7 +28,7 @@ export default function Compradores() {
   return (
     <div>
       <PageHead eyebrow={EYEBROW} title="Compradores y due diligence"
-        sub="Empresas registradas en el portal público. Solo las aprobadas pueden presentar ofertas." />
+        sub="Empresas registradas en el portal público o ingresadas a mano junto con una oferta. En el portal solo ofertan las aprobadas." />
       {pendientes > 0 && <div className="audit-note" style={{ marginBottom: 12 }}>⚠ {pendientes} registro(s) esperando revisión de due diligence.</div>}
 
       <div className="card"><div className="tbl-wrap"><table>
@@ -38,9 +38,9 @@ export default function Compradores() {
             const [tono, txt] = DD[c.dd_estado] ?? ['neutral', c.dd_estado];
             return (
               <tr key={c.id}>
-                <td><b>{c.razon_social}</b></td>
+                <td><b>{c.razon_social}</b>{!c.user_id && <><br /><small style={{ color: 'var(--muted)' }}>Sin cuenta de portal · ingresado a mano</small></>}</td>
                 <td className="mono">{c.rut}</td>
-                <td>{c.email}{c.telefono && <><br /><small style={{ color: 'var(--muted)' }}>{c.telefono}</small></>}</td>
+                <td>{c.email || '—'}{c.telefono && <><br /><small style={{ color: 'var(--muted)' }}>{c.telefono}</small></>}</td>
                 <td className="num">{c.ofertas}</td>
                 <td><Chip tone={tono}>{txt}</Chip>{c.dd_nota && <><br /><small style={{ color: 'var(--muted)' }}>{c.dd_nota}</small></>}</td>
                 <td className="num" style={{ whiteSpace: 'nowrap' }}>

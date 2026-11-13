@@ -498,9 +498,14 @@ export default function Despachos() {
       for (const [tipo, archivos] of Object.entries(eForm.ev ?? {})) {
         for (const f of archivos) { fd.append(tipo, f); adj++; }
       }
-      await api(`/despachos/${editar.id}`, { method: 'PATCH', body: fd });
+      const r = await api(`/despachos/${editar.id}`, { method: 'PATCH', body: fd });
+      // Corregir el peso de origen de una guía ya recepcionada vuelve a aplicar
+      // la regla del contrato: se avisa qué peso quedó rigiendo.
+      const reaplicada = !editar.completar && editar.kg_destino != null && r?.regla_peso && REGLA[r.regla_peso]
+        && Number(r.kg_origen) !== Number(editar.kg_origen);
       toast(editar.completar
         ? `${editar.guia} con guía MEL ${eForm.guia_mel.trim()} · en tránsito a La Negra`
+        : reaplicada ? `Guía ${editar.guia} corregida · regla del contrato aplicada de nuevo: ${REGLA[r.regla_peso][1].toLowerCase()}, ${fmtKg(r.kg_contrato)} kg`
         : adj ? `Guía ${editar.guia} corregida · ${adj} respaldo(s) adjuntado(s)` : `Guía ${editar.guia} corregida`);
       setEditar(null); setEForm(null);
       load();
@@ -804,7 +809,7 @@ export default function Despachos() {
                       <td className="num">{fmtKg(d.kg_destino)}</td>
                       <td className="num" style={Math.abs(d.dif_pct) > (tol?.mel ?? 2) ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>{d.dif_pct?.toFixed(2)} %</td>
                       {fn.regla_peso && (
-                        <td className="num" title={d.regla_peso ? REGLA[d.regla_peso]?.[2] : 'Recepción anterior a la regla: se valoriza el peso de La Negra'}>
+                        <td className="num" title={d.regla_peso ? REGLA[d.regla_peso]?.[2] : 'Recepción ya incluida en un estado de pago antes de la regla: se valorizó el peso de La Negra'}>
                           {d.regla_peso && REGLA[d.regla_peso]
                             ? <><Chip tone={REGLA[d.regla_peso][0]}>{REGLA[d.regla_peso][1]}</Chip><br /><small className="mono">{fmtKg(d.kg_contrato)} kg</small></>
                             : <small style={{ color: 'var(--muted)' }}>La Negra</small>}

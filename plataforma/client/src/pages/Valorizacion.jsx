@@ -171,7 +171,7 @@ export default function Valorizacion() {
           <div className="card-h">
             <h3>Valor del dólar</h3>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <small>observado, desde mindicador.cl</small>
+              <small>observado del Banco Central (SII y mindicador.cl), actualizado cada hora</small>
               <button className="btn sm" onClick={() => setDolarManual({ fecha: data.dolar?.fecha ?? '', valor: '' })}>
                 Registrar a mano
               </button>
@@ -196,8 +196,9 @@ export default function Valorizacion() {
               </div>
             )}
             <div className="audit-note">
-              El tipo de cambio se <b>congela con cada recepción</b>: la guía guarda el dólar del día en que
-              se recibió, así una variación posterior no revaloriza lo ya declarado.
+              Cada recepción se valoriza con <b>el dólar de la fecha de su guía</b>. Si al recepcionar ese valor
+              aún no está publicado, se usa el último conocido y la plataforma lo corrige sola apenas se publica,
+              mientras la guía no esté en un estado de pago.
             </div>
           </div>
         </div>

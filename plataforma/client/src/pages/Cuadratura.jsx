@@ -333,6 +333,7 @@ export default function Cuadratura() {
                 <thead><tr>
                   <th>Guía</th><th>Fecha</th>
                   <th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Dif.</th>
+                  <th className="num" title="Peso que se valoriza según la regla del contrato">Rige</th>
                   <th className="num">Monto MEL</th><th className="num">Monto La Negra</th><th>Descuentos</th>
                 </tr></thead>
                 <tbody>
@@ -347,6 +348,14 @@ export default function Cuadratura() {
                       <td className="num">{g.kg_destino != null ? fmtKg(g.kg_destino) : '—'}</td>
                       <td className="num" style={Math.abs(g.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
                         {g.dif_kg != null ? `${fmtKg(g.dif_kg)} (${g.dif_pct.toFixed(2)} %)` : '—'}
+                      </td>
+                      <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                        {g.kg_contrato != null ? (
+                          <>{fmtKg(g.kg_contrato)}<br />
+                            <small style={{ color: g.regla_peso === 'pendiente' ? 'var(--warn-tx)' : 'var(--muted)' }}>
+                              {{ mel: 'MEL', lampa: 'La Negra', pendiente: 'por acordar', acuerdo: 'acordado' }[g.regla_peso] ?? ''}
+                            </small></>
+                        ) : '—'}
                       </td>
                       <td className="num">
                         {g.monto_mel != null ? fmtCLP(g.monto_mel) : '—'}

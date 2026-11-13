@@ -137,6 +137,9 @@ async function calcular(anio, semana) {
         kg_destino: enLN ? kgD : null,
         dif_kg: kgD == null ? null : Math.round((kgD - kgO) * 10) / 10,
         dif_pct: kgD == null ? null : Math.round(((kgD - kgO) / kgO) * 10000) / 100,
+        // Peso que rige según la regla del contrato y por cuál de sus tramos.
+        kg_contrato: kgD == null || d.kg_contrato == null ? null : Number(d.kg_contrato),
+        regla_peso: d.regla_peso ?? null,
         precio_kg: precio || null,
         precio_estimado: d.precio_kg == null && d.precio_usd == null && d.precio_usd_tm == null,
         monto_mel: enMel ? Math.round(kgO * precio) : null,

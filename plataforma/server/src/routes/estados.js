@@ -15,6 +15,7 @@ import { auth } from '../auth.js';
 import { contrato } from '../contrato.js';
 import { tiene } from '../esquema.js';
 import { registrarArchivos } from '../documental.js';
+import { corregirDolarRecepciones } from './despachos.js';
 
 const r = Router();
 
@@ -138,6 +139,10 @@ r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
   if (existe.length) return res.status(409).json({ error: `El período ${periodo} ya tiene estado de pago` });
 
   const { desde, hasta } = rangoPeriodo(periodo, cfg.dia_corte);
+  // Una guía que entra al EP ya no se revaloriza: antes de sumarlas, se deja
+  // cada recepción con el dólar de su fecha. Si las fuentes no responden el EP
+  // se genera igual, con lo que dejó la última pasada del barrido.
+  await corregirDolarRecepciones().catch((e) => console.error('[GEA] dólar antes del EP:', e.message));
   const desp = await q(supa.from('despachos').select('id, valor')
     .eq('estado', 'recepcionado').is('ep_id', null)
     .gte('fecha', desde).lte('fecha', hasta));

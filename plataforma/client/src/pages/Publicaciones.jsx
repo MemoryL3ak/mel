@@ -36,6 +36,8 @@ export default function Publicaciones() {
   const [ampliar, setAmpliar] = useState(null);
   const [dias, setDias] = useState(15);
   const [buscaComp, setBuscaComp] = useState('');   // buscador del componente a publicar (SKU o nombre)
+  const [buscaPub, setBuscaPub] = useState('');     // buscador sobre la lista de publicaciones
+  const [lote, setLote] = useState(null);           // publicación en lote: { sel, busca, plazo_dias, publicado_el, minima }
   const toast = useToast();
   const nav = useNavigate();
   const [params] = useSearchParams();
@@ -66,19 +68,49 @@ export default function Publicaciones() {
     publicado: 'ya está publicado en el portal', adjudicado: 'ya fue adjudicado', entregado: 'ya fue entregado',
     no_encontrado: 'se registró como no encontrado en terreno', chatarra: 'ya se convirtió en chatarra',
   };
+  // Por qué un componente no se puede publicar, con el día de su publicación
+  // cuando ya está en el portal.
+  const motivoNo = (c) => (c.estado === 'publicado' && c.dia != null
+    ? `ya está publicado en el portal · día ${c.dia} de ${c.plazo}`
+    : MOTIVO_NO[c.estado] ?? 'no se puede publicar');
   // Buscador: cada palabra tiene que aparecer en el SKU, el nombre, las
   // especificaciones o el sitio. Con cientos de materiales, el desplegable
   // no servía para encontrar uno: había que recorrerlo entero.
-  const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const calza = (texto, palabras) => { const t = normalizar(texto); return palabras.every((p) => t.includes(p)); };
   const palabras = normalizar(buscaComp).split(/\s+/).filter(Boolean);
-  const encontrados = palabras.length
-    ? disponibles.filter((c) => { const t = normalizar([c.codigo, c.nombre, c.especificaciones, c.sitio].join(' ')); return palabras.every((p) => t.includes(p)); })
-    : disponibles;
+  const textoDe = (c) => [c.codigo, c.nombre, c.especificaciones, c.sitio].join(' ');
+  const encontrados = palabras.length ? disponibles.filter((c) => calza(textoDe(c), palabras)) : disponibles;
+  // Lo que coincide con la búsqueda pero no se puede publicar (ya publicado,
+  // adjudicado, no encontrado…). Se muestra con su motivo: antes el buscador
+  // respondía «no hay coincidencias» para un componente recién publicado desde
+  // el inventario, como si las dos pantallas no hablaran entre sí.
+  const noPublicables = palabras.length ? comps.filter((c) => !publicable(c) && calza(textoDe(c), palabras)) : [];
+  // Buscador de la lista de publicaciones, por SKU o nombre.
+  const palabrasPub = normalizar(buscaPub).split(/\s+/).filter(Boolean);
+  const pubsVisibles = palabrasPub.length ? rows.filter((p) => calza([p.codigo, p.componente].join(' '), palabrasPub)) : rows;
+  // Publicación en lote: se marcan varios componentes y salen al portal en un
+  // solo acto, cada uno con su publicación, con el mismo plazo y la misma fecha.
+  const abrirLote = () => setLote({ sel: {}, busca: '', plazo_dias: 15, publicado_el: hoyISO(), minima: false });
+  const palabrasLote = normalizar(lote?.busca).split(/\s+/).filter(Boolean);
+  const visiblesLote = !lote ? [] : palabrasLote.length ? disponibles.filter((c) => calza(textoDe(c), palabrasLote)) : disponibles;
+  const elegidosLote = lote ? disponibles.filter((c) => lote.sel[c.id]) : [];
+  async function publicarLote() {
+    if (!elegidosLote.length) return toast('Marque los componentes que se van a publicar', true);
+    try {
+      const r = await api('/publicaciones/masivo', { method: 'POST', body: {
+        componente_ids: elegidosLote.map((c) => c.id),
+        plazo_dias: Number(lote.plazo_dias) || 15, publicado_el: lote.publicado_el || undefined,
+        minima_referencial: lote.minima } });
+      toast(`${r.publicados} componente(s) publicados en el portal`);
+      setLote(null); load();
+    } catch (e) { toast(e.message, true); }
+  }
   const abrirNuevo = () => { setF({ componente_id: '', oferta_minima: '', plazo_dias: 15, publicado_el: hoyISO() }); setBuscaComp(''); setNuevo(true); };
 
   async function publicar() {
     if (!f.componente_id) return toast('Elija el componente a publicar', true);
-    if (elegido && !publicable(elegido)) return toast(`${elegido.codigo} ${MOTIVO_NO[elegido.estado] ?? 'no se puede publicar'}`, true);
+    if (elegido && !publicable(elegido)) return toast(`${elegido.codigo} ${motivoNo(elegido)}`, true);
     try {
       await api('/publicaciones', { method: 'POST', body: {
         componente_id: Number(f.componente_id),
@@ -116,13 +148,20 @@ export default function Publicaciones() {
       <PageHead eyebrow={EYEBROW} title="Publicaciones"
         sub="Control automático de tiempos: a los 15 días sin adjudicar, el componente se convierte en chatarra y queda pendiente de clasificar para el programa de limpieza.">
         <a className="btn" href="/portal" target="_blank" rel="noreferrer">Ver portal público ↗</a>
+        <button className="btn" onClick={abrirLote} title="Publicar varios componentes del inventario de una vez">Publicar en lote</button>
         <button className="btn primary" onClick={abrirNuevo}>+ Publicar componente</button>
       </PageHead>
 
-      <div className="card"><div className="tbl-wrap"><table>
+      <div className="card">
+        <div className="card-h">
+          <input type="search" className="inv-busca" value={buscaPub} onChange={(e) => setBuscaPub(e.target.value)}
+            placeholder="Buscar publicación por SKU o nombre" aria-label="Buscar en las publicaciones" />
+          <small>{palabrasPub.length ? `${pubsVisibles.length} de ${rows.length} publicaciones` : `${rows.length} publicaciones`}</small>
+        </div>
+        <div className="tbl-wrap"><table>
         <thead><tr><th>Componente</th><th>Publicado el</th><th style={{ minWidth: 180 }}>Plazo (15 días)</th><th className="num">Ofertas</th><th>Estado</th><th></th></tr></thead>
         <tbody>
-          {rows.map((p) => {
+          {pubsVisibles.map((p) => {
             const [tono, txt] = ESTADO[p.estado] ?? ['neutral', p.estado];
             return (
               <tr key={p.id} style={p.estado !== 'activa' ? { opacity: 0.75 } : undefined}>
@@ -151,6 +190,7 @@ export default function Publicaciones() {
         </tbody>
       </table></div>
         {rows.length === 0 && <Empty title="Sin publicaciones">Publique un componente del inventario para que aparezca en el portal.</Empty>}
+        {rows.length > 0 && pubsVisibles.length === 0 && <Empty title="Sin coincidencias">Ninguna publicación coincide con «{buscaPub.trim()}».</Empty>}
       </div>
       <div className="audit-note" style={{ marginTop: 12 }}>⚙ Al cumplirse el plazo sin adjudicar se cierra la publicación, se descartan las ofertas recibidas —avisando a cada oferente— y el componente queda en el inventario <b>pendiente de clasificar</b>. Entra al programa de limpieza cuando se le asigna patio, categoría y peso.</div>
 
@@ -173,20 +213,20 @@ export default function Publicaciones() {
                   {elegido.valor_referencial != null ? `valor referencial ${fmtUSD(elegido.valor_referencial)}` : 'sin valor referencial'}
                   {elegido.estado === 'por_identificar' ? ' · por identificar en terreno (se publica igual)' : ''}
                 </small>
-                {!publicable(elegido) && <><br /><b>No se puede publicar: {MOTIVO_NO[elegido.estado] ?? elegido.estado}.</b></>}
+                {!publicable(elegido) && <><br /><b>No se puede publicar: {motivoNo(elegido)}.</b></>}
               </span>
               <button type="button" className="btn sm" style={{ marginLeft: 'auto', flexShrink: 0 }}
                 onClick={() => { setF({ ...f, componente_id: '' }); setBuscaComp(''); }}>Cambiar</button>
             </div>
           </Field>
         ) : (
-          <Field label="Componente" hint="Busque por SKU o por parte del nombre y elija uno. La confirmación en terreno no es requisito: se registra después, desde el inventario o el memo.">
+          <Field label="Componente" hint={`Busque por SKU o por parte del nombre y elija uno: hay ${disponibles.length} componente(s) del inventario disponibles para publicar. La confirmación en terreno no es requisito: se registra después, desde el inventario o el memo.`}>
             <input type="search" value={buscaComp} onChange={(e) => setBuscaComp(e.target.value)} autoFocus
               placeholder="SKU, nombre o especificación" aria-label="Buscar componente" />
-            {disponibles.length === 0 ? (
-              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>
-            ) : encontrados.length === 0 ? (
-              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>Ningún componente sin publicar coincide con «{buscaComp.trim()}».</small>
+            {!palabras.length && disponibles.length === 0 ? (
+              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario, o búsquelos aquí para ver en qué estado están.</small>
+            ) : encontrados.length === 0 && noPublicables.length === 0 ? (
+              <small style={{ color: 'var(--muted)', display: 'block', marginTop: 6 }}>Ningún componente del inventario coincide con «{buscaComp.trim()}».</small>
             ) : (
               <div className="lista-comp">
                 {encontrados.slice(0, 12).map((c) => (
@@ -198,6 +238,16 @@ export default function Publicaciones() {
                 ))}
                 {encontrados.length > 12 && (
                   <small style={{ color: 'var(--muted)', padding: '6px 10px' }}>… y {encontrados.length - 12} más: afine la búsqueda.</small>
+                )}
+                {/* Coinciden pero no se pueden publicar: se ven, con el motivo. */}
+                {noPublicables.slice(0, 6).map((c) => (
+                  <div key={c.id} className="lista-comp-item no" title={`No se puede publicar: ${motivoNo(c)}`}>
+                    <span className="mono">{c.codigo}</span>
+                    <span><b>{c.nombre}</b><small> · {motivoNo(c)}</small></span>
+                  </div>
+                ))}
+                {noPublicables.length > 6 && (
+                  <small style={{ color: 'var(--muted)', padding: '6px 10px' }}>… y {noPublicables.length - 6} más que no se pueden publicar.</small>
                 )}
               </div>
             )}
@@ -218,6 +268,65 @@ export default function Publicaciones() {
         <Field label="Fecha de publicación" hint="Se propone hoy.">
           <DateField value={f.publicado_el} onChange={(e) => setF({ ...f, publicado_el: e.target.value })} />
         </Field>
+      </Modal>
+
+      <Modal open={!!lote} title="Publicar componentes en lote" onClose={() => setLote(null)} ancho
+        footer={<>
+          <button className="btn" onClick={() => setLote(null)}>Cancelar</button>
+          <button className="btn primary" onClick={publicarLote} disabled={!elegidosLote.length}>
+            {elegidosLote.length ? `Publicar ${elegidosLote.length} componente(s)` : 'Publicar'}
+          </button>
+        </>}>
+        {lote && (<>
+          <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
+            Marque los componentes del inventario que salen al portal. Cada uno queda con su propia publicación,
+            todas con el mismo plazo y la misma fecha. Si alguno ya no se puede publicar, no se publica ninguno y se avisa cuál.
+          </p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input type="search" className="inv-busca" value={lote.busca} autoFocus
+              onChange={(e) => setLote({ ...lote, busca: e.target.value })}
+              placeholder="Filtrar por SKU, nombre o especificación" aria-label="Filtrar componentes" />
+            <button type="button" className="btn sm" disabled={!visiblesLote.length}
+              onClick={() => setLote({ ...lote, sel: { ...lote.sel, ...Object.fromEntries(visiblesLote.map((c) => [c.id, true])) } })}>
+              Marcar los {visiblesLote.length} que se ven
+            </button>
+            <button type="button" className="btn sm" disabled={!elegidosLote.length}
+              onClick={() => setLote({ ...lote, sel: {} })}>Quitar todos</button>
+            <small style={{ color: 'var(--muted)' }}>{elegidosLote.length} de {disponibles.length} marcados</small>
+          </div>
+          {disponibles.length === 0 ? (
+            <small style={{ color: 'var(--muted)', display: 'block', marginTop: 8 }}>No hay componentes disponibles para publicar. Ingréselos en el Inventario.</small>
+          ) : visiblesLote.length === 0 ? (
+            <small style={{ color: 'var(--muted)', display: 'block', marginTop: 8 }}>Ningún componente disponible coincide con «{lote.busca.trim()}».</small>
+          ) : (
+            <div className="lista-comp" style={{ maxHeight: 300 }}>
+              {visiblesLote.map((c) => (
+                <label key={c.id} className="lista-comp-item">
+                  <input type="checkbox" checked={!!lote.sel[c.id]}
+                    onChange={(e) => setLote({ ...lote, sel: { ...lote.sel, [c.id]: e.target.checked } })} />
+                  <span className="mono">{c.codigo}</span>
+                  <span><b>{c.nombre}</b>{c.sitio && <small> · {c.sitio}</small>}{c.estado === 'por_identificar' && <small> · por identificar</small>}</span>
+                  <span className="mono" style={{ marginLeft: 'auto', color: 'var(--muted)' }}>{c.valor_referencial != null ? fmtUSD(c.valor_referencial) : ''}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="grid g2" style={{ gap: 0, columnGap: 14, marginTop: 14 }}>
+            <Field label="Plazo (días)">
+              <input type="number" min="1" value={lote.plazo_dias} onChange={(e) => setLote({ ...lote, plazo_dias: e.target.value })} />
+            </Field>
+            <Field label="Fecha de publicación" hint="Se propone hoy.">
+              <DateField value={lote.publicado_el} onChange={(e) => setLote({ ...lote, publicado_el: e.target.value })} />
+            </Field>
+          </div>
+          <label className="check-linea">
+            <input type="checkbox" checked={lote.minima} onChange={(e) => setLote({ ...lote, minima: e.target.checked })} />
+            <span>
+              <b>Usar el valor referencial como oferta mínima</b>
+              <small>Cada publicación rechaza las ofertas bajo el valor referencial de su componente. Sin marcar, no hay mínimo.</small>
+            </span>
+          </label>
+        </>)}
       </Modal>
 
       <Modal open={!!ampliar} title={ampliar && `Ampliar plazo · ${ampliar.codigo}`} onClose={() => setAmpliar(null)}

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, fmtUSD } from '../api.js';
-import { Select, Chip, Empty, Field, Modal, PageHead, Tabs, useToast } from '../ui.jsx';
+import { api, fmtUSD, fmtCLP } from '../api.js';
+import { Select, Chip, Empty, Field, Modal, PageHead, Tabs, DateField, hoyISO, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
 const EYEBROW = 'Venta de obsoletos';
 const DD = { aprobada: ['ok', 'Aprobada'], pendiente: ['warn', 'En revisión'], rechazada: ['bad', 'Rechazada'] };
+// Un monto en la moneda en que se ofertó: las ofertas llegan en dólares o en pesos.
+const dinero = (monto, moneda) => (moneda === 'CLP' ? fmtCLP(monto) : fmtUSD(monto));
 const EST_ADJ = { adjudicada: ['info', 'Adjudicada'], pagada: ['warn', 'Pagada'], entregada: ['ok', 'Entregada'] };
 
 // Documentos que se adjuntan al registrar la entrega: [campo, etiqueta, ayuda].
@@ -33,10 +35,18 @@ export default function Ofertas() {
   const [entrega, setEntrega] = useState(null);
   const [docsEntrega, setDocsEntrega] = useState(null);
   const [cert, setCert] = useState(null);
+  const [activas, setActivas] = useState([]);       // publicaciones vigentes, tengan o no ofertas
+  const [compradores, setCompradores] = useState([]);
+  const [manual, setManual] = useState(null);       // oferta que se ingresa a mano
+  const [guardando, setGuardando] = useState(false);
+  const [recarga, setRecarga] = useState(0);        // vuelve a leer las ofertas de la publicación abierta
   const toast = useToast();
 
   const load = () => {
-    api('/publicaciones').then((r) => setPubs(r.filter((p) => p.estado === 'activa' && p.ofertas > 0))).catch((e) => toast(e.message, true));
+    api('/publicaciones').then((r) => {
+      setPubs(r.filter((p) => p.estado === 'activa' && p.ofertas > 0));
+      setActivas(r.filter((p) => p.estado === 'activa' && !p.vencido));
+    }).catch((e) => toast(e.message, true));
     api('/criterios').then((c) => { setCriterios(c); setPesos(Object.fromEntries(c.map((x) => [x.id, x.peso]))); setNombres(Object.fromEntries(c.map((x) => [x.id, x.nombre]))); }).catch(() => {});
     api('/adjudicaciones').then(setAdjudicaciones).catch(() => {});
   };
@@ -50,7 +60,7 @@ export default function Ofertas() {
       setPuntajes(Object.fromEntries(r.ofertas.map((o) => [o.id, Object.fromEntries(criterios.map((c) => [c.id, 5]))])));
       setGanadorSel('');
     }).catch((e) => toast(e.message, true));
-  }, [pubId, criterios.length]);
+  }, [pubId, criterios.length, recarga]);
 
   const pesoTotal = criterios.reduce((a, c) => a + c.peso, 0) || 1;
   const totales = useMemo(() => {
@@ -71,6 +81,40 @@ export default function Ofertas() {
 
   const pub = pubs.find((p) => String(p.id) === String(pubId));
   const setPj = (oId, cId, v) => setPuntajes((s) => ({ ...s, [oId]: { ...s[oId], [cId]: v } }));
+
+  // Oferta recibida fuera del portal (correo, plataforma de venta): la ingresa
+  // la administración para poder compararla y adjudicar igual que las demás.
+  const manualVacia = (pub = '') => ({
+    publicacion_id: pub, comprador_id: '', razon_social: '', rut: '', email: '', telefono: '',
+    monto: '', moneda: 'USD', recibida_el: hoyISO(), plazo_retiro: '', forma_pago: '', comentarios: '', respaldo: [],
+  });
+  function abrirManual() {
+    setManual(manualVacia(activas.some((p) => String(p.id) === String(pubId)) ? String(pubId) : ''));
+    api('/compradores').then(setCompradores).catch(() => {});
+  }
+  async function guardarManual() {
+    const m = manual;
+    if (!m.publicacion_id) return toast('Elija la publicación a la que corresponde la oferta', true);
+    if (!m.comprador_id && !m.razon_social.trim()) return toast('Indique quién presenta la oferta', true);
+    if (!m.comprador_id && m.rut.replace(/[.\s]/g, '').length < 8) return toast('Ingrese el RUT del oferente', true);
+    if (!(Number(m.monto) > 0)) return toast('Ingrese el monto de la oferta', true);
+    setGuardando(true);
+    try {
+      // Viaja como formulario porque puede traer el respaldo de la oferta.
+      const fd = new FormData();
+      for (const k of ['comprador_id', 'razon_social', 'rut', 'email', 'telefono', 'monto', 'moneda', 'recibida_el', 'plazo_retiro', 'forma_pago', 'comentarios']) {
+        fd.append(k, String(m[k] ?? '').trim());
+      }
+      for (const a of m.respaldo) fd.append('respaldo', a);
+      const r = await api(`/publicaciones/${m.publicacion_id}/ofertas`, { method: 'POST', body: fd });
+      toast(`Oferta de ${r.comprador} ingresada`);
+      setManual(null);
+      // Queda lista para evaluar: se abre la publicación en el cuadro comparativo.
+      setTab('adjudicar'); setPubId(String(m.publicacion_id)); setParams({ pub: String(m.publicacion_id) });
+      setRecarga((n) => n + 1); load();
+    } catch (e) { toast(e.message, true); }
+    finally { setGuardando(false); }
+  }
 
   async function adjudicar() {
     const ganador = ganadorSel || recomendado;
@@ -129,8 +173,12 @@ export default function Ofertas() {
 
   async function registrarPago() {
     try {
-      await api(`/adjudicaciones/${pago.id}/pago`, { method: 'POST', body: { pago_ref: pago.ref } });
-      toast('Pago registrado'); setPago(null); load();
+      // Viaja como formulario porque puede traer el respaldo de la transferencia.
+      const fd = new FormData();
+      fd.append('pago_ref', pago.ref ?? '');
+      for (const a of pago.docs ?? []) fd.append('pago', a);
+      await api(`/adjudicaciones/${pago.id}/pago`, { method: 'POST', body: fd });
+      toast(pago.docs?.length ? 'Pago registrado con su respaldo' : 'Pago registrado'); setPago(null); load();
     } catch (e) { toast(e.message, true); }
   }
   async function registrarEntrega() {
@@ -151,7 +199,10 @@ export default function Ofertas() {
   return (
     <div>
       <PageHead eyebrow={EYEBROW} title="Ofertas y adjudicación"
-        sub="Cuadro comparativo y matriz de evaluación ponderada. Los puntajes se recalculan en vivo; la matriz queda congelada en el certificado." />
+        sub="Cuadro comparativo y matriz de evaluación ponderada. Los puntajes se recalculan en vivo; la matriz queda congelada en el certificado.">
+        <button className="btn primary" onClick={abrirManual}
+          title="Para ofertas que llegan por correo o por la plataforma de venta, mientras no se oferte por el portal">+ Ingresar oferta recibida</button>
+      </PageHead>
       <Tabs tabs={[['adjudicar', 'Adjudicar', pubs.length], ['certificados', 'Certificados'], ['matriz', 'Matriz de evaluación']]} active={tab} onChange={setTab} />
 
       {tab === 'adjudicar' && (<>
@@ -176,9 +227,11 @@ export default function Ofertas() {
                   const [tono, txt] = DD[o.dd_estado] ?? ['neutral', '—'];
                   return (
                     <tr key={o.id}>
-                      <td><b>{o.oferente}</b>{o.comentarios && <><br /><small style={{ color: 'var(--muted)' }}>{o.comentarios}</small></>}</td>
+                      <td><b>{o.oferente}</b>{o.comentarios && <><br /><small style={{ color: 'var(--muted)' }}>{o.comentarios}</small></>}
+                        {o.ingresada_por && <><br /><small style={{ color: 'var(--muted)' }}>Ingresada a mano por {o.ingresada_por}{o.recibida_el ? ` · recibida el ${o.recibida_el}` : ''}</small></>}</td>
                       <td><Chip tone={tono}>{txt}</Chip></td>
-                      <td className="num">{fmtUSD(o.monto)}</td>
+                      <td className="num">{dinero(o.monto, o.moneda)}
+                        {o.moneda === 'CLP' && <><br /><small style={{ color: 'var(--muted)' }}>{fmtUSD(o.monto_usd)}</small></>}</td>
                       <td>{o.plazo_retiro || '—'}</td>
                       <td>{o.forma_pago || '—'}</td>
                     </tr>
@@ -220,14 +273,14 @@ export default function Ofertas() {
               <Field label="Adjudicar a">
                 <Select value={ganadorSel} onChange={(e) => setGanadorSel(e.target.value)}>
                   <option value="">Recomendado por la matriz{recomendado ? ` · ${ofertas.find((o) => o.id === recomendado)?.oferente}` : ''}</option>
-                  {ofertas.map((o) => <option key={o.id} value={o.id}>{o.oferente} · {fmtUSD(o.monto)}</option>)}
+                  {ofertas.map((o) => <option key={o.id} value={o.id}>{o.oferente} · {dinero(o.monto, o.moneda)}</option>)}
                 </Select>
               </Field>
               <button className="btn primary" onClick={adjudicar} style={{ alignSelf: 'flex-end' }}>Emitir certificado de adjudicación</button>
             </div>
           </div>
         </>)}
-        {pubs.length === 0 && <Empty title="Sin publicaciones con ofertas">Cuando una publicación reciba ofertas, aparecerá aquí para evaluar y adjudicar.</Empty>}
+        {pubs.length === 0 && <Empty title="Sin publicaciones con ofertas">Cuando una publicación reciba ofertas, aparecerá aquí para evaluar y adjudicar. Si la oferta llegó por correo o por la plataforma de venta, ingrésela con «Ingresar oferta recibida».</Empty>}
       </>)}
 
       {tab === 'certificados' && (
@@ -241,15 +294,15 @@ export default function Ofertas() {
                   <td className="mono"><button className="btn sm" onClick={() => setCert(a)}>{a.cert_folio}</button></td>
                   <td><b>{a.componente}</b><br /><small className="mono" style={{ color: 'var(--muted)' }}>{a.codigo}</small></td>
                   <td>{a.comprador}</td>
-                  <td className="num">{fmtUSD(a.monto)}</td>
-                  <td className="num">{fmtUSD(a.comision_monto)}<br /><small style={{ color: 'var(--muted)' }}>{a.comision_pct}%</small></td>
+                  <td className="num">{dinero(a.monto, a.moneda)}</td>
+                  <td className="num">{dinero(a.comision_monto, a.moneda)}<br /><small style={{ color: 'var(--muted)' }}>{a.comision_pct}%</small></td>
                   <td><Chip tone={tono}>{txt}</Chip></td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>
-                    {a.estado === 'adjudicada' && <button className="btn sm primary" onClick={() => setPago({ id: a.id, ref: '' })}>Registrar pago</button>}
+                    {a.estado === 'adjudicada' && <button className="btn sm primary" onClick={() => setPago({ id: a.id, cert_folio: a.cert_folio, ref: '', docs: [] })}>Registrar pago</button>}
                     {a.estado === 'pagada' && <button className="btn sm primary" onClick={() => setEntrega({ id: a.id, cert_folio: a.cert_folio, guia: '', docs: {} })}>Registrar entrega</button>}
                     {a.estado === 'entregada' && a.entrega_docs > 0 && (
                       <button className="btn sm" onClick={() => verActa(a)}
-                        title="Guía de despacho, factura de venta y documento firmado de entrega">Entrega ({a.entrega_docs})</button>
+                        title="Guía de despacho, factura de venta, documento firmado de entrega y respaldo de transferencia">Entrega ({a.entrega_docs})</button>
                     )}{' '}
                     <BotonDocs hito="adjudicacion" refId={a.id} />
                   </td>
@@ -301,10 +354,92 @@ export default function Ofertas() {
         </div>
       )}
 
-      <Modal open={!!pago} title="Registrar pago por transferencia" onClose={() => setPago(null)}
+      <Modal open={!!manual} title="Ingresar oferta recibida fuera del portal" onClose={() => setManual(null)} ancho
+        footer={<>
+          <button className="btn" onClick={() => setManual(null)} disabled={guardando}>Cancelar</button>
+          <button className="btn primary" onClick={guardarManual} disabled={guardando}>{guardando ? 'Guardando…' : 'Ingresar oferta'}</button>
+        </>}>
+        {manual && (<>
+          <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 13.5 }}>
+            Para las ofertas que llegan por correo o por la plataforma de venta. Queda en el cuadro comparativo junto a las
+            del portal, y en la bitácora quién la ingresó.
+          </p>
+          <Field label="Publicación">
+            <Select value={manual.publicacion_id} onChange={(e) => setManual({ ...manual, publicacion_id: e.target.value })}>
+              <option value="">— Elija la publicación —</option>
+              {activas.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.componente}{p.ofertas ? ` (${p.ofertas} oferta${p.ofertas === 1 ? '' : 's'})` : ''}</option>)}
+            </Select>
+          </Field>
+          {activas.length === 0 && (
+            <small style={{ color: 'var(--muted)', display: 'block', marginTop: -6, marginBottom: 12 }}>No hay publicaciones vigentes. Publique el componente primero, o amplíe el plazo si ya se cumplió.</small>
+          )}
+          <Field label="Oferente" hint="Elija un comprador ya registrado o ingrese uno nuevo. El nuevo queda sin cuenta de portal y con la due diligence en revisión.">
+            <Select value={manual.comprador_id} onChange={(e) => setManual({ ...manual, comprador_id: e.target.value })}>
+              <option value="">— Nuevo oferente —</option>
+              {compradores.filter((c) => c.dd_estado !== 'rechazada').map((c) => <option key={c.id} value={c.id}>{c.razon_social} · {c.rut}</option>)}
+            </Select>
+          </Field>
+          {!manual.comprador_id && (<>
+            <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+              <Field label="Razón social o nombre">
+                <input value={manual.razon_social} onChange={(e) => setManual({ ...manual, razon_social: e.target.value })} placeholder="Comercial Ejemplo SpA" />
+              </Field>
+              <Field label="RUT">
+                <input value={manual.rut} onChange={(e) => setManual({ ...manual, rut: e.target.value })} placeholder="76.123.456-7" />
+              </Field>
+              <Field label="Correo (opcional)">
+                <input type="email" value={manual.email} onChange={(e) => setManual({ ...manual, email: e.target.value })} placeholder="contacto@empresa.cl" />
+              </Field>
+              <Field label="Teléfono (opcional)">
+                <input value={manual.telefono} onChange={(e) => setManual({ ...manual, telefono: e.target.value })} placeholder="+56 9 …" />
+              </Field>
+            </div>
+          </>)}
+          <div className="grid g2" style={{ gap: 0, columnGap: 14 }}>
+            <Field label="Monto ofertado">
+              <input type="number" min="0" value={manual.monto} onChange={(e) => setManual({ ...manual, monto: e.target.value })} placeholder="28500" />
+            </Field>
+            <Field label="Moneda" hint="Una oferta en pesos se compara en dólares, al tipo de cambio del día en que se recibió.">
+              <Select value={manual.moneda} onChange={(e) => setManual({ ...manual, moneda: e.target.value })}>
+                <option value="USD">Dólares (USD)</option>
+                <option value="CLP">Pesos (CLP)</option>
+              </Select>
+            </Field>
+            <Field label="Fecha en que se recibió">
+              <DateField value={manual.recibida_el} onChange={(e) => setManual({ ...manual, recibida_el: e.target.value })} />
+            </Field>
+            <Field label="Plazo de retiro (opcional)">
+              <input value={manual.plazo_retiro} onChange={(e) => setManual({ ...manual, plazo_retiro: e.target.value })} placeholder="10 días hábiles" />
+            </Field>
+          </div>
+          <Field label="Forma de pago (opcional)">
+            <input value={manual.forma_pago} onChange={(e) => setManual({ ...manual, forma_pago: e.target.value })} placeholder="Transferencia al contado" />
+          </Field>
+          <Field label="Comentarios (opcional)">
+            <textarea rows="2" value={manual.comentarios} onChange={(e) => setManual({ ...manual, comentarios: e.target.value })}
+              placeholder="Por dónde llegó la oferta, condiciones, observaciones…" />
+          </Field>
+          <Field label="Respaldo de la oferta (opcional)" hint="El correo o la cotización recibida, en PDF o imagen. Queda en el repositorio documental de la publicación.">
+            <input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(e) => setManual({ ...manual, respaldo: Array.from(e.target.files).slice(0, 3) })} />
+            {manual.respaldo.length > 0 && (
+              <small style={{ color: 'var(--ok-tx)', display: 'block', marginTop: 6 }}>✓ {manual.respaldo.map((f) => f.name).join(', ')}</small>
+            )}
+          </Field>
+        </>)}
+      </Modal>
+
+      <Modal open={!!pago} title={pago?.cert_folio ? `Registrar pago por transferencia · ${pago.cert_folio}` : 'Registrar pago por transferencia'} onClose={() => setPago(null)}
         footer={<><button className="btn" onClick={() => setPago(null)}>Cancelar</button><button className="btn primary" onClick={registrarPago}>Registrar pago</button></>}>
         <Field label="Referencia del abono (opcional)" hint="N° de transferencia o comprobante.">
           <input value={pago?.ref ?? ''} onChange={(e) => setPago({ ...pago, ref: e.target.value })} placeholder="TRX-…" />
+        </Field>
+        <Field label="Respaldo de la transferencia" hint="PDF o imagen del comprobante. Queda con los documentos de la adjudicación y en el repositorio documental.">
+          <input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp"
+            onChange={(e) => setPago({ ...pago, docs: Array.from(e.target.files).slice(0, 3) })} />
+          {pago?.docs?.length > 0 && (
+            <small style={{ color: 'var(--ok-tx)', display: 'block', marginTop: 6 }}>✓ {pago.docs.map((f) => f.name).join(', ')}</small>
+          )}
         </Field>
       </Modal>
 
@@ -343,8 +478,8 @@ export default function Ofertas() {
 
       <Modal open={!!cert} title={cert && `Certificado ${cert.cert_folio}`} onClose={() => setCert(null)} ancho>
         {cert && (<>
-          <p style={{ marginTop: 0 }}>Componente <b>{cert.componente}</b> (<span className="mono">{cert.codigo}</span>) adjudicado a <b>{cert.comprador}</b> por <b>{fmtUSD(cert.monto)}</b>.</p>
-          <p style={{ color: 'var(--ink-2)' }}>Comisión al vendor: {fmtUSD(cert.comision_monto)} ({cert.comision_pct}%). Emitido el {cert.creado_el?.slice(0, 10)} por {cert.creado_por}.</p>
+          <p style={{ marginTop: 0 }}>Componente <b>{cert.componente}</b> (<span className="mono">{cert.codigo}</span>) adjudicado a <b>{cert.comprador}</b> por <b>{dinero(cert.monto, cert.moneda)}</b>.</p>
+          <p style={{ color: 'var(--ink-2)' }}>Comisión al vendor: {dinero(cert.comision_monto, cert.moneda)} ({cert.comision_pct}%). Emitido el {cert.creado_el?.slice(0, 10)} por {cert.creado_por}.</p>
           {cert.matriz?.criterios && (
             <div className="tbl-wrap"><table>
               <thead><tr><th>Criterio</th><th className="num">Peso</th>{cert.matriz.ofertas.map((o) => <th key={o.oferta_id} className="num">{o.oferente}</th>)}</tr></thead>

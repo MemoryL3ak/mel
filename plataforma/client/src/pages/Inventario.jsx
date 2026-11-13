@@ -281,13 +281,23 @@ export default function Inventario() {
 
   const enviarMovimiento = () => correr(async () => {
     const { c } = movimiento;
-    const body = {};
-    if (movimiento.cant_enviada !== '') body.cant_enviada = Math.round(Number(movimiento.cant_enviada));
-    if (movimiento.cant_recibida !== '') body.cant_recibida = Math.round(Number(movimiento.cant_recibida));
-    if (!Object.keys(body).length) return toast('Indique las unidades enviadas o recibidas', true);
+    const numero = (movimiento.guia_numero ?? '').trim();
+    const guias = movimiento.guia ?? [];
+    // Las cantidades vienen precargadas con lo ya registrado: solo viajan las
+    // que cambiaron, para poder adjuntar la guía después sin re-registrar el envío.
+    const cambio = (k) => movimiento[k] !== '' && movimiento[k] !== String(c[k] ?? '');
+    if (!cambio('cant_enviada') && !cambio('cant_recibida') && !numero && !guias.length) {
+      return toast('Indique las unidades enviadas o recibidas, o adjunte la guía de despacho', true);
+    }
     try {
-      await api(`/componentes/${c.id}/cantidades`, { method: 'POST', body });
-      toast(`${c.codigo}: movimiento registrado`);
+      // Viaja como formulario porque puede traer la guía de despacho adjunta.
+      const fd = new FormData();
+      if (cambio('cant_enviada')) fd.append('cant_enviada', Math.round(Number(movimiento.cant_enviada)));
+      if (cambio('cant_recibida')) fd.append('cant_recibida', Math.round(Number(movimiento.cant_recibida)));
+      if (numero) fd.append('guia_numero', numero);
+      for (const a of guias) fd.append('guia', a);
+      await api(`/componentes/${c.id}/cantidades`, { method: 'POST', body: fd });
+      toast(`${c.codigo}: movimiento registrado${guias.length ? ` · ${guias.length} guía(s) adjunta(s)` : ''}`);
       setMovimiento(null); load();
     } catch (e) { toast(e.message, true); }
   });
@@ -446,7 +456,7 @@ export default function Inventario() {
                   : <small style={{ color: 'var(--muted)' }}>Sin memo</small>}</td>
                 <td className="mono">{c.codigo}</td>
                 <td className="parte"><b>{cortable(c.nombre)}</b>
-                  {c.fotos > 0 && <small style={{ color: 'var(--muted)', display: 'block' }} title="Fotos y ficha técnica adjuntas">📎 {c.fotos} adjunto(s)</small>}</td>
+                  {c.fotos > 0 && <small style={{ color: 'var(--muted)', display: 'block' }} title="Fotos, ficha técnica y guías de despacho adjuntas">📎 {c.fotos} adjunto(s)</small>}</td>
                 <td className="parte" style={{ minWidth: 100, overflowWrap: 'anywhere' }}><small className="dos-lineas" title={c.especificaciones || undefined}>{cortable(c.especificaciones) || '—'}</small></td>
                 <td>{c.sitio || '—'}</td>
                 <td>{c.ubicacion || '—'}</td>
@@ -486,7 +496,7 @@ export default function Inventario() {
                         title="Registrar que se encontró en terreno y cuántas unidades">Confirmar en terreno</button>
                     ) : ['planificado', 'publicado', 'adjudicado'].includes(c.estado) && c.cant_encontrada > 0 && (
                       <button className="btn sm" disabled={busy} title="Registrar unidades enviadas y recibidas"
-                        onClick={() => setMovimiento({ c, cant_enviada: String(c.cant_enviada ?? ''), cant_recibida: String(c.cant_recibida ?? '') })}>Movimiento</button>
+                        onClick={() => setMovimiento({ c, cant_enviada: String(c.cant_enviada ?? ''), cant_recibida: String(c.cant_recibida ?? ''), guia_numero: '', guia: [] })}>Movimiento</button>
                     )],
                     [<BotonDocs hito="componente" refId={c.id} />,
                       <button className="btn sm" onClick={() => setEditar({ ...c, especificaciones: c.especificaciones ?? '', ubicacion: c.ubicacion ?? '', sitio_id: c.sitio_id ?? '', valor_referencial: c.valor_referencial ?? '', cant_comprometida: c.cant_comprometida ?? 1 })}>Editar</button>],
@@ -627,6 +637,16 @@ export default function Inventario() {
               <input type="number" min="0" step="1" value={movimiento.cant_recibida} onChange={(e) => setMovimiento({ ...movimiento, cant_recibida: e.target.value })} />
             </Field>
           </div>
+          <Field label="N° de guía de despacho (opcional)" hint="La guía con que el componente se mueve, por ejemplo cuando baja de MEL a La Negra.">
+            <input value={movimiento.guia_numero} onChange={(e) => setMovimiento({ ...movimiento, guia_numero: e.target.value })} placeholder="458…" />
+          </Field>
+          <Field label="Guía de despacho (opcional)" hint="PDF o foto de la guía. Queda entre los adjuntos del componente y en el repositorio documental. Se puede adjuntar después, sin cambiar las cantidades.">
+            <input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(e) => setMovimiento({ ...movimiento, guia: Array.from(e.target.files).slice(0, 3) })} />
+            {movimiento.guia?.length > 0 && (
+              <small style={{ color: 'var(--ok-tx)', display: 'block', marginTop: 6 }}>✓ {movimiento.guia.map((f) => f.name).join(', ')}</small>
+            )}
+          </Field>
         </>}
       </Modal>
 
@@ -926,9 +946,9 @@ export default function Inventario() {
       <Modal open={!!verAdj} title={verAdj && `Adjuntos · ${verAdj.componente.nombre}`} onClose={() => setVerAdj(null)} ancho>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 8 }}>
           {verAdj?.archivos.map((a) => (
-            <a key={a.url} href={a.url} target="_blank" rel="noreferrer" title={a.tipo === 'ficha' ? 'Ficha técnica' : 'Foto'}>
-              {a.tipo === 'ficha'
-                ? <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', height: 130, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600 }}><span style={{ fontSize: 26 }}>📄</span>Ficha técnica</span>
+            <a key={a.url} href={a.url} target="_blank" rel="noreferrer" title={a.tipo === 'ficha' ? 'Ficha técnica' : a.tipo === 'guia' ? 'Guía de despacho' : 'Foto'}>
+              {a.tipo === 'ficha' || a.tipo === 'guia'
+                ? <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', height: 130, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--line)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600 }}><span style={{ fontSize: 26 }}>📄</span>{a.tipo === 'guia' ? 'Guía de despacho' : 'Ficha técnica'}</span>
                 : <img src={a.url} alt="Foto" style={{ width: '100%', height: 130, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} />}
             </a>
           ))}

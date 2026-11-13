@@ -51,6 +51,8 @@ export const tiene = {
   desp_obs: false,            // despachos.observacion
   // db/0015_documental.sql
   documentos: false,          // Fase 3: doc_tipos, documentos, documento_versiones
+  // db/0020_venta_manual.sql
+  oferta_manual: false,       // ofertas.ingresada_por, recibida_el
   // db/0017_planilla_materiales.sql
   planilla: false,            // componentes: valor SAP en pesos, área, planta, estado de la planilla…
   // db/0019_regla_peso.sql
@@ -78,7 +80,7 @@ const ORIGEN = {
   acta_entrega: '0013_fase2_obs.sql', desp_componente: '0013_fase2_obs.sql',
   desp_obs: '0014_despacho_obs.sql',
   documentos: '0015_documental.sql',
-  planilla: '0017_planilla_materiales.sql',
+  planilla: '0017_planilla_materiales.sql', oferta_manual: '0020_venta_manual.sql',
   regla_peso: '0019_regla_peso.sql', fecha_recepcion: '0019_regla_peso.sql',
 };
 
@@ -150,6 +152,8 @@ async function revisar() {
 
   t.planilla = t.obsoletos && (await existe('componentes',
     'precio_unitario_clp,monto_clp,area,subarea,planta,estado_planilla,cant_no_encontrada,guias_gd,importado_el'));
+
+  t.oferta_manual = t.obsoletos && (await existe('ofertas', 'ingresada_por,recibida_el'));
 
   // La regla de pesos necesita las dos columnas de la guía y las tolerancias
   // del contrato; sin ellas se sigue valorizando el peso de La Negra.

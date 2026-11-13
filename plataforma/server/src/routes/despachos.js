@@ -4,10 +4,10 @@
 //   certificado de disposición final).
 import { Router } from 'express';
 import multer from 'multer';
-import { supa, q, ah, folio, audit, precioVigente, fmtFecha, semanaISO } from '../supa.js';
+import { supa, q, ah, folio, audit, precioVigente, fmtFecha, semanaISO, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
-import { valorDolar } from '../dolar.js';
+import { valorDolar, sincronizarDolar } from '../dolar.js';
 import { registrarArchivos } from '../documental.js';
 import { contrato, reglaPeso } from '../contrato.js';
 
@@ -272,6 +272,155 @@ async function revalorizar(id) {
   }).eq('id', id).select('*').single());
 }
 
+// Nota automática de una recepción con diferencia de peso (la de antes de la
+// regla y la que deja la regla). Una nota escrita por una persona no calza y
+// se conserva tal cual.
+const NOTA_AUTO = /^Diferencia de peso [\d.]+%( \(|$)/;
+const rigeTxt = (regla) => (regla === 'mel' ? 'MEL' : regla === 'lampa' ? 'La Negra' : regla === 'acuerdo' ? 'lo ya acordado' : 'pendiente de acuerdo');
+
+// Lo que cambia en una guía ya recepcionada cuando se le aplica la regla del
+// contrato: el peso que rige, el estado (solo la franja de acuerdo manual
+// queda observada), la nota automática y la valorización, con el precio, el
+// dólar y los descuentos que la guía ya tenía congelados. Devuelve
+// { error } si los kilos descontados no caben en el peso que pasa a regir.
+function cambiosPorRegla(d, regla, descuentos = []) {
+  const kgDesc = descuentos.filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0);
+  if (kgDesc >= regla.kg) return { error: `los ${kgDesc} kg descontados no caben en los ${regla.kg} kg que pasan a regir` };
+  const v = valorizar({
+    kg: regla.kg, precio_usd_tm: num(d.precio_usd_tm), precio_usd: num(d.precio_usd),
+    precio_kg: num(d.precio_kg), dolar: num(d.dolar), descuentos,
+  });
+  const cambios = {
+    kg_contrato: regla.kg, regla_peso: regla.regla,
+    estado: regla.regla === 'pendiente' ? 'observado' : 'recepcionado',
+    valor: v.valor, ...(tiene.usd ? { valor_usd: v.valor_usd } : {}),
+  };
+  if (!d.obs_recepcion || NOTA_AUTO.test(d.obs_recepcion)) {
+    cambios.obs_recepcion = regla.dif_pct > 0 ? regla.texto : null;
+  }
+  return { cambios };
+}
+
+// La regla del contrato sobre las recepciones que no la tienen: las que se
+// registraron antes de que existiera (0019) seguían valorizadas con el peso de
+// La Negra y, si diferían más de 2%, observadas a la espera de que alguien las
+// resolviera a mano. El contrato ya dice qué peso manda, así que se corrigen
+// solas: hasta la tolerancia de MEL rige MEL, desde la de Lampa rige La Negra.
+// La franja intermedia sigue necesitando el acuerdo de las partes: queda
+// observada si nadie la resolvió, y si el ITO ya la había validado se respeta
+// esa decisión como acuerdo. No se tocan las guías anuladas ni las que ya
+// están en un estado de pago. Corre al arrancar y con el barrido periódico
+// (jobs.js); con `simular` solo informa lo que haría.
+export async function aplicarReglaAnteriores({ simular = false } = {}) {
+  if (!tiene.regla_peso) return [];
+  const guias = await q(supa.from('despachos').select('*')
+    .is('regla_peso', null).not('kg_destino', 'is', null).is('ep_id', null)
+    .in('estado', ['recepcionado', 'observado']).order('id'));
+  if (!guias.length) return [];
+  const cfg = await contrato();
+  const descDe = new Map();
+  if (tiene.desc_item) {
+    const filas = await q(supa.from('despacho_descuentos').select('despacho_id,tipo,valor').in('despacho_id', guias.map((g) => g.id)));
+    for (const x of filas) {
+      if (!descDe.has(x.despacho_id)) descDe.set(x.despacho_id, []);
+      descDe.get(x.despacho_id).push(x);
+    }
+  }
+  const hechas = [];
+  for (const d of guias) {
+    let regla = reglaPeso(d.kg_origen, d.kg_destino, cfg);
+    // Franja de acuerdo ya validada por el ITO: se mantiene lo que se valorizó.
+    if (regla.regla === 'pendiente' && d.estado === 'recepcionado') regla = { ...regla, regla: 'acuerdo' };
+    const { cambios, error } = cambiosPorRegla(d, regla, descDe.get(d.id) ?? []);
+    const fila = {
+      guia: d.guia, kg_origen: Number(d.kg_origen), kg_destino: Number(d.kg_destino), dif_pct: regla.dif_pct,
+      regla: regla.regla, kg_contrato: regla.kg,
+      estado: [d.estado, cambios?.estado ?? d.estado], valor: [num(d.valor), cambios?.valor ?? num(d.valor)],
+      error: error ?? null,
+    };
+    hechas.push(fila);
+    if (error) { console.error(`[GEA] regla de pesos: ${d.guia} sin aplicar, ${error}`); continue; }
+    if (regla.regla === 'acuerdo') delete cambios.obs_recepcion;   // la nota es la resolución del ITO
+    if (simular) continue;
+    await q(supa.from('despachos').update(cambios).eq('id', d.id).is('regla_peso', null).select('id'));
+    await audit('Sistema', 'sistema', 'Aplicó la regla de pesos del contrato a una recepción anterior',
+      `${d.guia} · MEL ${fila.kg_origen} kg, La Negra ${fila.kg_destino} kg (${regla.dif_pct.toFixed(2)}%) · rige ${rigeTxt(regla.regla)}: ${regla.kg} kg`
+      + (cambios.estado !== d.estado ? ` · estado ${d.estado} → ${cambios.estado}` : '')
+      + (cambios.valor !== num(d.valor) ? ` · valor ${d.valor} → ${cambios.valor}` : ''));
+  }
+  if (!simular) console.log(`[GEA] regla de pesos: aplicada a ${hechas.filter((x) => !x.error).length} recepción(es) anterior(es)`);
+  return hechas;
+}
+
+// El dólar de una recepción es el publicado para la fecha de su guía (o el
+// último anterior, si ese día no hubo publicación). Al recepcionar puede no
+// estar disponible —todavía no sale el del día, o las fuentes no responden— y
+// la guía queda valorizada con el último que había: un valor provisorio. Esto
+// lo vuelve definitivo: sincroniza la serie y revaloriza cada recepción cuyo
+// dólar no sea el de su fecha, con el precio, el peso y los descuentos que ya
+// tenía. Solo toca fechas con publicación ya firme, y nunca guías anuladas ni
+// en un estado de pago. Nació de las 20 guías que entre oct y nov-2026
+// quedaron con un dólar arrastrado de días anteriores sin que nadie lo notara.
+// Corre al arrancar, cada hora (jobs.js) y antes de generar un EP.
+const DIAS_SIN_PUBLICAR = 10;   // el mismo hueco máximo que recorre valorDolar()
+export async function corregirDolarRecepciones({ simular = false } = {}) {
+  if (!tiene.usd) return { ok: false, hechas: [] };
+  const guias = await q(supa.from('despachos').select('*')
+    .not('dolar', 'is', null).not('kg_destino', 'is', null).is('ep_id', null)
+    .in('estado', ['recepcionado', 'observado']).order('id').limit(5000));
+  const anios = [hoy().slice(0, 4), ...guias.map((g) => String(g.fecha).slice(0, 4))];
+  const sinc = await sincronizarDolar({ anios, simular });
+  if (!sinc.ok) {
+    console.error('[GEA] dólar: ninguna fuente respondió (SII, mindicador); se reintenta en la próxima pasada');
+    return { ok: false, hechas: [] };
+  }
+  if (sinc.nuevos && !simular) console.log(`[GEA] dólar: ${sinc.nuevos} fecha(s) nueva(s) desde ${sinc.fuente}; última publicación ${sinc.ultima}`);
+
+  const fechas = [...sinc.serie.keys()].sort();
+  // Última publicación hasta esa fecha, por búsqueda binaria.
+  const oficial = (fecha) => {
+    let a = 0, b = fechas.length - 1, r = -1;
+    while (a <= b) { const m = (a + b) >> 1; if (fechas[m] <= fecha) { r = m; a = m + 1; } else b = m - 1; }
+    return r < 0 ? null : { fecha: fechas[r], valor: sinc.serie.get(fechas[r]) };
+  };
+  const dias = (a, b) => Math.round((new Date(`${b}T12:00:00Z`) - new Date(`${a}T12:00:00Z`)) / 86400000);
+
+  const pendientes = guias.filter((d) => {
+    if (d.precio_usd_tm == null && d.precio_usd == null) return false;
+    if (d.fecha > sinc.ultima) return false;                    // su dólar aún puede publicarse
+    const o = oficial(d.fecha);
+    return o && dias(o.fecha, d.fecha) <= DIAS_SIN_PUBLICAR && Math.abs(o.valor - Number(d.dolar)) >= 0.005;
+  });
+  if (!pendientes.length) return { ok: true, hechas: [] };
+
+  const descDe = new Map();
+  if (tiene.desc_item) {
+    const filas = await q(supa.from('despacho_descuentos').select('despacho_id,tipo,valor').in('despacho_id', pendientes.map((g) => g.id)));
+    for (const x of filas) {
+      if (!descDe.has(x.despacho_id)) descDe.set(x.despacho_id, []);
+      descDe.get(x.despacho_id).push(x);
+    }
+  }
+  const hechas = [];
+  for (const d of pendientes) {
+    const o = oficial(d.fecha);
+    const v = valorizar({
+      kg: kgValorizado(d), precio_usd_tm: num(d.precio_usd_tm), precio_usd: num(d.precio_usd),
+      precio_kg: num(d.precio_kg), dolar: o.valor, descuentos: descDe.get(d.id) ?? [],
+    });
+    hechas.push({ guia: d.guia, fecha: d.fecha, dolar: [Number(d.dolar), o.valor], del: o.fecha, valor: [num(d.valor), v.valor] });
+    if (simular) continue;
+    const ok = await q(supa.from('despachos').update({ dolar: o.valor, valor: v.valor, valor_usd: v.valor_usd })
+      .eq('id', d.id).is('ep_id', null).select('id'));
+    if (!ok.length) continue;   // entró a un EP mientras tanto: ya no se toca
+    await audit('Sistema', 'sistema', 'Corrigió el dólar de una recepción',
+      `${d.guia} · guía del ${d.fecha} · dólar $${Number(d.dolar)} → $${o.valor}`
+      + `${o.fecha !== d.fecha ? ` (publicado el ${o.fecha})` : ''} · valor $${d.valor} → $${v.valor}`);
+  }
+  if (!simular) console.log(`[GEA] dólar: ${hechas.length} recepción(es) revalorizada(s) con el dólar de su fecha`);
+  return { ok: true, hechas };
+}
+
 /* ---------- despachos MEL → La Negra ---------- */
 
 // Hasta 1.000 guías: el buscador por N° de guía de la pantalla filtra sobre
@@ -410,8 +559,9 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
     : conMadera ? (precio.precio_usd_tm_madera ?? precio.precio_usd_tm)
     : precio.precio_usd_tm;
 
-  // El tipo de cambio se congela junto con el precio: una variación posterior
-  // del dólar no revaloriza una recepción ya declarada.
+  // El tipo de cambio es el de la fecha de la guía y se guarda con ella. Si
+  // ese día todavía no tiene publicación se usa el último conocido, y
+  // corregirDolarRecepciones() lo reemplaza cuando aparezca el definitivo.
   const enDolares = precioTm != null || precio.precio_usd != null;
   const dol = enDolares ? await valorDolar(d.fecha) : null;
   if (enDolares && !dol) {
@@ -465,7 +615,10 @@ r.post('/despachos/:id/recepcionar', auth('vendor', 'ito', 'coordinador'),
       : 'Recepción validada en La Negra',
     `${row.guia} · ${kg} kg${fechaRecepcion ? ` · recibida el ${fechaRecepcion}` : ''}${rige}${descuentos.length ? ` · ${descuentos.length} descuento(s)` : ''}` +
     `${precioTm != null ? ` · USD ${precioTm}/TM (${conMadera ? 'con' : 'sin'} madera) a $${dol.valor}`
-      : dol ? ` · USD ${precio.precio_usd}/kg a $${dol.valor}` : ''}`);
+      : dol ? ` · USD ${precio.precio_usd}/kg a $${dol.valor}` : ''}`
+    // Dólar de otro día: queda provisorio y corregirDolarRecepciones() lo
+    // reemplaza cuando se publique el de la fecha de la guía.
+    + (dol?.estimado && dol.fecha !== d.fecha ? ` (dólar del ${dol.fecha}, provisorio)` : ''));
   res.json(view(row, desc.get(d.id) ?? []));
 }));
 
@@ -828,6 +981,23 @@ r.patch('/despachos/:id', auth('limpieza', 'ito', 'coordinador'),
   if (b.kg_origen !== undefined) {
     if (!(Number(b.kg_origen) > 0)) return res.status(400).json({ error: 'El peso de origen debe ser mayor que cero' });
     cambios.kg_origen = Number(b.kg_origen); bitacora.push(`kg origen → ${cambios.kg_origen}`);
+    // Si la guía ya se recepcionó, el peso de origen es uno de los dos lados
+    // de la regla del contrato: al corregirlo, la regla se aplica de nuevo
+    // sola (peso que rige, estado y valorización). Sin esto una guía quedaba
+    // observada por una diferencia que la corrección ya había eliminado.
+    if (tiene.regla_peso && d.kg_destino != null && ['recepcionado', 'observado'].includes(d.estado)
+      && cambios.kg_origen !== Number(d.kg_origen)) {
+      const regla = reglaPeso(cambios.kg_origen, d.kg_destino, await contrato());
+      const descuentos = tiene.desc_item
+        ? await q(supa.from('despacho_descuentos').select('tipo,valor').eq('despacho_id', d.id))
+        : [];
+      const r = cambiosPorRegla(d, regla, descuentos);
+      if (r.error) return res.status(400).json({ error: `Con ese peso de origen, ${r.error}. Quite o corrija primero los descuentos de la recepción.` });
+      Object.assign(cambios, r.cambios);
+      bitacora.push(`rige ${rigeTxt(regla.regla)} (${regla.dif_pct.toFixed(2)}%): ${regla.kg} kg`);
+      if (r.cambios.estado !== d.estado) bitacora.push(`estado → ${r.cambios.estado}`);
+      if (r.cambios.valor !== num(d.valor)) bitacora.push(`valor ${d.valor} → ${r.cambios.valor}`);
+    }
   }
   if (tiene.tara_origen && b.tara_origen_kg !== undefined) {
     const t = Number(b.tara_origen_kg);

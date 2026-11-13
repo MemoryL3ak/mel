@@ -9,6 +9,7 @@ import { supa, q, ah, folio, audit, hoy, semanaISO } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { contrato } from '../contrato.js';
+import { valorDolar } from '../dolar.js';
 import { enviarCorreo, plantilla } from '../mail.js';
 import { convertirAChatarra } from '../jobs.js';
 import { registrarArchivos } from '../documental.js';
@@ -396,7 +397,7 @@ r.get('/componentes/:id/adjuntos', VE, ah(async (req, res) => {
     .createSignedUrls(lista.map((f) => `${carpeta}/${f.name}`), 3600);
   if (e2) throw new Error(e2.message);
   res.json({
-    archivos: firmadas.map((f, i) => ({ url: f.signedUrl, tipo: lista[i].name.startsWith('ficha-') ? 'ficha' : 'foto' }))
+    archivos: firmadas.map((f, i) => ({ url: f.signedUrl, tipo: lista[i].name.startsWith('ficha-') ? 'ficha' : lista[i].name.startsWith('guia-') ? 'guia' : 'foto' }))
       .filter((f) => f.url),
   });
 }));
@@ -542,28 +543,65 @@ r.post('/componentes/:id/terreno', OP, ah(async (req, res) => {
   res.json(row);
 }));
 
+// Guía de despacho con que el componente se mueve (por ejemplo cuando baja de
+// MEL a La Negra): se adjunta en el mismo movimiento. Va a la carpeta del
+// componente con el prefijo guia- (el portal público solo muestra foto- y
+// ficha-) y al repositorio documental, vinculada al componente.
+const GUIA_MOV = { ...IMG, 'application/pdf': 'pdf' };
+const subirGuiaMov = multer({
+  storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',   // el nombre original pasa al repositorio documental
+  limits: { files: 3, fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, f, cb) => cb(null, !!GUIA_MOV[f.mimetype]),
+});
+async function subirGuiasMovimiento(comp, archivos = [], quien = null, numero = null) {
+  const subidos = [];
+  const marca = Date.now();
+  for (const f of archivos) {
+    const ext = GUIA_MOV[f.mimetype];
+    if (!ext) continue;
+    const path = `OBS/${comp.id}/guia-${marca}-${subidos.length + 1}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
+    if (error) { console.error('[GEA] guía del movimiento:', error.message); continue; }
+    subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
+  }
+  if (subidos.length) {
+    const doc = { hito: 'componente', refId: comp.id, archivos: subidos, quien, nota: numero ? `Guía de despacho N° ${numero}` : null };
+    // Tipo propio desde la migración 0020; antes de aplicarla se guarda con el
+    // de guía de despacho, que ya existe en el catálogo.
+    (await registrarArchivos({ tipo: 'ob_guia_traslado', ...doc }))
+      ?? (await registrarArchivos({ tipo: 'ob_guia_despacho', ...doc }));
+  }
+  return subidos.length;
+}
+
 // Traslado al showroom: cuantas piezas salieron y cuantas llegaron. El
 // diagrama del proceso las tiene como pasos propios, y sin registrarlas un
 // faltante entre el patio y el showroom no deja rastro en ninguna parte.
-r.post('/componentes/:id/cantidades', OP, ah(async (req, res) => {
+// El mismo acto puede llevar la guía de despacho del movimiento: su número y
+// el documento. También se puede adjuntar la guía sola, sin cambiar cantidades.
+r.post('/componentes/:id/cantidades', OP, subirGuiaMov.array('guia', 3), ah(async (req, res) => {
   if (!tiene.cantidades) {
     return res.status(503).json({ error: 'Esta función requiere aplicar db/0010_ofertas.sql en la base de datos' });
   }
   const c = await q(supa.from('componentes').select('*').eq('id', Number(req.params.id) || 0).maybeSingle());
   if (!c) return res.status(404).json({ error: 'Componente no encontrado' });
 
+  // Con archivos adjuntos el cuerpo llega como formulario: un campo vacío es
+  // «no informado», no un cero.
+  const dato = (k) => (req.body?.[k] === undefined || req.body[k] === '' ? undefined : req.body[k]);
   const cambios = {};
   const ahora = new Date().toISOString();
-  if (req.body?.cant_enviada !== undefined) {
-    const n = Math.round(Number(req.body.cant_enviada));
+  if (dato('cant_enviada') !== undefined) {
+    const n = Math.round(Number(dato('cant_enviada')));
     if (!(n >= 0)) return res.status(400).json({ error: 'Cantidad enviada inválida' });
     if (c.cant_encontrada != null && n > Number(c.cant_encontrada)) {
       return res.status(400).json({ error: `No se pueden enviar ${n}: en terreno se encontraron ${c.cant_encontrada}.` });
     }
     cambios.cant_enviada = n; cambios.enviado_el = ahora;
   }
-  if (req.body?.cant_recibida !== undefined) {
-    const n = Math.round(Number(req.body.cant_recibida));
+  if (dato('cant_recibida') !== undefined) {
+    const n = Math.round(Number(dato('cant_recibida')));
     if (!(n >= 0)) return res.status(400).json({ error: 'Cantidad recibida inválida' });
     const enviadas = cambios.cant_enviada ?? c.cant_enviada;
     if (enviadas != null && n > Number(enviadas)) {
@@ -571,13 +609,33 @@ r.post('/componentes/:id/cantidades', OP, ah(async (req, res) => {
     }
     cambios.cant_recibida = n; cambios.recibido_el = ahora;
   }
-  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cantidades que registrar' });
+  const guiaNumero = String(req.body?.guia_numero ?? '').trim();
+  const archivos = req.files ?? [];
+  const hayCantidades = Object.keys(cambios).length > 0;
+  if (!hayCantidades && !archivos.length && !guiaNumero) {
+    return res.status(400).json({ error: 'Indique las unidades enviadas o recibidas, o adjunte la guía de despacho' });
+  }
 
-  const row = await q(supa.from('componentes').update(cambios).eq('id', c.id).select().single());
-  await audit(req.user.name, req.user.role, 'Registró traslado de componente al showroom',
+  const guias = await subirGuiasMovimiento(c, archivos, req.user, guiaNumero || null);
+  if (archivos.length && !guias) {
+    return res.status(400).json({ error: 'No se pudo guardar la guía de despacho. Revise el archivo e intente de nuevo.' });
+  }
+  if (guias) cambios.fotos = Number(c.fotos ?? 0) + guias;
+  // El N° de la guía se suma a las guías GD del componente (columna de la
+  // planilla de materiales), sin repetirlo.
+  if (guiaNumero && tiene.planilla && !String(c.guias_gd ?? '').includes(guiaNumero)) {
+    cambios.guias_gd = c.guias_gd ? `${c.guias_gd}, ${guiaNumero}` : guiaNumero;
+  }
+
+  const row = Object.keys(cambios).length
+    ? await q(supa.from('componentes').update(cambios).eq('id', c.id).select().single())
+    : c;
+  await audit(req.user.name, req.user.role,
+    hayCantidades ? 'Registró traslado de componente al showroom' : 'Adjuntó guía de despacho al movimiento del componente',
     `${c.codigo}${cambios.cant_enviada != null ? ` · ${cambios.cant_enviada} enviada(s)` : ''}`
-    + `${cambios.cant_recibida != null ? ` · ${cambios.cant_recibida} recibida(s)` : ''}`);
-  res.json(row);
+    + `${cambios.cant_recibida != null ? ` · ${cambios.cant_recibida} recibida(s)` : ''}`
+    + `${guiaNumero ? ` · guía de despacho N° ${guiaNumero}` : ''}${guias ? ` · ${guias} documento(s) de guía` : ''}`);
+  res.json({ ...row, guias_adjuntas: guias });
 }));
 
 // Carga masiva de componentes: o entran todos, o no entra ninguno. Cada fila
@@ -946,6 +1004,50 @@ r.post('/publicaciones', OP, ah(async (req, res) => {
   res.json(await vistaPublicacion(p, comp, 0));
 }));
 
+// Publicación en lote: varios componentes del inventario salen al portal en
+// un solo acto, cada uno con su propia publicación y el mismo plazo y fecha.
+// O se publican todos o ninguno: si alguno ya no se puede publicar, se dice
+// cuál y no se toca nada. La oferta mínima, opcional, se toma del valor
+// referencial de cada componente.
+r.post('/publicaciones/masivo', OP, ah(async (req, res) => {
+  if (!tiene.obsoletos) return sinTabla(res);
+  const ids = [...new Set((Array.isArray(req.body?.componente_ids) ? req.body.componente_ids : [])
+    .map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) return res.status(400).json({ error: 'Elija al menos un componente para publicar' });
+  if (ids.length > 300) return res.status(400).json({ error: 'Se publican hasta 300 componentes por lote' });
+  const { plazo_dias, publicado_el } = req.body || {};
+  if (publicado_el && !/^\d{4}-\d{2}-\d{2}$/.test(publicado_el)) return res.status(400).json({ error: 'Fecha inválida' });
+  const plazo = Number(plazo_dias) > 0 ? Math.round(Number(plazo_dias)) : 15;
+  const fecha = publicado_el || hoy();
+  // Una fecha que deja el plazo ya cumplido convertiría el lote entero a
+  // chatarra en el siguiente barrido: se frena aquí, antes de publicar.
+  if (diasDesde(fecha) >= plazo) {
+    return res.status(400).json({ error: `Con fecha ${fecha} y plazo de ${plazo} días el lote nacería con el plazo cumplido y pasaría a chatarra. Revise la fecha de publicación.` });
+  }
+
+  const comps = await q(supa.from('componentes').select('id,codigo,nombre,estado,valor_referencial').in('id', ids));
+  if (comps.length !== ids.length) return res.status(409).json({ error: 'Alguno de los componentes elegidos ya no está en el inventario. Actualice la página y vuelva a elegir.' });
+  const fuera = comps.filter((c) => !['planificado', 'por_identificar'].includes(c.estado));
+  if (fuera.length) {
+    return res.status(409).json({
+      error: `No se publicó nada: ${fuera.length} componente(s) ya no se pueden publicar (${fuera.slice(0, 8).map((c) => c.codigo).join(', ')}${fuera.length > 8 ? '…' : ''}).`,
+      detalle: fuera.map((c) => ({ codigo: c.codigo, estado: c.estado })),
+    });
+  }
+
+  const conMinima = req.body?.minima_referencial === true;
+  const pubs = await q(supa.from('publicaciones').insert(comps.map((c) => ({
+    componente_id: c.id, publicado_el: fecha, plazo_dias: plazo,
+    oferta_minima: conMinima && Number(c.valor_referencial) > 0 ? Number(c.valor_referencial) : null,
+    creado_por: req.user.name,
+  }))).select('id'));
+  await q(supa.from('componentes').update({ estado: 'publicado' }).in('id', ids).select('id'));
+  await audit(req.user.name, req.user.role, 'Publicó componentes en lote en el portal',
+    `${pubs.length} componente(s) · plazo ${plazo} días · desde ${fecha}${conMinima ? ' · oferta mínima = valor referencial' : ''}`
+    + ` · ${comps.slice(0, 20).map((c) => c.codigo).join(', ')}${comps.length > 20 ? '…' : ''}`);
+  res.json({ publicados: pubs.length });
+}));
+
 // Regla de 15 días: sin adjudicar al cumplirse el plazo, el componente se
 // convierte en chatarra y pasa al flujo de enajenación (Fase 1). La baja del
 // activo la ejecuta el Coordinador; aquí se marca y se deja en la bitácora.
@@ -1014,6 +1116,8 @@ r.get('/publicaciones/:id/ofertas', OP, ah(async (req, res) => {
         id: o.id, comprador_id: o.comprador_id, oferente: c?.razon_social ?? '—', dd_estado: c?.dd_estado ?? null,
         monto: num(o.monto), plazo_retiro: o.plazo_retiro, forma_pago: o.forma_pago,
         comentarios: o.comentarios, estado: o.estado,
+        // Oferta ingresada a mano por la administración (nulo = la presentó el comprador en el portal).
+        ingresada_por: o.ingresada_por ?? null, recibida_el: o.recibida_el ?? null,
         // El monto en dólares es el que hace comparables las ofertas entre sí:
         // una en pesos y una en dólares no se pueden poner lado a lado sin él.
         moneda: o.moneda ?? 'USD', monto_usd: num(o.monto_usd) ?? num(o.monto), dolar: num(o.dolar),
@@ -1025,6 +1129,112 @@ r.get('/publicaciones/:id/ofertas', OP, ah(async (req, res) => {
       };
     }),
   });
+}));
+
+/* ============================ ofertas ingresadas a mano ============================ */
+
+// Mientras los compradores no oferten por el portal público, las ofertas
+// llegan por otra vía (correo, plataforma de venta) y la administración las
+// ingresa aquí para poder compararlas, adjudicar y vender con sus respaldos.
+// El comprador se elige entre los ya registrados o se crea con su razón
+// social y RUT; queda sin cuenta de acceso y con la due diligence en revisión,
+// igual que uno que se registra en el portal. El respaldo de la oferta (el
+// correo, la cotización) es opcional y queda en el repositorio documental,
+// vinculado a la publicación.
+const limpiarRut = (v) => String(v || '').replace(/[.\s]/g, '').toUpperCase().trim();
+
+r.post('/publicaciones/:id/ofertas', OP, subirActa.array('respaldo', 3), ah(async (req, res) => {
+  if (!tiene.obsoletos) return sinTabla(res);
+  const b = req.body || {};
+  const p = await q(supa.from('publicaciones').select('*').eq('id', Number(req.params.id) || 0).maybeSingle());
+  if (!p) return res.status(404).json({ error: 'Publicación no encontrada' });
+  if (p.estado !== 'activa') return res.status(409).json({ error: 'La publicación ya no está activa: se adjudicó, se canceló o pasó a chatarra' });
+  if (diasDesde(p.publicado_el) >= plazoTotal(p)) {
+    return res.status(409).json({ error: 'El plazo de la publicación ya se cumplió. Amplíe el plazo antes de ingresar la oferta.' });
+  }
+
+  const monto = Math.round(Number(b.monto));
+  if (!(monto > 0)) return res.status(400).json({ error: 'Ingrese el monto de la oferta' });
+  const moneda = b.moneda === 'CLP' ? 'CLP' : 'USD';
+  const recibida = (b.recibida_el || '').trim();
+  if (recibida && !/^\d{4}-\d{2}-\d{2}$/.test(recibida)) return res.status(400).json({ error: 'Fecha de recepción de la oferta inválida' });
+  if (recibida && recibida > hoy()) return res.status(400).json({ error: 'La fecha en que se recibió la oferta no puede ser futura' });
+
+  // Quién oferta: un comprador ya registrado, o uno nuevo por razón social y
+  // RUT. Si el RUT ya existe se usa ese comprador en vez de duplicarlo.
+  let comprador = null;
+  let nuevo = null;
+  if (Number(b.comprador_id) > 0) {
+    comprador = await q(supa.from('compradores').select('*').eq('id', Number(b.comprador_id)).maybeSingle());
+    if (!comprador) return res.status(400).json({ error: 'El comprador elegido ya no existe' });
+  } else {
+    const razon = (b.razon_social || '').trim();
+    const rut = limpiarRut(b.rut);
+    const email = (b.email || '').trim().toLowerCase();
+    if (!razon) return res.status(400).json({ error: 'Indique la razón social o el nombre del oferente' });
+    if (rut.length < 8) return res.status(400).json({ error: 'Ingrese un RUT válido del oferente' });
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'El correo del oferente no es válido' });
+    comprador = (await q(supa.from('compradores').select('*').ilike('rut', rut).limit(1)))[0] ?? null;
+    if (!comprador) nuevo = { razon_social: razon, rut, email, telefono: (b.telefono || '').trim() || null };
+  }
+  if (comprador?.dd_estado === 'rechazada') {
+    return res.status(409).json({ error: `${comprador.razon_social} tiene la due diligence rechazada: no se le pueden ingresar ofertas` });
+  }
+
+  // Todo se compara en dólares, igual que en el portal: una oferta en pesos se
+  // convierte con el dólar del día en que se recibió y queda congelada.
+  let monto_usd = monto;
+  let cambio = null;
+  if (moneda === 'CLP') {
+    const d = tiene.ofertas_moneda ? await valorDolar(recibida || hoy()) : null;
+    if (!d?.valor) return res.status(503).json({ error: 'No hay tipo de cambio disponible para convertir una oferta en pesos. Ingrésela en dólares o regístrelo en Valorización.' });
+    cambio = d.valor;
+    monto_usd = Math.round((monto / d.valor) * 100) / 100;
+  }
+  if (p.oferta_minima != null && monto_usd < Number(p.oferta_minima)) {
+    return res.status(400).json({ error: `La oferta mínima de esta publicación es ${usd(p.oferta_minima)}.` });
+  }
+
+  // Recién ahora, con la oferta validada, se crea el comprador nuevo.
+  if (!comprador) {
+    comprador = await q(supa.from('compradores').insert(nuevo).select('*').single());
+    await audit(req.user.name, req.user.role, 'Registró comprador sin cuenta de portal', `${nuevo.razon_social} (${nuevo.rut})`);
+  }
+
+  const oferta = await q(supa.from('ofertas').insert({
+    publicacion_id: p.id, comprador_id: comprador.id, monto,
+    plazo_retiro: (b.plazo_retiro || '').trim() || null,
+    forma_pago: (b.forma_pago || '').trim() || null,
+    comentarios: (b.comentarios || '').trim() || null,
+    ...(tiene.ofertas_moneda ? { moneda, monto_usd, dolar: cambio } : {}),
+    ...(tiene.oferta_manual ? { ingresada_por: req.user.name, recibida_el: recibida || hoy() } : {}),
+  }).select('id').single());
+
+  // Respaldo de la oferta: lo que llegó (correo, cotización firmada).
+  const subidos = [];
+  const marca = Date.now();
+  for (const f of req.files ?? []) {
+    const ext = ACTA[f.mimetype];
+    if (!ext) continue;
+    const path = `OFE/${oferta.id}/respaldo-${marca}-${subidos.length + 1}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
+    if (error) { console.error('[GEA] respaldo de oferta:', error.message); continue; }
+    subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
+  }
+  if (subidos.length) {
+    await registrarArchivos({
+      tipo: 'ob_registro_ofertas', hito: 'publicacion', refId: p.id, archivos: subidos, quien: req.user,
+      nota: `Respaldo de la oferta de ${comprador.razon_social}`,
+    });
+  }
+
+  const comp = await q(supa.from('componentes').select('codigo').eq('id', p.componente_id).maybeSingle());
+  const enMoneda = moneda === 'CLP' ? '$ ' + monto.toLocaleString('es-CL') : usd(monto);
+  await audit(req.user.name, req.user.role, 'Ingresó oferta recibida fuera del portal',
+    `${comp?.codigo ?? `publicación ${p.id}`} · ${comprador.razon_social} · ${enMoneda}`
+    + `${moneda === 'CLP' ? ` (${usd(monto_usd)} al dólar de ${cambio})` : ''}`
+    + `${recibida ? ` · recibida el ${recibida}` : ''}${subidos.length ? ` · ${subidos.length} respaldo(s)` : ''}`);
+  res.json({ id: oferta.id, publicacion_id: p.id, comprador_id: comprador.id, comprador: comprador.razon_social, respaldos: subidos.length });
 }));
 
 /* ============================ matriz de evaluación ============================ */
@@ -1167,11 +1377,13 @@ r.post('/publicaciones/:id/adjudicar', OP, ah(async (req, res) => {
   res.json({ ...adj, cert_folio: cert });
 }));
 
-async function vistaAdjudicacion(a, comp, comprador) {
+async function vistaAdjudicacion(a, comp, comprador, moneda = 'USD') {
   return {
     id: a.id, cert_folio: a.cert_folio, componente: comp?.nombre ?? '—', codigo: comp?.codigo ?? null,
     comprador: comprador?.razon_social ?? '—', comprador_rut: comprador?.rut ?? null,
     monto: num(a.monto), comision_pct: num(a.comision_pct), comision_monto: num(a.comision_monto),
+    // El monto adjudicado está en la moneda de la oferta ganadora.
+    moneda,
     estado: a.estado, matriz: a.matriz,
     pago_el: a.pago_el, pago_ref: a.pago_ref, guia_folio: a.guia_folio, entregado_el: a.entregado_el,
     entrega_docs: a.entrega_docs ?? 0,
@@ -1186,20 +1398,48 @@ r.get('/adjudicaciones', OP, ah(async (_req, res) => {
   const pubs = new Map((await q(supa.from('publicaciones').select('id,componente_id'))).map((p) => [p.id, p]));
   const comps = new Map((await q(supa.from('componentes').select('id,codigo,nombre'))).map((c) => [c.id, c]));
   const compradores = new Map((await q(supa.from('compradores').select('id,razon_social,rut'))).map((c) => [c.id, c]));
+  const monedas = tiene.ofertas_moneda
+    ? new Map((await q(supa.from('ofertas').select('id,moneda').in('id', adj.map((a) => a.oferta_id)))).map((o) => [o.id, o.moneda]))
+    : new Map();
   res.json(await Promise.all(adj.map((a) =>
-    vistaAdjudicacion(a, comps.get(pubs.get(a.publicacion_id)?.componente_id), compradores.get(a.comprador_id)))));
+    vistaAdjudicacion(a, comps.get(pubs.get(a.publicacion_id)?.componente_id), compradores.get(a.comprador_id), monedas.get(a.oferta_id) ?? 'USD'))));
 }));
 
-// Paso 2 del flujo posterior: registro y verificación del pago por transferencia.
-r.post('/adjudicaciones/:id/pago', OP, ah(async (req, res) => {
+// Paso 2 del flujo posterior: registro y verificación del pago por
+// transferencia. El respaldo de la transferencia se adjunta en el mismo acto
+// (opcional): queda en la carpeta de la adjudicación, junto a los documentos
+// de la entrega, y en el repositorio documental como «Pago por transferencia».
+async function subirDocPago(adjId, archivos = [], quien = null) {
+  const subidos = [];
+  const marca = Date.now();
+  for (const f of archivos) {
+    const ext = ACTA[f.mimetype];
+    if (!ext) continue;
+    const path = `ENT/${adjId}/pago-${marca}-${subidos.length + 1}.${ext}`;
+    const { error } = await supa.storage.from('evidencia').upload(path, f.buffer, { contentType: f.mimetype });
+    if (error) { console.error('[GEA] respaldo de transferencia:', error.message); continue; }
+    subidos.push({ bucket: 'evidencia', path, nombre: f.originalname, mime: f.mimetype, bytes: f.size });
+  }
+  if (subidos.length) await registrarArchivos({ tipo: 'ob_pago', hito: 'adjudicacion', refId: adjId, archivos: subidos, quien });
+  return subidos.length;
+}
+
+r.post('/adjudicaciones/:id/pago', OP, subirActa.array('pago', 3), ah(async (req, res) => {
   if (!tiene.obsoletos) return sinTabla(res);
-  const a = await q(supa.from('adjudicaciones').select('*').eq('id', req.params.id).single());
+  const a = await q(supa.from('adjudicaciones').select('*').eq('id', Number(req.params.id) || 0).maybeSingle());
+  if (!a) return res.status(404).json({ error: 'Adjudicación no encontrada' });
   if (a.estado !== 'adjudicada') return res.status(409).json({ error: 'El pago ya fue registrado o el retiro ya se entregó' });
+  const respaldos = await subirDocPago(a.id, req.files ?? [], req.user);
+  if (req.files?.length && !respaldos) {
+    return res.status(400).json({ error: 'No se pudo guardar el respaldo de la transferencia. Revise el archivo e intente de nuevo.' });
+  }
+  const ref = (req.body?.pago_ref || '').trim() || null;
   const row = await q(supa.from('adjudicaciones').update({
-    estado: 'pagada', pago_el: new Date().toISOString(), pago_ref: (req.body?.pago_ref || '').trim() || null,
+    estado: 'pagada', pago_el: new Date().toISOString(), pago_ref: ref,
   }).eq('id', a.id).select('id').single());
-  await audit(req.user.name, req.user.role, 'Registró pago de adjudicación', a.cert_folio);
-  res.json(row);
+  await audit(req.user.name, req.user.role, 'Registró pago de adjudicación',
+    `${a.cert_folio}${ref ? ` · ref. ${ref}` : ''}${respaldos ? ` · ${respaldos} respaldo(s) de transferencia` : ''}`);
+  res.json({ ...row, respaldos });
 }));
 
 // Paso 4: guía de despacho + certificado de entrega, retiro coordinado.
@@ -1246,7 +1486,7 @@ r.get('/adjudicaciones/:id/acta', OP, ah(async (req, res) => {
   const archivos = (firmadas ?? [])
     .map((f, i) => ({ url: f.signedUrl, clase: lista[i].name.split('-')[0] }))
     .filter((f) => f.url)
-    .map((f) => ({ ...f, etiqueta: DOC_ENTREGA[f.clase]?.etiqueta ?? 'Documento de entrega' }))
+    .map((f) => ({ ...f, etiqueta: DOC_ENTREGA[f.clase]?.etiqueta ?? (f.clase === 'pago' ? 'Respaldo de transferencia' : 'Documento de entrega') }))
     .sort((x, y) => (orden.indexOf(x.clase) + 1 || 99) - (orden.indexOf(y.clase) + 1 || 99));
   res.json({ archivos });
 }));
@@ -1278,7 +1518,11 @@ r.post('/compradores/:id/dd', OP, ah(async (req, res) => {
     await q(supa.from('users').update({ activo: estado !== 'rechazada' }).eq('id', row.user_id).select('id').single());
   }
   await audit(req.user.name, req.user.role, `Due diligence ${estado}`, `${row.razon_social} (${row.rut})`);
-  if (estado === 'aprobada') {
+  // Un comprador ingresado a mano no tiene cuenta de portal (ni siempre correo):
+  // no se le avisa de una cuenta que no existe.
+  if (!row.user_id || !row.email) {
+    // sin aviso
+  } else if (estado === 'aprobada') {
     enviarCorreo({
       to: row.email, subject: 'Cuenta habilitada · Venta de obsoletos MEL',
       html: plantilla({
