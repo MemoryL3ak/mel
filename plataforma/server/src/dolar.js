@@ -1,9 +1,9 @@
 // Valor del dólar observado, con historia propia.
 //
 // La valorización del contrato es en USD/kg, así que cada recepción necesita
-// el tipo de cambio del día. Se consulta a mindicador.cl (serie del Banco
-// Central, sin credenciales; si no responde, a la tabla del SII, que publica
-// la misma serie) y se guarda en la tabla `dolar`: esa copia local
+// el tipo de cambio del día. Se consulta al Banco Central (su serie pública
+// del dólar observado; si no responde, a mindicador.cl y a la tabla del SII,
+// que la copian) y se guarda en la tabla `dolar`: esa copia local
 // es la que manda después, para que un mismo día siempre valorice igual y para
 // que la plataforma siga operando si la API no responde.
 import { supa, q, hoy } from './supa.js';
@@ -115,6 +115,79 @@ async function consultarSii(fecha) {
   return tabla ? { alcanzada: true, valor: tabla.get(fecha) ?? null } : { alcanzada: false, valor: null };
 }
 
+// Fuente principal: el propio Banco Central, que es quien fija el dólar
+// observado. Su página de indicadores diarios enlaza la serie del año en curso
+// —una tabla de días por meses— y es la primera en tener el valor del día. Se
+// agregó el 17-nov-2026 al comprobar que la tabla del SII llevaba tres días
+// hábiles sin actualizarse: con ella sola, el dólar de la plataforma quedaba
+// atrasado justo en las guías más recientes.
+const BC_BASE = 'https://si3.bcentral.cl/indicadoressiete/secure/';
+const BC_INDICADORES = `${BC_BASE}Indicadoresdiarios.aspx`;
+// Enlace a la serie tal como lo publica la página; se vuelve a leer de ella en
+// cada consulta y este queda de respaldo por si la portada no responde.
+let bcSerie = 'Serie.aspx?gcode=PRE_TCO&param=RABmAFYAWQB3AGYAaQBuAEkALQAzADUAbgBNAGgAaAAkADUAVwBQAC4AbQBYADAARwBOAGUAYwBjACMAQQBaAHAARgBhAGcAUABTAGUAdwA1ADQAMQA0AE0AawBLAF8AdQBDACQASABzAG0AXwA2AHQAawBvAFcAZwBKAEwAegBzAF8AbgBMAHIAYgBDAC4ARQA3AFUAVwB4AFIAWQBhAEEAOABkAHkAZwAxAEEARAA=';
+
+async function traer(url, ms = TIMEOUT_MS * 2) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0 (GEA)' } });
+    return r.ok ? await r.text() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Lee la serie anual del Banco Central: una fila por día del mes y una celda
+ * por mes (`<span id="gr_ctl18_Noviembre" class="obs">1.001,17</span>`), con
+ * el año en el selector. Los valores vienen con coma decimal y punto de miles.
+ * @returns {{anio:string, tabla:Map<string, number>}|null}
+ */
+export function leerTablaBancoCentral(html) {
+  const anio = html.match(/<option[^>]*selected="selected"[^>]*value="(\d{4})"/i)?.[1]
+    ?? html.match(/A(?:ñ|&#241;)o\s+(\d{4})/i)?.[1];
+  if (!anio) return null;
+  const tabla = new Map();
+  for (const fila of html.split(/<tr[\s>]/i)) {
+    const dia = fila.match(/<td[^>]*>\s*(\d{1,2})\s*<\/td>/i)?.[1];
+    if (!dia) continue;
+    for (const c of fila.matchAll(/id="gr_ctl\d+_([A-Za-z]+)"[^>]*>([^<]*)</g)) {
+      const mes = MESES.indexOf(c[1].toLowerCase());
+      const txt = c[2].trim();
+      if (mes < 0 || !txt) continue;
+      const v = Number(txt.replace(/\./g, '').replace(',', '.'));
+      if (v >= 100 && v <= 5000) {
+        tabla.set(`${anio}-${String(mes + 1).padStart(2, '0')}-${dia.padStart(2, '0')}`, v);
+      }
+    }
+  }
+  return tabla.size ? { anio, tabla } : null;
+}
+
+// Año en curso del Banco Central, o null si no se pudo leer (o si se pide otro
+// año: la serie publicada es la del año corriente).
+let bcMemo = null;   // { en, anio, tabla }
+async function tablaBancoCentral(anio, { fresca = false } = {}) {
+  if (!fresca && bcMemo && bcMemo.anio === anio && Date.now() - bcMemo.en < CACHE_MS) return bcMemo.tabla;
+  if (anio !== hoy().slice(0, 4)) return null;
+  const portada = await traer(BC_INDICADORES);
+  const enlace = portada?.match(/D(?:ó|&#243;|o)lar observado[\s\S]{0,1200}?href="(Serie\.aspx\?gcode=PRE_TCO[^"]+)"/i)?.[1];
+  if (enlace) bcSerie = enlace.replace(/&amp;/g, '&');
+  const html = await traer(BC_BASE + bcSerie);
+  const leida = html ? leerTablaBancoCentral(html) : null;
+  if (!leida || leida.anio !== anio) return null;
+  bcMemo = { en: Date.now(), anio, tabla: leida.tabla };
+  return leida.tabla;
+}
+
+async function consultarBancoCentral(fecha) {
+  const tabla = await tablaBancoCentral(fecha.slice(0, 4));
+  return tabla ? { alcanzada: true, valor: tabla.get(fecha) ?? null } : { alcanzada: false, valor: null };
+}
+
 // El mismo año completo, desde mindicador: respaldo de la tabla del SII.
 async function tablaMindicador(anio) {
   if (Date.now() < mindicadorCaidaHasta) return null;
@@ -140,13 +213,19 @@ async function tablaMindicador(anio) {
 }
 
 /**
- * Consulta un día puntual, primero en mindicador y, si no trae valor, en el
- * SII. Distingue los dos "no hay valor" que importan: que la fuente conteste
- * que ese día no tiene publicación, o que no se pueda hablar con ninguna. Lo
- * primero invita a probar el día anterior; lo segundo, a dejar de insistir.
+ * Consulta un día puntual: primero en el Banco Central y, si no trae valor, en
+ * mindicador y en el SII. Distingue los dos "no hay valor" que importan: que
+ * la fuente conteste que ese día no tiene publicación, o que no se pueda
+ * hablar con ninguna. Lo primero invita a probar el día anterior; lo segundo,
+ * a dejar de insistir.
  * @returns {Promise<{alcanzada:boolean, valor:number|null, fuente:string|null}>}
  */
 async function consultarApi(fecha) {
+  const b = await consultarBancoCentral(fecha);
+  if (b.valor != null) return { ...b, fuente: 'bcentral.cl' };
+  // El Banco Central contestó y ese día no tiene valor: no lo va a tener otra
+  // fuente, que solo lo copian de él.
+  if (b.alcanzada) return { alcanzada: true, valor: null, fuente: null };
   const m = await consultarMindicador(fecha);
   if (m.valor != null) return { ...m, fuente: 'mindicador.cl' };
   const s = await consultarSii(fecha);
@@ -234,8 +313,8 @@ export async function valorDolar(fecha = hoy()) {
 }
 
 /**
- * Trae la serie completa del año desde la fuente que conteste (SII, y si no,
- * mindicador) y guarda las fechas que falten en la tabla `dolar`. Es lo que
+ * Trae la serie completa del año desde el Banco Central (y si no contesta,
+ * desde el SII y mindicador) y guarda las fechas que falten en la tabla `dolar`. Es lo que
  * mantiene el dólar al día sin esperar a que una recepción lo pida: corre con
  * el barrido periódico (jobs.js). Nunca pisa un valor ya guardado, sea de una
  * fuente o fijado a mano.
@@ -252,15 +331,22 @@ export async function sincronizarDolar({ anios = [hoy().slice(0, 4)], simular = 
   const fuenteDe = new Map();
   const fuentes = new Set();
   for (const anio of lista) {
-    let tabla = await tablaSii(anio, { fresca: true });
-    let fuente = 'sii.cl';
-    if (!tabla) { tabla = await tablaMindicador(anio); fuente = 'mindicador.cl'; }
+    // El Banco Central manda y, si contesta, basta. Si no, se juntan las otras
+    // dos fuentes: cualquiera de ellas puede venir atrasada, y entre ambas se
+    // cubren más días que con una sola.
+    const bc = await tablaBancoCentral(anio, { fresca: true });
+    const partes = bc ? [[bc, 'bcentral.cl']] : [
+      [await tablaSii(anio, { fresca: true }), 'sii.cl'],
+      [await tablaMindicador(anio), 'mindicador.cl'],
+    ].filter(([t]) => t);
     // Sin el año en curso no se sabe cuál es la última publicación: no hay
     // nada firme que informar. Un año anterior que falle solo deja sus guías
     // para la próxima pasada.
-    if (!tabla) { if (anio === lista[lista.length - 1]) return { ok: false }; continue; }
-    fuentes.add(fuente);
-    for (const [f, v] of tabla) if (f <= hoy()) fuenteDe.set(f, { valor: v, fuente });
+    if (!partes.length) { if (anio === lista[lista.length - 1]) return { ok: false }; continue; }
+    for (const [tabla, fuente] of partes) {
+      fuentes.add(fuente);
+      for (const [f, v] of tabla) if (!fuenteDe.has(f)) fuenteDe.set(f, { valor: v, fuente });
+    }
   }
   if (!fuenteDe.size) return { ok: false };
 

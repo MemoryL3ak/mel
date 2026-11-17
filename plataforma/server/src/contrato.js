@@ -46,6 +46,41 @@ export function reglaPeso(kgOrigen, kgDestino, cfg = DEFECTO) {
   return { regla: 'lampa', kg: d, dif_pct: dif, texto: `Diferencia de peso ${dif.toFixed(2)}% (${tolLampa}% o más): rige el peso de La Negra según contrato` };
 }
 
+// La misma regla cuando La Negra descontó kilos que no son material (madera,
+// pallets, cartón). Esos kilos se restan SOLO del pesaje de La Negra: nunca
+// del peso de MEL ni de un peso acordado, y nunca se valorizan.
+//
+// En terreno el descuento se usa de dos maneras, y la regla tiene que servir
+// para las dos sin que nadie la intervenga a mano:
+//   · La Negra pesa más que la guía de MEL y la diferencia es la madera: al
+//     quitarla, los dos pesos calzan. No hay diferencia que acordar.
+//   · Los dos pesajes calzan y La Negra descuenta la madera que venía dentro:
+//     tampoco hay diferencia de pesaje, y lo que se valoriza es el neto.
+// Por eso la diferencia se mide contra el pesaje de La Negra con y sin la
+// madera, y manda la comparación que deja menos diferencia. El peso que se
+// valoriza es el neto de La Negra; si rige MEL, el menor entre el peso de MEL y
+// ese neto, para que la madera no entre por el lado de MEL.
+export function reglaPesoNeto(kgOrigen, kgDestino, kgDescontados = 0, cfg = DEFECTO) {
+  const o = Number(kgOrigen), d = Number(kgDestino);
+  const w = Math.max(Number(kgDescontados) || 0, 0);
+  const bruta = reglaPeso(o, d, cfg);
+  if (!(w > 0)) return { ...bruta, kg_neto: d, kg_descontados: 0, kg_comparado: d };
+  const neto = Math.max(d - w, 0);
+  const conNeto = reglaPeso(o, neto, cfg);
+  const usaNeto = Math.abs(neto - o) <= Math.abs(d - o);
+  const r = usaNeto ? conNeto : bruta;
+  const kg = r.regla === 'mel' ? Math.min(o, neto) : neto;
+  const tolMel = Number(cfg?.tol_mel_pct ?? DEFECTO.tol_mel_pct);
+  const tolLampa = Number(cfg?.tol_lampa_pct ?? DEFECTO.tol_lampa_pct);
+  const sin = `descontados ${w} kg que no son material`;
+  const texto = r.regla === 'mel'
+    ? `Diferencia de peso ${r.dif_pct.toFixed(2)}% (hasta ${tolMel}%, ${sin}): se valorizan ${kg} kg`
+    : r.regla === 'pendiente'
+      ? `Diferencia de peso ${r.dif_pct.toFixed(2)}% (entre ${tolMel}% y ${tolLampa}%, ${sin}): el peso que rige se acuerda entre MEL y Lampa`
+      : `Diferencia de peso ${r.dif_pct.toFixed(2)}% (${tolLampa}% o más, ${sin}): rige el peso de La Negra sin esos kilos`;
+  return { regla: r.regla, kg, dif_pct: r.dif_pct, texto, kg_neto: neto, kg_descontados: w, kg_comparado: usaNeto ? neto : d };
+}
+
 let cache = null;
 let cacheAt = 0;
 

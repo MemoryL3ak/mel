@@ -171,7 +171,7 @@ export default function Valorizacion() {
           <div className="card-h">
             <h3>Valor del dólar</h3>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <small>observado del Banco Central (SII y mindicador.cl), actualizado cada hora</small>
+              <small>observado, directo del Banco Central · se revisa cada 15 minutos</small>
               <button className="btn sm" onClick={() => setDolarManual({ fecha: data.dolar?.fecha ?? '', valor: '' })}>
                 Registrar a mano
               </button>

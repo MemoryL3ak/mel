@@ -81,14 +81,34 @@ async function calcular(anio, semana) {
     : d.precio_kg != null ? Number(d.precio_kg)
     : precioRef(d.categoria_id, d.fecha);
 
+  // Kilos que La Negra descontó por no ser material (madera, pallets, cartón).
+  // No se valorizan y no son una diferencia de pesaje: se restan del pesaje de
+  // La Negra antes de compararlo con el de MEL.
+  const kgDescDe = (d) => (descuentos.get(d.id) ?? [])
+    .filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0);
+  // Pesaje de La Negra con el que se mide la diferencia contra MEL: con o sin
+  // los kilos descontados, lo que deje menos diferencia. Es la misma
+  // comparación que hace la regla del contrato (reglaPesoNeto).
+  const kgComparable = (d) => {
+    const o = Number(d.kg_origen), ln = Number(d.kg_destino), neto = ln - kgDescDe(d);
+    return Math.abs(neto - o) <= Math.abs(ln - o) ? neto : ln;
+  };
+
   // Valor que habría tenido la recepción sin descuentos: la diferencia contra
   // lo efectivamente valorizado es, exactamente, lo que costaron los descuentos.
-  // Se calcula sobre los kilos que se valorizan (el peso que rige según
-  // contrato, o el de La Negra en guías anteriores a 0019): si se tomara
-  // el pesaje físico, la diferencia de la regla se leería como descuento.
+  // Se calcula sobre el pesaje que rige según contrato ANTES de quitarle los
+  // kilos descontados: el de MEL si rige MEL, el de La Negra si rige La Negra
+  // o está por acordar, y el acordado tal cual. Así, cuando la madera es toda
+  // la diferencia entre los dos pesajes (rige MEL y se valoriza el peso de
+  // MEL), el descuento no cuesta nada; y cuando venía dentro de un peso en que
+  // ambos coincidían, cuesta lo que pesa. En guías anteriores a 0019, el
+  // pesaje de La Negra.
   const brutoDe = (d) => {
     if (d.kg_destino == null) return 0;
-    const kg = Number(d.kg_contrato ?? d.kg_destino);
+    const rige = d.kg_contrato == null ? Number(d.kg_destino) : Number(d.kg_contrato);
+    const kg = d.kg_contrato == null || d.regla_peso === 'acuerdo' ? rige
+      : d.regla_peso === 'mel' ? Math.max(Number(d.kg_origen), rige)
+      : Math.max(Number(d.kg_destino), rige);
     if (d.precio_usd_tm != null && d.dolar != null) {
       return Math.round((kg / 1000) * Number(d.precio_usd_tm) * Number(d.dolar));
     }
@@ -107,6 +127,11 @@ async function calcular(anio, semana) {
     const kgLN = dLN.reduce((a, d) => a + Number(d.kg_destino), 0);
     const kgLPd = tLP.reduce((a, t) => a + Number(t.kg), 0);
     const kgLPr = tLP.reduce((a, t) => a + Number(t.kg_lampa ?? 0), 0);
+    // La diferencia de la fila se mide sin los kilos descontados que explican
+    // la diferencia de cada guía; el pesaje físico de La Negra se sigue
+    // mostrando completo, con esos kilos aparte.
+    const kgLNcomp = dLN.reduce((a, d) => a + kgComparable(d), 0);
+    const kgDescontados = dLN.reduce((a, d) => a + kgDescDe(d), 0);
     const montoMel = dMel.reduce((a, d) => a + Number(d.kg_origen) * precioPesosKg(d), 0);
     const montoLN = dLN.reduce((a, d) => a + Number(d.valor ?? 0), 0);
 
@@ -135,8 +160,9 @@ async function calcular(anio, semana) {
         categoria_final: d.categoria_final_id ? nombreCat(d.categoria_final_id) : null,
         kg_origen: enMel ? kgO : null,
         kg_destino: enLN ? kgD : null,
-        dif_kg: kgD == null ? null : Math.round((kgD - kgO) * 10) / 10,
-        dif_pct: kgD == null ? null : Math.round(((kgD - kgO) / kgO) * 10000) / 100,
+        kg_descontados: kgD == null ? 0 : kgDescDe(d),
+        dif_kg: kgD == null ? null : Math.round((kgComparable(d) - kgO) * 10) / 10,
+        dif_pct: kgD == null ? null : Math.round(((kgComparable(d) - kgO) / kgO) * 10000) / 100,
         // Peso que rige según la regla del contrato y por cuál de sus tramos.
         kg_contrato: kgD == null || d.kg_contrato == null ? null : Number(d.kg_contrato),
         regla_peso: d.regla_peso ?? null,
@@ -155,8 +181,9 @@ async function calcular(anio, semana) {
       guias_recepcionadas: dLN.length,
       dif_guias: dLN.length - dMel.length,
       kg_mel: kgMel, kg_lanegra: kgLN, kg_lampa_desp: kgLPd, kg_lampa_rec: kgLPr,
-      dif_kg: Math.round((kgLN - kgMel) * 10) / 10,
-      dif_pct: kgMel ? Math.round(((kgLN - kgMel) / kgMel) * 10000) / 100 : null,
+      kg_descontados: kgDescontados,
+      dif_kg: Math.round((kgLNcomp - kgMel) * 10) / 10,
+      dif_pct: kgMel ? Math.round(((kgLNcomp - kgMel) / kgMel) * 10000) / 100 : null,
       monto_mel: Math.round(montoMel),
       monto_lanegra: Math.round(montoLN),
       dif_monto: Math.round(montoLN - montoMel),

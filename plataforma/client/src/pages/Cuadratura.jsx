@@ -168,7 +168,10 @@ export default function Cuadratura() {
                         {x.dif_guias == null ? '—' : x.dif_guias === 0 ? '0' : (x.dif_guias > 0 ? `+${x.dif_guias}` : x.dif_guias)}
                       </td>
                       <td className="num gsep">{fmtKg(x.kg_mel)}</td>
-                      <td className="num">{fmtKg(x.kg_lanegra)}</td>
+                      <td className="num" title={x.kg_descontados > 0 ? `Incluye ${fmtKg(x.kg_descontados)} kg descontados (madera u otros): no se valorizan ni cuentan como diferencia` : undefined}>
+                        {fmtKg(x.kg_lanegra)}
+                        {x.kg_descontados > 0 && <><br /><small style={{ color: 'var(--muted)' }}>−{fmtKg(x.kg_descontados)} madera</small></>}
+                      </td>
                       {/* Restar dos kilos que sí están en el cierre no es recalcularlo:
                           los cierres antiguos no guardaban la resta, pero sí sus términos. */}
                       <td className="num dif">{num(x.dif_kg ?? (x.kg_lanegra - x.kg_mel), fmtKg)}</td>
@@ -322,7 +325,11 @@ export default function Cuadratura() {
                 <span><small>Guías</small>
                   <b className="mono">{fila.guias_mel ?? '—'} → {fila.guias_recepcionadas ?? '—'}</b></span>
                 <span><small>Kilos</small>
-                  <b className="mono">{fmtKg(fila.kg_mel)} → {fmtKg(fila.kg_lanegra)}</b></span>
+                  <b className="mono">{fmtKg(fila.kg_mel)} → {fmtKg(fila.kg_lanegra)}</b>
+                  {fila.kg_descontados > 0 && (
+                    <small style={{ display: 'block', color: 'var(--muted)' }}>
+                      incluye {fmtKg(fila.kg_descontados)} kg descontados (madera u otros)</small>
+                  )}</span>
                 <span><small>Diferencia</small>
                   <b className="mono" style={Math.abs(fila.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)' } : undefined}>
                     {fila.dif_pct != null ? `${fila.dif_pct.toFixed(2)} %` : '—'}
@@ -345,7 +352,15 @@ export default function Cuadratura() {
                       </td>
                       <td className="mono">{g.fecha}</td>
                       <td className="num">{g.kg_origen != null ? fmtKg(g.kg_origen) : '—'}</td>
-                      <td className="num">{g.kg_destino != null ? fmtKg(g.kg_destino) : '—'}</td>
+                      <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                        {g.kg_destino != null ? fmtKg(g.kg_destino) : '—'}
+                        {/* Madera, pallets: se restan del pesaje, no se valorizan. */}
+                        {g.kg_destino != null && g.kg_descontados > 0 && (
+                          <><br /><small style={{ color: 'var(--muted)' }}
+                            title="Kilos que no son material (madera, pallets): se restan del pesaje de La Negra antes de compararlo con el de MEL y no se valorizan">
+                            −{fmtKg(g.kg_descontados)} = {fmtKg(g.kg_destino - g.kg_descontados)}</small></>
+                        )}
+                      </td>
                       <td className="num" style={Math.abs(g.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
                         {g.dif_kg != null ? `${fmtKg(g.dif_kg)} (${g.dif_pct.toFixed(2)} %)` : '—'}
                       </td>
@@ -375,7 +390,7 @@ export default function Cuadratura() {
                                 </b> · {d.glosa}
                               </div>
                             ))}
-                            {g.desc_monto != null && (
+                            {g.desc_monto > 0 && (
                               <small style={{ color: 'var(--bad-tx)', fontWeight: 700 }}>-{fmtCLP(g.desc_monto)}</small>
                             )}
                           </>

@@ -28,8 +28,8 @@ const descTexto = (d) => d.tipo === 'pct' ? `${d.valor} %`
 // [tono, etiqueta corta, explicación]. La regla la aplica el servidor al
 // recepcionar; aquí solo se muestra.
 const REGLA = {
-  mel: ['ok', 'Rige MEL', 'Diferencia dentro de la tolerancia de MEL: se valoriza el peso de origen.'],
-  lampa: ['info', 'Rige La Negra', 'Diferencia desde la tolerancia de Lampa: se valoriza el peso de La Negra.'],
+  mel: ['ok', 'Rige MEL', 'Diferencia dentro de la tolerancia de MEL: se valoriza el peso de origen. Los kilos descontados en La Negra (madera, pallets) no cuentan como diferencia ni se valorizan.'],
+  lampa: ['info', 'Rige La Negra', 'Diferencia desde la tolerancia de Lampa: se valoriza el peso de La Negra, sin los kilos descontados (madera, pallets).'],
   pendiente: ['warn', 'Por acordar', 'Diferencia en la franja intermedia del contrato: MEL y Lampa deben acordar el peso.'],
   acuerdo: ['neutral', 'Acordado', 'Peso fijado a mano por el ITO de MEL o el auditor de Lampa, con justificación.'],
 };
@@ -656,8 +656,14 @@ export default function Despachos() {
                   {d.regla_peso && REGLA[d.regla_peso] && (
                     <><br /><small title={REGLA[d.regla_peso][2]}
                       style={{ color: d.regla_peso === 'pendiente' ? 'var(--warn-tx)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
-                      {REGLA[d.regla_peso][1].toLowerCase()}{d.regla_peso === 'acuerdo' ? ` · ${fmtKg(d.kg_contrato)} kg` : ''}
+                      {REGLA[d.regla_peso][1].toLowerCase()}{d.regla_peso === 'acuerdo' || d.kg_descontados > 0 ? ` · ${fmtKg(d.kg_contrato)} kg` : ''}
                     </small></>
+                  )}
+                  {/* Madera, pallets: se restan del pesaje de La Negra y no se valorizan. */}
+                  {d.kg_destino != null && d.kg_descontados > 0 && (
+                    <><br /><small style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}
+                      title="Kilos que no son material (madera, pallets): se restan del pesaje de La Negra y no se valorizan">
+                      −{fmtKg(d.kg_descontados)} kg descontados</small></>
                   )}
                 </td>
                 <td className="num">
@@ -806,7 +812,14 @@ export default function Despachos() {
                           : d.recepcionado_el}
                       </td>
                       <td className="num">{fmtKg(d.kg_origen)}</td>
-                      <td className="num">{fmtKg(d.kg_destino)}</td>
+                      <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                        {fmtKg(d.kg_destino)}
+                        {d.kg_descontados > 0 && (
+                          <><br /><small style={{ color: 'var(--muted)' }}
+                            title="Kilos que no son material (madera, pallets): se restan del pesaje de La Negra y no se valorizan">
+                            −{fmtKg(d.kg_descontados)} = {fmtKg(d.kg_destino - d.kg_descontados)}</small></>
+                        )}
+                      </td>
                       <td className="num" style={Math.abs(d.dif_pct) > (tol?.mel ?? 2) ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>{d.dif_pct?.toFixed(2)} %</td>
                       {fn.regla_peso && (
                         <td className="num" title={d.regla_peso ? REGLA[d.regla_peso]?.[2] : 'Recepción ya incluida en un estado de pago antes de la regla: se valorizó el peso de La Negra'}>
@@ -943,6 +956,9 @@ export default function Despachos() {
               <div><small style={{ color: 'var(--muted)' }}>Pesaje La Negra</small><br />
                 <b>{detalle.kg_destino != null ? `${fmtKg(detalle.kg_destino)} kg` : 'pendiente'}</b>
                 {detalle.dif_pct != null && <span style={{ color: Math.abs(detalle.dif_pct) > (tol?.mel ?? 2) ? 'var(--bad-tx)' : 'var(--muted)', fontSize: 12 }}> ({detalle.dif_pct.toFixed(2)}%)</span>}
+                {detalle.kg_destino != null && detalle.kg_descontados > 0 && (
+                  <><br /><small style={{ color: 'var(--muted)' }}>menos {fmtKg(detalle.kg_descontados)} kg descontados (madera u otros) = {fmtKg(detalle.kg_destino - detalle.kg_descontados)} kg</small></>
+                )}
                 {detalle.fecha_recepcion && <><br /><small style={{ color: 'var(--muted)' }}>recibida el {detalle.fecha_recepcion}</small></>}</div>
               {detalle.regla_peso && REGLA[detalle.regla_peso] && (
                 <div title={REGLA[detalle.regla_peso][2]}><small style={{ color: 'var(--muted)' }}>Peso que rige (contrato)</small><br />
@@ -1217,7 +1233,13 @@ export default function Despachos() {
           const taraR = aKg(rForm.tara, rForm.unidad_tara);
           const kg = brutoR ? Math.max(brutoR - (taraR || 0), 0) : null;
           const origen = Number(recep.kg_origen);
-          const dif = kg == null ? null : kg - origen;
+          // Madera, pallets y otros kilos descontados se restan del pesaje de
+          // La Negra antes de compararlo con el de MEL, igual que en el
+          // servidor: se compara con y sin ellos, y manda lo que calce mejor.
+          const kgDesc = rForm.descuentos.filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0);
+          const neto = kg == null ? null : Math.max(kg - kgDesc, 0);
+          const ref = kg == null ? null : (Math.abs(neto - origen) <= Math.abs(kg - origen) ? neto : kg);
+          const dif = ref == null ? null : ref - origen;
           const pct = dif == null ? null : (dif / origen) * 100;
           // Regla del contrato, en vivo: qué peso va a regir con lo que hay
           // escrito. Sin la migración 0019, la tolerancia única del 2%.
@@ -1235,10 +1257,10 @@ export default function Despachos() {
               </div>
               {dif != null && (
                 <div className={`dif-live ${fuera ? 'bad' : 'ok'}`}>
-                  Diferencia: <b>{dif > 0 ? '+' : ''}{fmtKg(dif)} kg ({pct > 0 ? '+' : ''}{pct.toFixed(2)} %)</b>
-                  {regla === 'mel' ? ` — hasta ${tol.mel}%: rige el peso MEL según contrato, se valorizan ${fmtKg(origen)} kg.`
+                  Diferencia{kgDesc > 0 ? ` (descontados ${fmtKg(kgDesc)} kg que no son material)` : ''}: <b>{dif > 0 ? '+' : ''}{fmtKg(dif)} kg ({pct > 0 ? '+' : ''}{pct.toFixed(2)} %)</b>
+                  {regla === 'mel' ? ` — hasta ${tol.mel}%: rige el peso MEL según contrato, se valorizan ${fmtKg(Math.min(origen, neto))} kg.`
                     : regla === 'pendiente' ? ` — entre ${tol.mel}% y ${tol.lampa}%: la guía quedará observada hasta que MEL y Lampa acuerden el peso.`
-                    : regla === 'lampa' ? ` — ${tol.lampa}% o más: rige el peso de La Negra según contrato, se valorizan ${fmtKg(kg)} kg.`
+                    : regla === 'lampa' ? ` — ${tol.lampa}% o más: rige el peso de La Negra según contrato, se valorizan ${fmtKg(neto)} kg.`
                     : fuera ? ' — supera el 2%: la guía quedará observada para que el ITO la revise.'
                     : ' — dentro de la tolerancia del 2%.'}
                 </div>
@@ -1365,9 +1387,12 @@ export default function Despachos() {
               <Field label={exige ? 'Peso que rige (kg)' : 'Peso que rige (kg) · opcional'}
                 hint={resolver.regla_peso === 'pendiente'
                   ? `La diferencia está entre ${tol?.mel}% y ${tol?.lampa}%: el contrato deja el peso al acuerdo entre MEL y Lampa. Elija uno de los dos o escriba el acordado.`
-                  : 'El peso que se valoriza. El precio congelado no cambia; la guía se revaloriza con sus descuentos.'}>
+                  : 'El peso que escriba es el que se valoriza, tal cual: los kilos de madera u otros descontados en La Negra no se le restan otra vez. El precio congelado no cambia.'}>
                 <div className="alternativas" style={{ marginBottom: 8 }}>
-                  {[[origen, 'Peso MEL', 'báscula de origen'], [destino, 'Peso La Negra', 'romana del vendor']].map(([val, tit, sub]) => (
+                  {[[origen, 'Peso MEL', 'báscula de origen'], [destino, 'Peso La Negra', 'romana del vendor'],
+                    ...(resolver.kg_descontados > 0 && destino - resolver.kg_descontados !== origen
+                      ? [[destino - resolver.kg_descontados, 'La Negra sin madera', `menos ${fmtKg(resolver.kg_descontados)} kg descontados`]] : []),
+                  ].map(([val, tit, sub]) => (
                     <button key={tit} type="button" className={`alt${elegido === val ? ' sel' : ''}`} onClick={() => setRKg(String(val))}>
                       <b>{tit}</b><small>{sub}</small><span className="mono">{fmtKg(val)} kg</span>
                     </button>

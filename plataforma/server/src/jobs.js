@@ -9,7 +9,7 @@ import { tiene } from './esquema.js';
 import { env } from './env.js';
 import { enviarCorreo, plantilla } from './mail.js';
 import { diasHasta, limpiarSubidasHuerfanas } from './documental.js';
-import { aplicarReglaAnteriores, corregirDolarRecepciones } from './routes/despachos.js';
+import { repasarValorizacion } from './routes/despachos.js';
 
 const diasDesde = (fecha) =>
   Math.floor((new Date(hoy() + 'T12:00:00') - new Date(fecha + 'T12:00:00')) / 86400000);
@@ -161,8 +161,7 @@ export async function revisarVencimientos() {
 
 // Arranca el barrido: una vez ahora y luego cada 6 horas. unref() para no
 // impedir que el proceso termine si alguien lo detiene. El mismo ciclo revisa
-// los vencimientos del repositorio documental y deja con la regla de pesos del
-// contrato las recepciones que todavía no la tengan.
+// los vencimientos del repositorio documental.
 export function iniciarBarridoObsoletos() {
   // GEA_SIN_BARRIDOS=1 los apaga: el servidor de prueba en local comparte la
   // base con producción y no debe convertir publicaciones ni revalorizar guías.
@@ -172,17 +171,18 @@ export function iniciarBarridoObsoletos() {
   }
   const ciclo = () => {
     barrerPublicacionesVencidas(); revisarVencimientos(); limpiarSubidasHuerfanas();
-    aplicarReglaAnteriores().catch((e) => console.error('[GEA] regla de pesos:', e.message));
   };
   ciclo();
   const t = setInterval(ciclo, 6 * 60 * 60 * 1000);
   if (typeof t.unref === 'function') t.unref();
 
-  // El dólar va en su propio ciclo, cada hora: trae las publicaciones nuevas y
-  // deja con el dólar de su fecha las recepciones que quedaron con uno
-  // provisorio. Si las fuentes no responden, la pasada siguiente lo reintenta.
-  const dolar = () => corregirDolarRecepciones().catch((e) => console.error('[GEA] dólar:', e.message));
-  dolar();
-  const td = setInterval(dolar, 60 * 60 * 1000);
+  // La valorización va en su propio ciclo, cada 15 minutos, y en un solo hilo: la
+  // regla de pesos del contrato primero y, recién terminada, el dólar (trae
+  // las publicaciones nuevas, deja cada recepción con el dólar de su fecha y
+  // comprueba que el valor guardado sea el que corresponde). Si las fuentes
+  // del dólar no responden, la pasada siguiente lo reintenta.
+  const valorizacion = () => repasarValorizacion().catch((e) => console.error('[GEA] valorización:', e.message));
+  valorizacion();
+  const td = setInterval(valorizacion, 15 * 60 * 1000);
   if (typeof td.unref === 'function') td.unref();
 }
