@@ -123,6 +123,13 @@ async function calcular(anio, semana) {
     return Math.round(kg * Number(d.precio_kg ?? 0));
   };
 
+  // Una guía es el documento de MEL, no cada registro: los componentes
+  // obsoletos que viajaron con la misma guía cuentan como una sola (la «guía
+  // madre» del detalle). Un despacho normal cuenta por sí mismo.
+  const unidad = (d) => (d.componente_id && d.guia_mel ? `M:${String(d.guia_mel).trim()}` : `D:${d.id}`);
+  // Una guía con varios componentes se da por recepcionada cuando llegaron todos.
+  const incompletas = new Set(desp.filter((d) => d.kg_destino == null).map(unidad));
+
   const detalle = cats.map((c) => {
     // Las guías despachadas se cuentan por la categoría declarada en origen y
     // las recepcionadas por la categoría final: si hubo reclasificación, la
@@ -186,9 +193,13 @@ async function calcular(anio, semana) {
     return {
       categoria: c.nombre,
       guias,
-      guias_mel: dMel.length,
-      guias_recepcionadas: dLN.length,
-      dif_guias: dLN.length - dMel.length,
+      ...(() => {
+        const mel = new Set(dMel.map(unidad)).size;
+        const ln = new Set(dLN.map(unidad).filter((u) => !incompletas.has(u))).size;
+        return { guias_mel: mel, guias_recepcionadas: ln, dif_guias: ln - mel };
+      })(),
+      // Componentes obsoletos que van dentro de esas guías, agrupados por guía MEL.
+      componentes: dMel.filter((d) => d.componente_id).length,
       kg_mel: kgMel, kg_lanegra: kgLN, kg_lampa_desp: kgLPd, kg_lampa_rec: kgLPr,
       kg_descontados: kgDescontados,
       dif_kg: Math.round((kgLNcomp - kgMel) * 10) / 10,

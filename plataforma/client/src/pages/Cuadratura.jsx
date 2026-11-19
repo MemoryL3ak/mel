@@ -169,7 +169,7 @@ export default function Cuadratura() {
                         <b>{x.categoria}</b>
                         {abrible && <span className="abrir" aria-hidden="true">Ver guías ›</span>}
                       </td>
-                      <td className="num gsep">{num(x.guias_mel)}</td>
+                      <td className="num gsep" title={x.componentes > 0 ? `${x.guias_mel} guía(s) de MEL; dentro vienen ${x.componentes} componente(s) obsoleto(s), agrupados por su guía` : undefined}>{num(x.guias_mel)}</td>
                       <td className="num">{num(x.guias_recepcionadas)}</td>
                       <td className="num dif" style={x.dif_guias ? { color: 'var(--warn-tx)', fontWeight: 700 } : {}}>
                         {x.dif_guias == null ? '—' : x.dif_guias === 0 ? '0' : (x.dif_guias > 0 ? `+${x.dif_guias}` : x.dif_guias)}
@@ -464,7 +464,11 @@ export default function Cuadratura() {
             <>
               <div className="cotejo">
                 <span><small>Guías</small>
-                  <b className="mono">{fila.guias_mel ?? '—'} → {fila.guias_recepcionadas ?? '—'}</b></span>
+                  <b className="mono">{fila.guias_mel ?? '—'} → {fila.guias_recepcionadas ?? '—'}</b>
+                  {fila.componentes > 0 && (
+                    <small style={{ display: 'block', color: 'var(--muted)' }}>
+                      con {fila.componentes} componentes obsoletos</small>
+                  )}</span>
                 <span><small>Kilos</small>
                   <b className="mono">{fmtKg(fila.kg_mel)} → {fmtKg(fila.kg_lanegra)}</b>
                   {fila.kg_descontados > 0 && (
