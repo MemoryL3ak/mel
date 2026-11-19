@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, fmtCLP, fmtKg, fmtPeriodo } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, unidadGuardada, useToast } from '../ui.jsx';
+import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, agruparPorGuia, unidadGuardada, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
 const CHIP = {
@@ -178,6 +178,13 @@ export default function Despachos() {
   const [tForm, setTForm] = useState({ categoria_id: null, kg: '', unidad: unidadGuardada() });
   const [lampa, setLampa] = useState({ valor: '', unidad: 'kg', fecha: hoyISO() });
   const [busca, setBusca] = useState('');            // buscador por N° de guía, en las cuatro pestañas
+  // Guías madre abiertas: N° de guía MEL cuyos componentes están desplegados.
+  const [abiertos, setAbiertos] = useState(() => new Set());
+  const alternarGuia = (k) => setAbiertos((s) => {
+    const n = new Set(s);
+    if (!n.delete(k)) n.add(k);
+    return n;
+  });
   const [rKg, setRKg] = useState('');                // peso acordado en el modal de resolución / ajuste
   const [cdfFile, setCdfFile] = useState([]);        // documento(s) del CDF a adjuntar
   const [verCdf, setVerCdf] = useState(null);        // { traslado, archivos } del CDF abierto
@@ -617,53 +624,133 @@ export default function Despachos() {
           ...(anuladas ? [['anulado', 'Anuladas', anuladas]] : []),
         ];
         const visibles = (filtro === 'todas' ? rows : rows.filter((d) => d.estado === filtro))
-          .filter((d) => coincide(busca, d.guia, d.guia_mel, d.ticket_numero, d.vale_numero));
-        return (
-        <div className="card">
-          <div className="card-h">
-            <div className="filtros">
-              {FILTROS.map(([id, label, n]) => (
-                <button key={id} className={`fchip ${filtro === id ? 'on' : ''}`} onClick={() => setFiltro(id)}>
-                  {label} <i>{n}</i>
-                </button>
-              ))}
-            </div>
-            {buscador('Buscar por N° de guía MEL, código interno o ticket')}
-            <small>{visibles.length} de {rows.length} guía(s)</small>
-          </div>
-          <div className="tbl-wrap"><table className="densa cabecera-libre">
-          <thead><tr><th title="Código interno">Código</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valorización</th><th>Respaldos</th><th title="Estado de la guía y, si ya está en uno, el estado de pago que la incluye">Estado</th><th className="acc"></th></tr></thead>
-          <tbody>
-            {visibles.map((d) => (
-              <tr key={d.id} className={[d.estado === 'anulado' && 'anulada', d.componente_id && 'desde-obs'].filter(Boolean).join(' ') || undefined}>
+          .filter((d) => coincide(busca, d.guia, d.guia_mel, d.ticket_numero, d.vale_numero, d.componente_codigo));
+        // Componentes obsoletos que viajaron con la misma guía de MEL: una sola
+        // fila («guía madre») que se abre. Las anuladas quedan sueltas.
+        const esComponente = (d) => !!d.componente_id && d.estado !== 'anulado';
+        const items = agruparPorGuia(visibles, esComponente);
+        const suma = (f, k) => f.reduce((a, d) => a + Number(d[k] ?? 0), 0);
+        // El mismo N° de guía MEL cargado como despacho normal y, además, como
+        // componentes: si es la misma carga, sus kilos están dos veces. Se avisa
+        // en ambos lados para que alguien lo revise antes del estado de pago.
+        const normalesDe = new Map(), componentesDe = new Map();
+        for (const x of rows) {
+          if (!x.guia_mel || x.estado === 'anulado') continue;
+          const k = String(x.guia_mel).trim();
+          const m = x.componente_id ? componentesDe : normalesDe;
+          m.set(k, [...(m.get(k) ?? []), x]);
+        }
+        const DOBLE = 'Si es la misma carga, sus kilos están dos veces: revise y anule el registro que sobre.';
+        const avisoDoble = (d) => {
+          const k = d.guia_mel && d.estado !== 'anulado' ? String(d.guia_mel).trim() : null;
+          const otros = k ? (d.componente_id ? normalesDe : componentesDe).get(k) : null;
+          if (!otros?.length) return null;
+          return (
+            <small style={{ display: 'block', color: 'var(--warn-tx)', fontWeight: 600 }}
+              title={d.componente_id
+                ? `El mismo N° de guía MEL está registrado también como despacho normal: ${otros.map((o) => `${o.guia}, ${fmtKg(o.kg_origen)} kg`).join(' · ')}. ${DOBLE}`
+                : `El mismo N° de guía MEL está registrado también como ${otros.length} componente(s) obsoleto(s), ${fmtKg(suma(otros, 'kg_origen'))} kg en total. ${DOBLE}`}>
+              ⚠ También {d.componente_id ? `en ${otros.map((o) => o.guia).join(', ')}` : `como ${otros.length} componente${otros.length === 1 ? '' : 's'}`}</small>
+          );
+        };
+
+        const filaGrupo = ({ guia_mel, filas: f }) => {
+          const abierto = abiertos.has(guia_mel);
+          const unico = (k) => { const s = new Set(f.map((d) => d[k] ?? null)); return s.size === 1 ? [...s][0] : null; };
+          const fechas = f.map((d) => d.fecha).sort();
+          const recibidas = f.filter((d) => d.kg_destino != null);
+          const estados = [...new Set(f.map((d) => d.estado))];
+          const ep = unico('ep_folio');
+          const otros = normalesDe.get(guia_mel) ?? [];
+          return (
+            <tr key={`g-${guia_mel}`} className="grupo" aria-expanded={abierto} onClick={() => alternarGuia(guia_mel)}
+              title={abierto ? 'Ocultar los componentes de esta guía' : 'Ver los componentes que vienen en esta guía'}>
+              <td colSpan="2">
+                <span className="flecha" aria-hidden="true">{abierto ? '▾' : '▸'}</span>
+                <b>Guía MEL <span className="mono">{guia_mel}</span></b>
+                <small className="sub">
+                  {f.length} componentes · {fechas[0] === fechas[fechas.length - 1] ? fechas[0] : `${fechas[0]} a ${fechas[fechas.length - 1]}`}
+                </small>
+                {otros.length > 0 && (
+                  <small className="sub" style={{ color: 'var(--warn-tx)', fontWeight: 600 }}
+                    title={`El mismo N° de guía MEL está registrado también como despacho normal: ${otros.map((o) => `${o.guia}, ${fmtKg(o.kg_origen)} kg`).join(' · ')}. ${DOBLE}`}>
+                    ⚠ También en {otros.map((o) => o.guia).join(', ')}</small>
+                )}
+              </td>
+              <td>{unico('patio') ?? '—'}</td>
+              <td>{unico('categoria') ?? 'Varias'}</td>
+              <td className="num"><b>{fmtKg(suma(f, 'kg_origen'))}</b></td>
+              <td className="num">
+                <b>{recibidas.length ? fmtKg(suma(recibidas, 'kg_destino')) : '—'}</b>
+                {recibidas.length > 0 && recibidas.length < f.length && (
+                  <><br /><small style={{ color: 'var(--muted)' }}>{recibidas.length} de {f.length} recibidos</small></>
+                )}
+              </td>
+              <td className="num" style={{ whiteSpace: 'nowrap' }}><b>{f.some((d) => d.valor != null) ? fmtCLP(suma(f, 'valor')) : '—'}</b></td>
+              <td>
+                {estados.length === 1
+                  ? <Chip tone={CHIP[estados[0]][0]}>{CHIP[estados[0]][1]}</Chip>
+                  : estados.map((e) => (
+                    <small key={e} style={{ display: 'block', whiteSpace: 'nowrap' }}>
+                      {f.filter((d) => d.estado === e).length} · {CHIP[e][1].toLowerCase()}</small>
+                  ))}
+                {ep && <><br /><small className="mono" style={{ color: 'var(--muted)' }} title="Estado de pago que incluye esta guía">en {ep}</small></>}
+              </td>
+              <td className="num acc">
+                <Acciones columnas="60px 126px" filas={[[
+                  <button className="btn sm" onClick={(e) => { e.stopPropagation(); alternarGuia(guia_mel); }}>
+                    {abierto ? 'Ocultar componentes' : `Ver ${f.length} componentes`}</button>,
+                ]]} />
+              </td>
+            </tr>
+          );
+        };
+
+        // `hija`: la fila va dentro de una guía madre abierta, que ya dice el
+        // N° de guía MEL y que son componentes obsoletos.
+        const filaGuia = (d, hija = false) => (
+              <tr key={d.id} className={[d.estado === 'anulado' && 'anulada', d.componente_id && 'desde-obs', hija && 'hija'].filter(Boolean).join(' ') || undefined}>
                 <td>
                   <span className="mono">{d.guia}</span>
-                  {d.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {d.guia_mel}</small></>}
-                  {d.componente_id && (
-                    // Etiqueta corta para no ensanchar la columna; el SKU y el
-                    // nombre van en el texto emergente.
-                    <><br /><span className="tag-obs"
-                      title={`Obsoleto no vendido, derivado a chatarra${d.componente_codigo ? ` · SKU ${d.componente_codigo}` : ''}${d.componente_nombre ? ` · ${d.componente_nombre}` : ''}`}>
-                      Obsoleto</span></>
+                  {!hija && d.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {d.guia_mel}</small></>}
+                  {!hija && d.componente_id && (
+                    <><br /><span className="tag-obs" title="Obsoleto no vendido, derivado a chatarra">Obsoleto</span></>
+                  )}
+                  {!hija && avisoDoble(d)}
+                </td>
+                <td>
+                  <span className="mono">{d.fecha}</span>
+                  {d.fotos > 0 && (
+                    <><br /><small style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}
+                      title={`${d.fotos} respaldo(s) adjunto(s): ábralos en «Detalle»`}>{d.fotos} respaldo{d.fotos === 1 ? '' : 's'}</small></>
                   )}
                 </td>
-                <td className="mono">{d.fecha}</td><td>{d.patio}</td>
-                <td>{d.categoria}{d.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {d.categoria_final}</span>}</td>
+                <td>{d.patio}</td>
+                <td>
+                  {d.categoria}{d.categoria_final && <span style={{ color: 'var(--warn-tx)' }}> → {d.categoria_final}</span>}
+                  {/* Componente obsoleto del que nace el despacho: su SKU y su nombre. */}
+                  {d.componente_codigo && (
+                    <><br /><small className="mono" style={{ whiteSpace: 'nowrap' }} title="SKU del componente obsoleto">SKU {d.componente_codigo}</small></>
+                  )}
+                  {d.componente_id && d.componente_nombre && (
+                    <small className="dos-lineas llena" title={d.componente_nombre}>{d.componente_nombre}</small>
+                  )}
+                </td>
                 <td className="num">{fmtKg(d.kg_origen)}</td>
                 <td className="num">
                   {d.kg_destino != null ? fmtKg(d.kg_destino) : '—'}
                   {/* Qué peso se valoriza cuando los dos pesajes difieren. */}
                   {d.regla_peso && REGLA[d.regla_peso] && (
                     <><br /><small title={REGLA[d.regla_peso][2]}
-                      style={{ color: d.regla_peso === 'pendiente' ? 'var(--warn-tx)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
-                      {REGLA[d.regla_peso][1].toLowerCase()}{d.regla_peso === 'acuerdo' || d.kg_descontados > 0 ? ` · ${fmtKg(d.kg_contrato)} kg` : ''}
+                      style={{ color: d.regla_peso === 'pendiente' ? 'var(--warn-tx)' : 'var(--muted)' }}>
+                      {REGLA[d.regla_peso][1].toLowerCase()}{d.regla_peso === 'acuerdo' || d.kg_descontados > 0 ? ` · ${fmtKg(d.kg_contrato)} kg` : ''}
                     </small></>
                   )}
                   {/* Madera, pallets: se restan del pesaje de La Negra y no se valorizan. */}
                   {d.kg_destino != null && d.kg_descontados > 0 && (
-                    <><br /><small style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}
+                    <><br /><small style={{ color: 'var(--muted)' }}
                       title="Kilos que no son material (madera, pallets): se restan del pesaje de La Negra y no se valorizan">
-                      −{fmtKg(d.kg_descontados)} kg descontados</small></>
+                      −{fmtKg(d.kg_descontados)}{' '}kg{' '}desc.</small></>
                   )}
                 </td>
                 <td className="num">
@@ -671,11 +758,6 @@ export default function Despachos() {
                   {d.descuentos?.length > 0 && (
                     <><br /><small style={{ color: 'var(--bad-tx)' }}>{d.descuentos.length} descuento(s)</small></>
                   )}
-                </td>
-                <td title={d.fotos ? `${d.fotos} respaldo(s) adjunto(s)` : 'Sin respaldos'}>
-                  {d.fotos
-                    ? <div className="thumbs">{Array.from({ length: Math.min(d.fotos, 3) }).map((_, i) => <i key={i} />)}</div>
-                    : <span style={{ color: 'var(--muted)' }}>—</span>}
                 </td>
                 <td><Chip tone={CHIP[d.estado][0]}>{CHIP[d.estado][1]}</Chip>{d.ep_folio && <><br /><small className="mono" style={{ color: 'var(--muted)' }} title="Estado de pago que incluye esta guía">en {d.ep_folio}</small></>}</td>
                 <td className="num acc">
@@ -733,7 +815,27 @@ export default function Despachos() {
                   })()}
                 </td>
               </tr>
-            ))}
+        );
+
+        return (
+        <div className="card">
+          <div className="card-h">
+            <div className="filtros">
+              {FILTROS.map(([id, label, n]) => (
+                <button key={id} className={`fchip ${filtro === id ? 'on' : ''}`} onClick={() => setFiltro(id)}>
+                  {label} <i>{n}</i>
+                </button>
+              ))}
+            </div>
+            {buscador('Buscar guía, código, ticket o SKU')}
+            <small>{visibles.length} de {rows.length} guía(s)</small>
+          </div>
+          <div className="tbl-wrap"><table className="densa cabecera-libre guias">
+          <thead><tr><th title="Código interno">Código</th><th>Fecha</th><th>Patio</th><th>Categoría</th><th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Valor</th><th title="Estado de la guía y, si ya está en uno, el estado de pago que la incluye">Estado</th><th className="acc"></th></tr></thead>
+          <tbody>
+            {items.flatMap((it) => (it.filas
+              ? [filaGrupo(it), ...(abiertos.has(it.guia_mel) ? it.filas.map((d) => filaGuia(d, true)) : [])]
+              : [filaGuia(it.d)]))}
           </tbody>
         </table></div>
           {visibles.length === 0 && (

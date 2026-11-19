@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, fmtCLP, fmtKg } from '../api.js';
-import { Chip, Empty, Field, Modal, PageHead, SemanaEP, useToast } from '../ui.jsx';
+import { Chip, Empty, Field, Modal, PageHead, SemanaEP, agruparPorGuia, useToast } from '../ui.jsx';
 import { useAuth } from '../auth.jsx';
 
 export default function Cuadratura() {
@@ -9,6 +9,13 @@ export default function Cuadratura() {
   const [cat, setCat] = useState('todas');   // filtro de categoría de la tabla
   const [fila, setFila] = useState(null);    // fila abierta en el detalle guía a guía
   const [obs, setObs] = useState('');
+  // Guías madre abiertas en el detalle: N° de guía MEL con sus componentes a la vista.
+  const [abiertas, setAbiertas] = useState(() => new Set());
+  const alternarGuia = (k) => setAbiertas((s) => {
+    const n = new Set(s);
+    if (!n.delete(k)) n.add(k);
+    return n;
+  });
   const { user } = useAuth();
   const toast = useToast();
   // Doble control: el ITO cierra la semana; el responsable de Lampa la confirma.
@@ -319,36 +326,91 @@ export default function Cuadratura() {
             }
             return `Se despachó como ${g.categoria_origen}: los kilos de origen suman en esa otra categoría.`;
           };
-          return (
-            <>
-              <div className="cotejo">
-                <span><small>Guías</small>
-                  <b className="mono">{fila.guias_mel ?? '—'} → {fila.guias_recepcionadas ?? '—'}</b></span>
-                <span><small>Kilos</small>
-                  <b className="mono">{fmtKg(fila.kg_mel)} → {fmtKg(fila.kg_lanegra)}</b>
-                  {fila.kg_descontados > 0 && (
-                    <small style={{ display: 'block', color: 'var(--muted)' }}>
-                      incluye {fmtKg(fila.kg_descontados)} kg descontados (madera u otros)</small>
-                  )}</span>
-                <span><small>Diferencia</small>
-                  <b className="mono" style={Math.abs(fila.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)' } : undefined}>
-                    {fila.dif_pct != null ? `${fila.dif_pct.toFixed(2)} %` : '—'}
-                    {fila.dif_monto != null && <> · {fmtCLP(fila.dif_monto)}</>}
-                  </b></span>
-              </div>
-              <div className="tbl-wrap"><table>
-                <thead><tr>
-                  <th>Guía</th><th>Fecha</th>
-                  <th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Dif.</th>
-                  <th className="num" title="Peso que se valoriza según la regla del contrato">Rige</th>
-                  <th className="num">Monto MEL</th><th className="num">Monto La Negra</th><th>Descuentos</th>
-                </tr></thead>
-                <tbody>
-                  {fila.guias.map((g) => (
-                    <tr key={g.guia + g.lado}>
+          // Componentes obsoletos que viajaron con la misma guía de MEL: una sola
+          // fila («guía madre») que se abre para ver cada uno con su SKU.
+          const items = agruparPorGuia(fila.guias, (g) => !!g.componente_codigo);
+          // Suma de una columna entre las guías que la tienen; null si ninguna.
+          const suma = (f, k) => (f.some((g) => g[k] != null) ? f.reduce((a, g) => a + Number(g[k] ?? 0), 0) : null);
+          // El mismo N° de guía MEL cargado como despacho normal y, además, como
+          // componentes: si es la misma carga, sus kilos están dos veces en la
+          // semana. Se avisa en ambos lados.
+          const normalesDe = new Map(), componentesDe = new Map();
+          for (const g of fila.guias) {
+            if (!g.guia_mel) continue;
+            const k = String(g.guia_mel).trim();
+            const m = g.componente_codigo ? componentesDe : normalesDe;
+            if (!(m.get(k) ?? []).includes(g.guia)) m.set(k, [...(m.get(k) ?? []), g.guia]);
+          }
+          const DOBLE = 'Si es la misma carga, sus kilos están dos veces: revise y anule el registro que sobre.';
+          const avisoDoble = (g) => {
+            const otros = g.guia_mel ? (g.componente_codigo ? normalesDe : componentesDe).get(String(g.guia_mel).trim()) : null;
+            if (!otros?.length) return null;
+            return (
+              <small style={{ display: 'block', color: 'var(--warn-tx)', fontWeight: 600 }}
+                title={`El mismo N° de guía MEL está registrado también como ${g.componente_codigo ? `despacho normal (${otros.join(', ')})` : `${otros.length} componente(s) obsoleto(s)`}. ${DOBLE}`}>
+                ⚠ También {g.componente_codigo ? `en ${otros.join(', ')}` : `como ${otros.length} componente${otros.length === 1 ? '' : 's'}`}</small>
+            );
+          };
+          const filaGrupo = ({ guia_mel, filas: f }) => {
+            const abierta = abiertas.has(guia_mel);
+            const fechas = f.map((g) => g.fecha).sort();
+            const conDif = f.filter((g) => g.dif_kg != null);
+            const difKg = suma(conDif, 'dif_kg');
+            // El % se mide contra los kilos de MEL de las mismas guías; si alguna
+            // no los aporta a esta fila (reclasificada), se muestra solo en kilos.
+            const baseDif = conDif.every((g) => g.kg_origen != null) ? suma(conDif, 'kg_origen') : null;
+            const difPct = difKg != null && baseDif ? (difKg / baseDif) * 100 : null;
+            const kgDesc = f.reduce((a, g) => a + (g.kg_destino != null ? Number(g.kg_descontados ?? 0) : 0), 0);
+            const conDesc = f.filter((g) => (g.descuentos ?? []).length);
+            const descMonto = conDesc.reduce((a, g) => a + Number(g.desc_monto ?? 0), 0);
+            const otros = normalesDe.get(guia_mel) ?? [];
+            const n = (v, fmt = fmtKg) => (v == null ? '—' : fmt(v));
+            return (
+              <tr key={`g-${guia_mel}`} className="grupo" aria-expanded={abierta} onClick={() => alternarGuia(guia_mel)}
+                title={abierta ? 'Ocultar los componentes de esta guía' : 'Ver los componentes que vienen en esta guía'}>
+                <td>
+                  <span className="flecha" aria-hidden="true">{abierta ? '▾' : '▸'}</span>
+                  <b>Guía MEL <span className="mono">{guia_mel}</span></b>
+                  <small className="sub">{f.length} componentes · {abierta ? 'ocultar' : 'ver'}</small>
+                  {otros.length > 0 && (
+                    <small className="sub" style={{ color: 'var(--warn-tx)', fontWeight: 600 }}
+                      title={`El mismo N° de guía MEL está registrado también como despacho normal (${otros.join(', ')}). ${DOBLE}`}>
+                      ⚠ También en {otros.join(', ')}</small>
+                  )}
+                </td>
+                <td className="mono">{fechas[0] === fechas[fechas.length - 1] ? fechas[0] : <>{fechas[0]}<br />a {fechas[fechas.length - 1]}</>}</td>
+                <td className="num"><b>{n(suma(f, 'kg_origen'))}</b></td>
+                <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                  <b>{n(suma(f, 'kg_destino'))}</b>
+                  {kgDesc > 0 && <><br /><small style={{ color: 'var(--muted)' }}>−{fmtKg(kgDesc)} descontados</small></>}
+                </td>
+                <td className="num" style={{ whiteSpace: 'nowrap', ...(Math.abs(difPct ?? 0) > umbral ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}) }}>
+                  {difKg != null ? `${fmtKg(Math.round(difKg * 10) / 10)}${difPct != null ? ` (${difPct.toFixed(2)} %)` : ''}` : '—'}
+                </td>
+                <td className="num"><b>{n(suma(f, 'kg_contrato'))}</b></td>
+                <td className="num" style={{ whiteSpace: 'nowrap' }}><b>{n(suma(f, 'monto_mel'), fmtCLP)}</b></td>
+                <td className="num" style={{ whiteSpace: 'nowrap' }}><b>{n(suma(f, 'monto_lanegra'), fmtCLP)}</b></td>
+                <td>
+                  {conDesc.length === 0 ? <span style={{ color: 'var(--muted)' }}>—</span> : (
+                    <small style={{ color: 'var(--bad-tx)', fontWeight: 700 }}>
+                      {conDesc.length} con descuentos{descMonto > 0 && <> · -{fmtCLP(descMonto)}</>}</small>
+                  )}
+                </td>
+              </tr>
+            );
+          };
+          // `hija`: la guía va dentro de una guía madre abierta, que ya dice el N° MEL.
+          const filaGuia = (g, hija = false) => (
+                    <tr key={g.guia + g.lado} className={hija ? 'hija' : undefined}>
                       <td>
                         <span className="mono">{g.guia}</span>
-                        {g.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {g.guia_mel}</small></>}
+                        {!hija && g.guia_mel && <><br /><small style={{ color: 'var(--muted)' }}>MEL N° {g.guia_mel}</small></>}
+                        {/* Componente obsoleto del que nace la guía. */}
+                        {g.componente_codigo && (
+                          <><br /><small className="mono" style={{ whiteSpace: 'nowrap' }} title={g.componente_nombre ?? 'SKU del componente obsoleto'}>SKU {g.componente_codigo}</small></>
+                        )}
+                        {g.componente_nombre && <small className="dos-lineas llena" title={g.componente_nombre}>{g.componente_nombre}</small>}
+                        {!hija && avisoDoble(g)}
                       </td>
                       <td className="mono">{g.fecha}</td>
                       <td className="num">{g.kg_origen != null ? fmtKg(g.kg_origen) : '—'}</td>
@@ -361,7 +423,7 @@ export default function Cuadratura() {
                             −{fmtKg(g.kg_descontados)} = {fmtKg(g.kg_destino - g.kg_descontados)}</small></>
                         )}
                       </td>
-                      <td className="num" style={Math.abs(g.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}}>
+                      <td className="num" style={{ whiteSpace: 'nowrap', ...(Math.abs(g.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)', fontWeight: 700 } : {}) }}>
                         {g.dif_kg != null ? `${fmtKg(g.dif_kg)} (${g.dif_pct.toFixed(2)} %)` : '—'}
                       </td>
                       <td className="num" style={{ whiteSpace: 'nowrap' }}>
@@ -397,7 +459,35 @@ export default function Cuadratura() {
                         )}
                       </td>
                     </tr>
-                  ))}
+          );
+          return (
+            <>
+              <div className="cotejo">
+                <span><small>Guías</small>
+                  <b className="mono">{fila.guias_mel ?? '—'} → {fila.guias_recepcionadas ?? '—'}</b></span>
+                <span><small>Kilos</small>
+                  <b className="mono">{fmtKg(fila.kg_mel)} → {fmtKg(fila.kg_lanegra)}</b>
+                  {fila.kg_descontados > 0 && (
+                    <small style={{ display: 'block', color: 'var(--muted)' }}>
+                      incluye {fmtKg(fila.kg_descontados)} kg descontados (madera u otros)</small>
+                  )}</span>
+                <span><small>Diferencia</small>
+                  <b className="mono" style={Math.abs(fila.dif_pct ?? 0) > umbral ? { color: 'var(--bad-tx)' } : undefined}>
+                    {fila.dif_pct != null ? `${fila.dif_pct.toFixed(2)} %` : '—'}
+                    {fila.dif_monto != null && <> · {fmtCLP(fila.dif_monto)}</>}
+                  </b></span>
+              </div>
+              <div className="tbl-wrap"><table className="densa cabecera-libre">
+                <thead><tr>
+                  <th>Guía</th><th>Fecha</th>
+                  <th className="num">Kg MEL</th><th className="num">Kg La Negra</th><th className="num">Dif.</th>
+                  <th className="num" title="Peso que se valoriza según la regla del contrato">Rige</th>
+                  <th className="num">Monto MEL</th><th className="num">Monto La Negra</th><th>Descuentos</th>
+                </tr></thead>
+                <tbody>
+                  {items.flatMap((it) => (it.filas
+                    ? [filaGrupo(it), ...(abiertas.has(it.guia_mel) ? it.filas.map((g) => filaGuia(g, true)) : [])]
+                    : [filaGuia(it.d)]))}
                 </tbody>
               </table></div>
               {fila.guias.filter((g) => porQue(g)).map((g) => (

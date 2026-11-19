@@ -60,6 +60,13 @@ async function calcular(anio, semana) {
 
   const descuentos = await descuentosDeSemana(desp.map((d) => d.id));
 
+  // Componente obsoleto del que nace cada despacho (su SKU y su nombre): el
+  // detalle guía a guía agrupa con eso los que viajaron en la misma guía MEL.
+  const idsComp = [...new Set(desp.map((d) => d.componente_id).filter(Boolean))];
+  const comps = new Map(idsComp.length
+    ? (await q(supa.from('componentes').select('id, codigo, nombre').in('id', idsComp))).map((c) => [c.id, c])
+    : []);
+
   // Lo que MEL despachó y La Negra aún no recepciona no tiene precio congelado.
   // Para poder cuadrar montos igual que kilos, esas guías se valorizan con el
   // precio que regía a su fecha; la fila avisa cuántas van estimadas así.
@@ -150,6 +157,8 @@ async function calcular(anio, semana) {
       const desc = descuentos.get(d.id) ?? [];
       return {
         guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha, estado: d.estado,
+        componente_codigo: comps.get(d.componente_id)?.codigo ?? null,
+        componente_nombre: comps.get(d.componente_id)?.nombre ?? null,
         descuentos: desc.map((x) => ({ tipo: x.tipo, valor: Number(x.valor), glosa: x.glosa })),
         desc_monto: enLN && desc.length ? Math.round(brutoDe(d) - Number(d.valor ?? 0)) : null,
         precio_usd: d.precio_usd == null ? null : Number(d.precio_usd),
@@ -269,6 +278,26 @@ function cambioDesdeElCierre(cerrado = [], vivo = []) {
   });
 }
 
+// Los cierres anteriores no guardaban de qué componente obsoleto nace cada
+// guía. Es un dato para mostrar (el SKU y el nombre), no una cifra del cierre:
+// se completa al leer con lo que hoy se sabe de esas guías, sin tocar lo que
+// quedó guardado.
+export function conComponentes(cerrada, detalleVivo = []) {
+  if (!cerrada || !Array.isArray(cerrada.detalle)) return cerrada;
+  const comp = new Map(detalleVivo.flatMap((x) => x.guias ?? [])
+    .filter((g) => g.componente_codigo).map((g) => [g.guia, g]));
+  if (!comp.size) return cerrada;
+  return {
+    ...cerrada,
+    detalle: cerrada.detalle.map((x) => (!Array.isArray(x.guias) ? x : {
+      ...x,
+      guias: x.guias.map((g) => (g.componente_codigo || !comp.has(g.guia) ? g : {
+        ...g, componente_codigo: comp.get(g.guia).componente_codigo, componente_nombre: comp.get(g.guia).componente_nombre,
+      })),
+    })),
+  };
+}
+
 r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) => {
   const actual = semanaISO();
   const anio = Number(req.query.anio || actual.anio);
@@ -277,7 +306,7 @@ r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) =>
     calcular(anio, semana),
     q(supa.from('cuadraturas').select('*').order('anio', { ascending: false }).order('semana', { ascending: false }).limit(12)),
   ]);
-  const cerrada = cerradas.find((c) => c.anio === anio && c.semana === semana) ?? null;
+  const cerrada = conComponentes(cerradas.find((c) => c.anio === anio && c.semana === semana) ?? null, detalle);
   const ep = await epDeSemana(anio, semana, (await contrato()).dia_corte);
   res.json({
     anio, semana, actual, desde, hasta, ep, detalle, alertas, anuladas, cerrada, historico: cerradas, umbral_pct,

@@ -357,6 +357,33 @@ export function Acciones({ filas, columnas = '1fr 1fr' }) {
   );
 }
 
+// Varios componentes obsoletos que viajaron con la misma guía de MEL se muestran
+// como una sola fila («guía madre») que se abre para ver cada uno. `esComponente`
+// dice qué filas entran: las demás (despachos normales, anuladas) quedan sueltas
+// en su lugar. Devuelve, en el orden original, elementos `{ d }` (fila suelta) o
+// `{ guia_mel, filas }` (grupo de dos o más, en la posición del primero).
+export function agruparPorGuia(filas, esComponente) {
+  const llave = (d) => (esComponente(d) && d.guia_mel ? String(d.guia_mel).trim() : null);
+  const grupos = new Map();
+  for (const d of filas) {
+    const k = llave(d);
+    if (!k) continue;
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(d);
+  }
+  const vistos = new Set();
+  const out = [];
+  for (const d of filas) {
+    const k = llave(d);
+    const g = k ? grupos.get(k) : null;
+    if (!g || g.length < 2) { out.push({ d }); continue; }
+    if (vistos.has(k)) continue;
+    vistos.add(k);
+    out.push({ guia_mel: k, filas: g });
+  }
+  return out;
+}
+
 export function Empty({ title, children }) {
   return <div className="empty"><b>{title}</b>{children}</div>;
 }
