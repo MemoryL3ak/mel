@@ -22,6 +22,7 @@ import portal from './routes/portal.js';
 import documentos from './routes/documentos.js';
 import indicadores from './routes/indicadores.js';
 import historial from './routes/historial.js';
+import movimientos from './routes/movimientos.js';
 
 const app = express();
 // Detrás del proxy de la plataforma de hosting: el primer X-Forwarded-For es la IP real.
@@ -110,6 +111,7 @@ app.use('/api', portal);
 app.use('/api', documentos);
 app.use('/api', indicadores);
 app.use('/api', historial);
+app.use('/api', movimientos);
 
 // Cliente compilado (producción / revisión local).
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist');

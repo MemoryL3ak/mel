@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, fmtCLP, fmtKg, fmtPeriodo } from '../api.js';
+import { api, descargar, fmtCLP, fmtKg, fmtPeriodo } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Acciones, DateField, Select, CampoPeso, Chip, Empty, Field, Modal, PageHead, Tabs, aKg, agruparPorGuia, unidadGuardada, useToast } from '../ui.jsx';
 import BotonDocs from '../BotonDocs.jsx';
@@ -192,6 +192,9 @@ export default function Despachos() {
   const [editar, setEditar] = useState(null);        // guía en edición de datos
   const [eForm, setEForm] = useState(null);
   const [obs, setObs] = useState('');
+  // Respaldo en Excel: rango de fechas que se va a descargar (null = cerrado).
+  const [resp, setResp] = useState(null);
+  const [bajando, setBajando] = useState(false);
   const { user } = useAuth();
   const toast = useToast();
 
@@ -581,6 +584,8 @@ export default function Despachos() {
     <div>
       <PageHead title="Despachos y recepciones"
         sub="La cadena completa del material: pesaje en patio MEL, recepción y clasificación en La Negra, traslado a Lampa y certificado de disposición final.">
+        <button className="btn" title="Descargar en Excel todas las guías y traslados de un rango de fechas"
+          onClick={() => setResp({ desde: maestros?.periodo?.desde ?? `${hoyISO().slice(0, 8)}01`, hasta: maestros?.periodo?.hasta ?? hoyISO() })}>⇩ Respaldo (Excel)</button>
         {puedeCrear && <button className="btn primary" onClick={() => setNuevo(true)}>+ Registrar despacho</button>}
         {puedeTras && <button className="btn" onClick={() => setNuevoTras(true)}>+ Traslado a Lampa</button>}
       </PageHead>
@@ -1039,6 +1044,50 @@ export default function Despachos() {
       })()}
 
       {/* ---- modales ---- */}
+      <Modal open={!!resp} title="Respaldo de movimientos en Excel" onClose={() => setResp(null)}
+        footer={<>
+          <button className="btn" onClick={() => setResp(null)}>Cancelar</button>
+          <button className="btn primary" disabled={bajando} onClick={async () => {
+            if (!resp.desde || !resp.hasta || resp.desde > resp.hasta) return toast('Revise las fechas: «desde» no puede ser posterior a «hasta»', true);
+            setBajando(true);
+            try {
+              await descargar(`/movimientos/excel?desde=${resp.desde}&hasta=${resp.hasta}`, `movimientos-${resp.desde}-a-${resp.hasta}.xlsx`);
+              setResp(null);
+            } catch (e) { toast(e.message, true); } finally { setBajando(false); }
+          }}>{bajando ? 'Preparando…' : 'Descargar'}</button>
+        </>}>
+        {resp && (
+          <>
+            <p style={{ marginTop: 0, color: 'var(--ink-2)' }}>
+              Baja todas las guías de despacho con fecha dentro del rango, estén o no en un estado de pago, con sus pesajes,
+              precio, dólar, monto y descuentos, y los traslados a Lampa. Las guías anuladas se listan, pero no suman.
+            </p>
+            <div className="filtros" style={{ marginBottom: 12 }}>
+              {maestros?.periodo && (
+                <button className="fchip" onClick={() => setResp({ desde: maestros.periodo.desde, hasta: maestros.periodo.hasta })}>Período del EP en curso</button>
+              )}
+              {maestros?.periodo && (() => {
+                // El período recién cerrado: las mismas fechas, un mes antes.
+                const mesAntes = (iso) => {
+                  const [y, m, d] = iso.split('-').map(Number);
+                  const f = new Date(Date.UTC(y, m - 2, d));
+                  return f.toISOString().slice(0, 10);
+                };
+                return (
+                  <button className="fchip" onClick={() => setResp({ desde: mesAntes(maestros.periodo.desde), hasta: mesAntes(maestros.periodo.hasta) })}>Período anterior</button>
+                );
+              })()}
+              <button className="fchip" onClick={() => setResp({ desde: `${hoyISO().slice(0, 8)}01`, hasta: hoyISO() })}>Este mes</button>
+              <button className="fchip" onClick={() => setResp({ desde: `${hoyISO().slice(0, 4)}-01-01`, hasta: hoyISO() })}>Todo el año</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="Desde"><DateField value={resp.desde} onChange={(e) => setResp({ ...resp, desde: e.target.value })} /></Field>
+              <Field label="Hasta"><DateField value={resp.hasta} onChange={(e) => setResp({ ...resp, hasta: e.target.value })} /></Field>
+            </div>
+          </>
+        )}
+      </Modal>
+
       <Modal open={!!detalle} title={detalle && `Código interno ${detalle.guia}`} onClose={() => setDetalle(null)}
         footer={<>
           <BotonDocs hito="despacho" refId={detalle?.id} className="btn" />
