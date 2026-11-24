@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api, descargar, fmtCLP, fmtKg, fmtUSD } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { Chip, Empty, KPI, PageHead, Select, Tabs, useToast } from '../ui.jsx';
+import HistorialGuias from './HistorialGuias.jsx';
 
 // Fase 4 · Indicadores y reportes. Los gráficos son SVG propios: pocas series,
 // marcas finas, una sola escala por gráfico, leyenda cuando hay más de una
@@ -172,6 +173,7 @@ export default function Indicadores() {
   const [data, setData] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
+  const [recarga, setRecarga] = useState(0);   // sube al cargar el historial: los paneles lo incluyen
   const anio = params.get('anio') ?? '';
   const periodo = params.get('periodo') ?? '';
   const setP = (cambios) => {
@@ -185,7 +187,7 @@ export default function Indicadores() {
     setCargando(true);
     const qs = new URLSearchParams(); if (anio) qs.set('anio', anio); if (periodo) qs.set('periodo', periodo);
     api(`/indicadores?${qs}`).then((d) => { setData(d); setError(null); }).catch((e) => setError(e.message)).finally(() => setCargando(false));
-  }, [anio, periodo]);
+  }, [anio, periodo, recarga]);
 
   if (error && !data) return <div><PageHead eyebrow={EYEBROW} title="Indicadores y reportes" /><div className="aviso bad"><b>No se pudieron calcular los indicadores.</b><p>{error}</p></div></div>;
   if (!data) return <div className="loading">Calculando indicadores…</div>;
@@ -193,6 +195,7 @@ export default function Indicadores() {
   const anios = []; for (let a = Number(data.vigente.slice(0, 4)); a >= 2026; a--) anios.push(a);
   const exportarExcel = async () => {
     try {
+      if (tab === 'historial') return await descargar(`/historial/excel?anio=${data.anio}`, `historial-guias-${data.anio}.xlsx`);
       const qs = new URLSearchParams({ pestana: tab, anio: String(data.anio), periodo: data.periodo.periodo });
       await descargar(`/indicadores/excel?${qs}`, tab === 'chatarra' ? `indicadores-chatarra-${data.periodo.periodo}.xlsx` : `indicadores-obsoletos-${data.anio}.xlsx`);
     } catch (e) { toast(e.message, true); }
@@ -207,14 +210,15 @@ export default function Indicadores() {
 
   const ch = data.chatarra, ob = data.obsoletos;
   const per = data.periodo;
-  const tabs = [...(puedeChatarra ? [['chatarra', 'Proceso de chatarra']] : []), ...(puedeObsoletos ? [['obsoletos', 'Venta de obsoletos']] : [])];
+  const tabs = [...(puedeChatarra ? [['chatarra', 'Proceso de chatarra']] : []), ...(puedeObsoletos ? [['obsoletos', 'Venta de obsoletos']] : []),
+    ...(puedeChatarra ? [['historial', 'Historial de guías']] : [])];
 
   return (
     <div className={`viz-root indicadores${cargando ? ' viz-cargando' : ''}`}>
       <PageHead eyebrow={EYEBROW} title="Indicadores y reportes"
         sub="Paneles de gestión de ambos procesos. El proceso de chatarra se mide por período del estado de pago; la venta de obsoletos, por mes.">
         <button className="btn no-print" onClick={exportarExcel}>⇩ Excel</button>
-        <button className="btn no-print" onClick={exportarPDF}>⇩ PDF</button>
+        {tab !== 'historial' && <button className="btn no-print" onClick={exportarPDF}>⇩ PDF</button>}
       </PageHead>
 
       {/* Una sola fila de filtros, sobre todo lo que acotan. */}
@@ -244,6 +248,12 @@ export default function Indicadores() {
         const a = ch.actual, y = ch.ytd, c = ch.ciclo, k = ch.calidad;
         const contra = ch.anterior ? ch.anterior.nombre.replace(/^EP /, 'EP ') : 'período anterior';
         return (<>
+          {y.historial > 0 && (
+            <div className="audit-note no-print" style={{ marginTop: 0, marginBottom: 14 }}>
+              El acumulado {data.anio} incluye <b>{y.historial}</b> guía(s) del historial anterior a la plataforma (planilla de MEL)
+              {a.historial > 0 ? <>; de ellas, <b>{a.historial}</b> son de este período</> : null}. Se ven en la pestaña «Historial de guías».
+            </div>
+          )}
           <div className="grid g4 viz-kpis">
             <KPI label={`Patios MEL · ${per.etiqueta}`} value={fmtKg(a.kg_patios)} unit="kg" delta={deltaTxt(a.delta_kg_patios, contra) ?? `${a.guias} guía(s) despachada(s)`} />
             <KPI label={`La Negra · ${per.etiqueta}`} value={fmtKg(a.kg_lanegra)} unit="kg" delta={deltaTxt(a.delta_kg_lanegra, contra) ?? 'recepcionado y pesado'} />
@@ -346,6 +356,11 @@ export default function Indicadores() {
         </>);
       })()}
       {tab === 'obsoletos' && !ob && <Empty title="Sin datos de obsoletos">La venta de obsoletos aún no está habilitada en la base.</Empty>}
+
+      {/* ============================ historial ============================ */}
+      {tab === 'historial' && puedeChatarra && (
+        <HistorialGuias anio={data.anio} puedeCargar={user.role === 'coordinador'} onCargado={() => setRecarga((n) => n + 1)} />
+      )}
     </div>
   );
 }

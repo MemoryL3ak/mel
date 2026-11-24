@@ -33,6 +33,7 @@ const HINT_NUMERO = 'Correlativo del contrato. La plataforma propone el siguient
 export default function EstadosPago() {
   const [eps, setEps] = useState(null);
   const [contrato, setContrato] = useState(null);
+  const [fn, setFn] = useState({});   // funciones que la base ya respalda
   const [sel, setSel] = useState(null);
   const [modal, setModal] = useState(null);   // generar | descuento | encabezado | ajustar | factura | pago | conciliar | documento
   const [f, setF] = useState({});
@@ -42,9 +43,10 @@ export default function EstadosPago() {
 
   const load = async (keepId) => {
     try {
-      const { eps: rows, contrato: cfg } = await api('/eps');
+      const { eps: rows, contrato: cfg, funciones } = await api('/eps');
       setEps(rows);
       setContrato(cfg);
+      setFn(funciones ?? {});
       if (keepId) setSel(rows.find((e) => e.id === keepId) ?? rows[0] ?? null);
       else setSel((s) => rows.find((e) => e.id === s?.id) ?? rows[0] ?? null);
     } catch (e) { toast(e.message, true); }
@@ -73,14 +75,18 @@ export default function EstadosPago() {
   // El descuento viaja como formulario porque puede llevar su respaldo adjunto.
   async function registrarDescuento() {
     if (!(f.glosa || '').trim()) return toast('Indique la glosa del descuento', true);
-    if (!(Number(f.monto) > 0)) return toast('Indique un monto válido', true);
+    const kilos = Math.abs(Number(f.kg) || 0);
+    if (!(Number(f.monto) > 0) && !kilos) return toast(fn.ep_ajuste_kg ? 'Indique un monto o unos kilos' : 'Indique un monto válido', true);
+    if (Number(f.monto) < 0) return toast('El monto no puede ser negativo', true);
     try {
       const fd = new FormData();
       fd.append('glosa', f.glosa.trim());
-      fd.append('monto', Number(f.monto));
+      fd.append('monto', Number(f.monto) || 0);
+      // Positivo resta kilos de lo valorizado; negativo los suma.
+      if (kilos) fd.append('kg', f.kgSuma ? -kilos : kilos);
       for (const a of f.respaldo ?? []) fd.append('respaldo', a);
       const r = await api(`/eps/${sel.id}/descuentos`, { method: 'POST', body: fd });
-      toast(f.respaldo?.length ? 'Descuento registrado con respaldo' : 'Descuento registrado');
+      toast(`${kilos ? 'Ajuste' : 'Descuento'} registrado${f.respaldo?.length ? ' con respaldo' : ''}`);
       setModal(null); setF({}); load(r.id);
     } catch (e) { toast(e.message, true); }
   }
@@ -249,6 +255,7 @@ export default function EstadosPago() {
                     <b>Cuadre de kilos.</b> MEL declaró <b>{fmtKg(sel.kg_mel)}</b> kg · La Negra pesó <b>{fmtKg(sel.kg_lanegra)}</b> kg
                     {sel.kg_descontados > 0 && <>, de los que descontó <b>{fmtKg(sel.kg_descontados)}</b> kg que no son material (madera u otros)</>}
                     {' '}· se valorizan <b>{fmtKg(sel.kg_total)}</b> kg.{' '}
+                    {sel.kg_ajuste ? <>Con los ajustes de cierre ({sel.kg_ajuste > 0 ? '−' : '+'}{fmtKg(Math.abs(sel.kg_ajuste))} kg) el período cierra en <b>{fmtKg(sel.kg_total - sel.kg_ajuste)}</b> kg.{' '}</> : null}
                     {dif === 0
                       ? 'Los kilos valorizados son los mismos que declaró MEL.'
                       : <>Diferencia contra MEL: <b>{dif > 0 ? '+' : ''}{fmtKg(dif)}</b> kg, por {lista.length} guía(s): {lista.map((g) =>
@@ -264,9 +271,10 @@ export default function EstadosPago() {
               {(esIto || (sel.descuentos_lineas ?? []).length > 0) && (
                 <>
                   <div className="ev-tit" style={{ marginTop: 14 }}>
-                    <span>Descuentos del período</span>
+                    <span>{fn.ep_ajuste_kg ? 'Descuentos y ajustes de cierre' : 'Descuentos del período'}</span>
                     {esIto && editable && (
-                      <button className="btn sm" onClick={() => { setF({}); setModal('descuento'); }}>+ Agregar descuento</button>
+                      <button className="btn sm" onClick={() => { setF({}); setModal('descuento'); }}>
+                        {fn.ep_ajuste_kg ? '+ Agregar descuento o ajuste' : '+ Agregar descuento'}</button>
                     )}
                   </div>
                   {esIto && !editable && (
@@ -283,9 +291,13 @@ export default function EstadosPago() {
                     </div>
                   ) : sel.descuentos_lineas.map((d) => (
                     <div className="pend" key={d.id}>
-                      <Chip tone="bad">Descuento</Chip>
+                      <Chip tone={Number(d.kg) ? 'warn' : 'bad'}>{Number(d.kg) ? 'Ajuste' : 'Descuento'}</Chip>
                       <span>{d.glosa} <small style={{ color: 'var(--muted)' }}>· {d.creado_por}</small></span>
-                      <span className="go" style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmtCLP(d.monto)}</span>
+                      <span className="go" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {Number(d.kg) ? `${Number(d.kg) > 0 ? '−' : '+'}${fmtKg(Math.abs(Number(d.kg)))} kg` : ''}
+                        {Number(d.kg) && Number(d.monto) > 0 ? ' · ' : ''}
+                        {Number(d.monto) > 0 ? `-${fmtCLP(d.monto)}` : ''}
+                      </span>
                       {d.respaldos > 0
                         ? <button className="btn sm" onClick={() => verRespaldos(d)}>Respaldo ({d.respaldos})</button>
                         : <small style={{ color: 'var(--warn-tx)' }}>Sin respaldo</small>}
@@ -423,7 +435,7 @@ export default function EstadosPago() {
         </Field>
       </Modal>
 
-      <Modal open={modal === 'descuento'} title={sel && `Registrar descuento · EP N° ${sel.numero ?? ''}`} onClose={() => setModal(null)}
+      <Modal open={modal === 'descuento'} title={sel && `Registrar ${fn.ep_ajuste_kg ? 'descuento o ajuste' : 'descuento'} · EP N° ${sel.numero ?? ''}`} onClose={() => setModal(null)}
         footer={<>
           <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
           <button className="btn primary" onClick={registrarDescuento}>Registrar</button>
@@ -431,9 +443,21 @@ export default function EstadosPago() {
         <Field label="Glosa" hint="Queda visible en el EP y en la bitácora de auditoría.">
           <input value={f.glosa || ''} onChange={(e) => setF({ ...f, glosa: e.target.value })} placeholder="Ej.: merma guía GD-1007" />
         </Field>
-        <Field label="Monto a descontar (CLP)">
-          <input type="number" min="1" value={f.monto || ''} onChange={(e) => setF({ ...f, monto: e.target.value })} />
+        <Field label="Monto a descontar (CLP)" hint={fn.ep_ajuste_kg ? 'Déjelo vacío si el ajuste es solo de kilos.' : undefined}>
+          <input type="number" min="0" value={f.monto || ''} onChange={(e) => setF({ ...f, monto: e.target.value })} />
         </Field>
+        {fn.ep_ajuste_kg && (
+          <Field label="Kilos del ajuste de cierre (opcional)"
+            hint={`Para cuadrar los kilos del período. Hoy se valorizan ${fmtKg(sel?.kg_total ?? 0)} kg${sel?.kg_ajuste ? ` y, con los ajustes ya cargados, cierra en ${fmtKg(sel.kg_total - sel.kg_ajuste)} kg` : ''}. No cambia el monto: si corresponde, indíquelo arriba.`}>
+            <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 8 }}>
+              <select value={f.kgSuma ? 'suma' : 'resta'} onChange={(e) => setF({ ...f, kgSuma: e.target.value === 'suma' })}>
+                <option value="resta">Resta kilos</option>
+                <option value="suma">Suma kilos</option>
+              </select>
+              <input type="number" min="0" step="0.1" value={f.kg || ''} onChange={(e) => setF({ ...f, kg: e.target.value })} placeholder="kg" />
+            </div>
+          </Field>
+        )}
         <Field label="Respaldo del descuento" hint="Foto, PDF o Word · hasta 4 archivos. Quien revisa el EDP necesita poder verificar de dónde sale.">
           <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx"
             onChange={(e) => setF({ ...f, respaldo: Array.from(e.target.files).slice(0, 4) })} />

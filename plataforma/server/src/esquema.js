@@ -58,6 +58,9 @@ export const tiene = {
   // db/0019_regla_peso.sql
   regla_peso: false,          // despachos.kg_contrato/regla_peso + contrato.tol_mel_pct/tol_lampa_pct
   fecha_recepcion: false,     // despachos.fecha_recepcion, traslados.fecha_recepcion
+  // db/0021_cierre_historial.sql
+  ep_ajuste_kg: false,        // ep_descuentos.kg (ajuste de cierre en kilos)
+  historial: false,           // tabla historial_guias
 };
 
 // Qué migración aporta cada función, para que el aviso diga cuál falta correr.
@@ -82,6 +85,7 @@ const ORIGEN = {
   documentos: '0015_documental.sql',
   planilla: '0017_planilla_materiales.sql', oferta_manual: '0020_venta_manual.sql',
   regla_peso: '0019_regla_peso.sql', fecha_recepcion: '0019_regla_peso.sql',
+  ep_ajuste_kg: '0021_cierre_historial.sql', historial: '0021_cierre_historial.sql',
 };
 
 const existe = async (tabla, columnas) => {
@@ -161,6 +165,9 @@ async function revisar() {
     && (await existe('contrato', 'tol_mel_pct,tol_lampa_pct'));
   t.fecha_recepcion = (await existe('despachos', 'fecha_recepcion'))
     && (await existe('traslados', 'fecha_recepcion'));
+
+  t.ep_ajuste_kg = await existe('ep_descuentos', 'kg');
+  t.historial = await existe('historial_guias', 'id,periodo,gde,kg,valor');
 
   t.documentos = (await existe('doc_tipos', 'codigo,hito,roles_carga,roles_ver,exigible_en'))
     && (await existe('documentos', 'id,folio,tipo,ref_id,vence_el,aviso_por_vencer_el'))

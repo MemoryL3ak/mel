@@ -10,6 +10,7 @@ import { supa, q, ah, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { contrato, periodoEP, periodoActivo } from '../contrato.js';
+import { historialDelAnio } from './historial.js';
 
 const r = Router();
 const ROLES = ['coordinador', 'ito', 'admin_venta'];
@@ -50,18 +51,25 @@ async function chatarra(anio, periodos, sel) {
     q(supa.from('categorias').select('id, nombre')),
   ]);
   const enPeriodo = (p) => (x) => x.fecha >= p.desde && x.fecha <= p.hasta;
+  // Guías anteriores a la plataforma (planilla de MEL): suman al período del
+  // EDP en que se cobraron. Traen un solo peso, el facturado, que cuenta como
+  // despachado y como recepcionado. Las que ya están en GEA no se repiten.
+  const hist = (await historialDelAnio(anio)).filter((h) => !h.en_gea);
 
   const serie = periodos.map((p) => {
     const d = desp.filter(enPeriodo(p));
     const t = tras.filter(enPeriodo(p));
+    const h = hist.filter((x) => x.periodo === p.periodo);
+    const kgH = h.reduce((a, x) => a + num(x.kg), 0);
     return {
       periodo: p.periodo, etiqueta: p.etiqueta, nombre: p.nombre, desde: p.desde, hasta: p.hasta,
-      guias: d.length,
-      kg_patios: d.reduce((a, x) => a + num(x.kg_origen), 0),
-      kg_lanegra: d.reduce((a, x) => a + num(x.kg_destino), 0),
-      valor: d.reduce((a, x) => a + num(x.valor), 0),
+      guias: d.length + h.length,
+      kg_patios: d.reduce((a, x) => a + num(x.kg_origen), 0) + kgH,
+      kg_lanegra: d.reduce((a, x) => a + num(x.kg_destino), 0) + kgH,
+      valor: d.reduce((a, x) => a + num(x.valor), 0) + h.reduce((a, x) => a + num(x.valor), 0),
       kg_lampa: t.reduce((a, x) => a + num(x.kg_lampa), 0),
       certificados: t.filter((x) => x.cert_folio).length,
+      historial: h.length,   // cuántas de esas guías vienen del historial
     };
   });
   const i = periodos.findIndex((p) => p.periodo === sel.periodo);
@@ -72,7 +80,8 @@ async function chatarra(anio, periodos, sel) {
   const ytd = serie.slice(0, i + 1).reduce((a, s) => ({
     guias: a.guias + s.guias, kg_patios: a.kg_patios + s.kg_patios, kg_lanegra: a.kg_lanegra + s.kg_lanegra,
     valor: a.valor + s.valor, kg_lampa: a.kg_lampa + s.kg_lampa, certificados: a.certificados + s.certificados,
-  }), { guias: 0, kg_patios: 0, kg_lanegra: 0, valor: 0, kg_lampa: 0, certificados: 0 });
+    historial: a.historial + s.historial,
+  }), { guias: 0, kg_patios: 0, kg_lanegra: 0, valor: 0, kg_lampa: 0, certificados: 0, historial: 0 });
 
   // Cartera de estados de pago del año, por estado del ciclo.
   const ORDEN_EP = ['generado', 'en_revision', 'con_ajustes', 'firmado', 'facturado', 'pagado', 'conciliado'];
@@ -115,6 +124,14 @@ async function chatarra(anio, periodos, sel) {
     const id = x.categoria_final_id ?? x.categoria_id;
     const c = porCat.get(id) ?? { categoria: nombreCat.get(id) ?? '—', guias: 0, kg_patios: 0, kg_lanegra: 0, valor: 0 };
     c.guias++; c.kg_patios += num(x.kg_origen); c.kg_lanegra += num(x.kg_destino); c.valor += num(x.valor);
+    porCat.set(id, c);
+  }
+  // Historial del período: por la categoría del contrato si la descripción de
+  // la planilla calza con una; si no, con el nombre que trae.
+  for (const x of hist.filter((h) => h.periodo === sel.periodo)) {
+    const id = x.categoria_id ?? `h:${x.categoria ?? ''}`;
+    const c = porCat.get(id) ?? { categoria: nombreCat.get(x.categoria_id) ?? x.categoria ?? 'Sin descripción', guias: 0, kg_patios: 0, kg_lanegra: 0, valor: 0 };
+    c.guias++; c.kg_patios += num(x.kg); c.kg_lanegra += num(x.kg); c.valor += num(x.valor);
     porCat.set(id, c);
   }
   const categorias = [...porCat.values()].sort((a, b) => b.kg_lanegra - a.kg_lanegra);

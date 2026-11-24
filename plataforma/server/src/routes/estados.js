@@ -80,6 +80,9 @@ async function detalleEP(ep) {
     kg_mel: desp.reduce((a, d) => a + Number(d.kg_origen ?? 0), 0),
     kg_lanegra: desp.reduce((a, d) => a + Number(d.kg_destino ?? 0), 0),
     kg_descontados: desp.reduce((a, d) => a + (kgDesc.get(d.id) ?? 0), 0),
+    // Ajustes de cierre en kilos (positivo resta, negativo suma): lo valorizado
+    // menos esto son los kilos con que se cierra el período.
+    kg_ajuste: descs.reduce((a, d) => a + Number(d.kg ?? 0), 0),
     // Guías donde el peso valorizado no es el de MEL: explican la diferencia.
     guias_distinto_peso: desp.filter((d) => d.kg_contrato != null && Number(d.kg_contrato) !== Number(d.kg_origen))
       .map((d) => ({ guia: d.guia, guia_mel: d.guia_mel ?? null, kg_mel: Number(d.kg_origen), kg: Number(d.kg_contrato), regla_peso: d.regla_peso ?? null })),
@@ -149,7 +152,7 @@ r.get('/eps', auth('vendor', 'ito', 'coordinador'), ah(async (_req, res) => {
     acumulado = previo + Number(ep.total);
     out.push({ ...pub(ep, cfg, previo), ...(await detalleEP(ep)) });
   }
-  res.json({ eps: out.reverse(), contrato: cfg });
+  res.json({ eps: out.reverse(), contrato: cfg, funciones: { ep_ajuste_kg: tiene.ep_ajuste_kg } });
 }));
 
 // N° del EP: el correlativo del contrato. La plataforma propone el siguiente
@@ -260,15 +263,25 @@ async function subirRespaldos(descuentoId, archivos = [], { ep, glosa, quien } =
 r.post('/eps/:id/descuentos', auth('ito', 'coordinador'),
   subir.fields([{ name: 'respaldo', maxCount: 4 }]), ah(async (req, res) => {
   if (!tiene.descuentos) return res.status(503).json({ error: SIN_MIGRACION });
-  const { glosa, monto } = req.body || {};
-  if (!glosa || !(Number(monto) > 0)) return res.status(400).json({ error: 'Glosa y monto válido son obligatorios' });
+  const { glosa } = req.body || {};
+  const monto = Math.round(Number(req.body?.monto) || 0);
+  // Kilos del ajuste de cierre: positivo resta de lo valorizado, negativo suma.
+  const kg = Math.round((Number(req.body?.kg) || 0) * 10) / 10;
+  if (kg && !tiene.ep_ajuste_kg) return res.status(503).json({ error: 'El ajuste en kilos requiere aplicar db/0021_cierre_historial.sql en la base de datos' });
+  if (!glosa || monto < 0 || (!(monto > 0) && !kg)) {
+    return res.status(400).json({ error: 'Indique la glosa y un monto o unos kilos válidos' });
+  }
   const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).single());
   if (!editable(ep)) return res.status(409).json({ error: 'El EP ya no admite cambios de descuentos' });
-  if (Number(monto) > Number(ep.bruto) - Number(ep.descuentos ?? 0)) {
+  if (monto > Number(ep.bruto) - Number(ep.descuentos ?? 0)) {
     return res.status(400).json({ error: 'El descuento no puede dejar el estado de pago en negativo' });
   }
+  if (kg > 0) {
+    const d = await detalleEP(ep);
+    if (kg > d.kg_total - d.kg_ajuste) return res.status(400).json({ error: 'El ajuste no puede dejar los kilos del período en negativo' });
+  }
   const fila = await q(supa.from('ep_descuentos')
-    .insert({ ep_id: ep.id, glosa, monto: Number(monto), creado_por: req.user.name })
+    .insert({ ep_id: ep.id, glosa, monto, creado_por: req.user.name, ...(kg ? { kg } : {}) })
     .select('id').single());
   const nResp = await subirRespaldos(fila.id, req.files?.respaldo, { ep, glosa, quien: req.user });
   if (nResp && tiene.edp_respaldo) {
@@ -276,8 +289,8 @@ r.post('/eps/:id/descuentos', auth('ito', 'coordinador'),
   }
   const upd = await recalcular(ep.id);
   const cfg = await contrato();
-  await audit(req.user.name, req.user.role, 'Registró descuento en EP',
-    `${ep.folio} · ${glosa} · $${monto}${nResp ? ` · ${nResp} respaldo(s)` : ' · sin respaldo'}`);
+  await audit(req.user.name, req.user.role, kg ? 'Registró ajuste de cierre en EP' : 'Registró descuento en EP',
+    `${ep.folio} · ${glosa}${kg ? ` · ${kg > 0 ? '−' : '+'}${Math.abs(kg)} kg` : ''} · $${monto}${nResp ? ` · ${nResp} respaldo(s)` : ' · sin respaldo'}`);
   res.json({ ...pub(upd, cfg), ...(await detalleEP(upd)) });
 }));
 
@@ -433,10 +446,15 @@ r.get('/eps/:id/excel', auth('vendor', 'ito', 'coordinador'), ah(async (req, res
   for (const [k, v] of [['Kilos declarados por MEL', suma('kg_origen')], ['Kilos pesados en La Negra', suma('kg_destino')],
     ['Kilos descontados en La Negra (madera u otros)', kgDescTotal], ['Kilos valorizados (peso que rige)', kgVal],
     ['Diferencia valorizado − MEL', kgVal - suma('kg_origen')]]) { linea([k, '', v]).getCell(3).numFmt = KG; }
+  const kgAjuste = epDescs.reduce((a, x) => a + Number(x.kg ?? 0), 0);
+  if (kgAjuste) {
+    for (const x of epDescs.filter((y) => Number(y.kg ?? 0))) linea([`Ajuste de cierre: ${x.glosa}`, '', -Number(x.kg)]).getCell(3).numFmt = KG;
+    linea(['Kilos con que cierra el período', '', kgVal - kgAjuste], true).getCell(3).numFmt = KG;
+  }
   linea([]);
   cabecera(res1, ['Montos', '', '', 'CLP']);
   linea(['Bruto', '', '', Number(ep.bruto)]).getCell(4).numFmt = CLP;
-  for (const x of epDescs) linea([`Descuento: ${x.glosa}`, '', '', -Number(x.monto)]).getCell(4).numFmt = CLP;
+  for (const x of epDescs.filter((y) => Number(y.monto) > 0)) linea([`Descuento: ${x.glosa}`, '', '', -Number(x.monto)]).getCell(4).numFmt = CLP;
   linea(['Neto a facturar', '', '', Number(ep.total)], true).getCell(4).numFmt = CLP;
   if (Math.round(suma('valor')) !== Math.round(Number(ep.bruto))) {
     linea([]);
