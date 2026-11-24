@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, fmtCLP, fmtKg } from '../api.js';
+import { api, descargar, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { DateField, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
 import DocumentoEP from '../DocumentoEP.jsx';
@@ -103,6 +103,13 @@ export default function EstadosPago() {
     } catch (e) { toast(e.message, true); }
   }
 
+  // Base completa del EP: una fila por guía con todo lo que respalda su monto.
+  async function bajarExcel() {
+    try {
+      await descargar(`/eps/${sel.id}/excel`, `EP-${sel.numero ?? sel.id}-${sel.periodo}-detalle.xlsx`);
+    } catch (e) { toast(e.message, true); }
+  }
+
   const mesAnterior = () => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
@@ -141,6 +148,8 @@ export default function EstadosPago() {
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn sm" onClick={() => setModal('documento')}>Ver documento EP</button>
+                <button className="btn sm" onClick={bajarExcel}
+                  title="Excel con una fila por guía: N° de guía, categoría, pesajes, precio, dólar, monto y descuentos">Descargar detalle (Excel)</button>
                 <BotonDocs hito="estado_pago" refId={sel.id} />
                 {esIto && editable && (
                   <>
@@ -187,6 +196,24 @@ export default function EstadosPago() {
                 </div>
               )}
 
+              {/* Guías del período recepcionadas después de generar el EP: si no
+                  se incorporan quedan sin cobrar, porque el EP siguiente parte
+                  desde el día después del corte. */}
+              {sel.pendientes?.n > 0 && (
+                <div className="aviso" style={{ marginTop: 14, marginBottom: 0 }}>
+                  <b>{sel.pendientes.n} guía(s) recepcionada(s) de este período no están en el EP</b>
+                  <p>
+                    Se registraron o recepcionaron después de generarlo: {sel.pendientes.guias.map((g) => g.guia).join(', ')}.
+                    Suman {fmtKg(sel.pendientes.kg)} kg y {fmtCLP(sel.pendientes.valor)}.
+                    {esIto ? ' Incorpórelas antes de enviar el EP a revisión.' : ''}
+                  </p>
+                  {esIto && (
+                    <button className="btn sm primary" style={{ marginTop: 8 }} onClick={() => setModal('incorporar')}>
+                      Incorporar al EP</button>
+                  )}
+                </div>
+              )}
+
               <div className="tbl-wrap" style={{ marginTop: 14 }}><table>
                 <thead><tr><th>Categoría</th><th>Participación</th><th className="num">Guías</th><th className="num">Kg</th><th className="num">Valor</th></tr></thead>
                 <tbody>
@@ -210,6 +237,25 @@ export default function EstadosPago() {
                   </tr>
                 </tbody>
               </table></div>
+
+              {/* Cuadre de kilos del período: de lo que declaró MEL a lo que se
+                  valoriza, con las guías que explican la diferencia. */}
+              {sel.kg_mel != null && sel.n_guias > 0 && (() => {
+                const dif = sel.kg_total - sel.kg_mel;
+                const lista = sel.guias_distinto_peso ?? [];
+                const REGLA = { mel: 'sin madera', lampa: 'rige La Negra', acuerdo: 'acordado', pendiente: 'por acordar' };
+                return (
+                  <div className="audit-note" style={{ marginTop: 12 }}>
+                    <b>Cuadre de kilos.</b> MEL declaró <b>{fmtKg(sel.kg_mel)}</b> kg · La Negra pesó <b>{fmtKg(sel.kg_lanegra)}</b> kg
+                    {sel.kg_descontados > 0 && <>, de los que descontó <b>{fmtKg(sel.kg_descontados)}</b> kg que no son material (madera u otros)</>}
+                    {' '}· se valorizan <b>{fmtKg(sel.kg_total)}</b> kg.{' '}
+                    {dif === 0
+                      ? 'Los kilos valorizados son los mismos que declaró MEL.'
+                      : <>Diferencia contra MEL: <b>{dif > 0 ? '+' : ''}{fmtKg(dif)}</b> kg, por {lista.length} guía(s): {lista.map((g) =>
+                        `${g.guia} ${fmtKg(g.kg_mel)} → ${fmtKg(g.kg)} (${REGLA[g.regla_peso] ?? 'peso corregido'})`).join(' · ')}.</>}
+                  </div>
+                );
+              })()}
 
               {/* Los descuentos solo se pueden tocar mientras el EP está en
                   Generado o Con ajustes. Antes el botón simplemente desaparecía
@@ -313,6 +359,32 @@ export default function EstadosPago() {
           <button className="btn primary" onClick={() => window.print()}>Imprimir</button>
         </>}>
         {sel && contrato && <DocumentoEP ep={sel} contrato={contrato} />}
+      </Modal>
+
+      <Modal open={modal === 'incorporar'} title={sel && `Incorporar guías al EP N° ${sel.numero ?? '—'}`} onClose={() => setModal(null)}
+        footer={<>
+          <button className="btn" onClick={() => setModal(null)}>Cancelar</button>
+          <button className="btn primary" onClick={accion(`/eps/${sel?.id}/incorporar`, {}, 'Guías incorporadas al estado de pago')}>Incorporar</button>
+        </>}>
+        {sel?.pendientes?.n > 0 && (
+          <>
+            <p style={{ marginTop: 0, color: 'var(--ink-2)' }}>
+              Se agregan al estado de pago las {sel.pendientes.n} guía(s) del período que se recepcionaron después de
+              generarlo. El bruto sube de <b>{fmtCLP(sel.bruto)}</b> a <b>{fmtCLP(sel.bruto + sel.pendientes.valor)}</b>.
+            </p>
+            <div className="tbl-wrap" style={{ maxHeight: 260, overflowY: 'auto' }}><table>
+              <thead><tr><th>Guía</th><th>Guía MEL</th><th>Fecha</th><th className="num">Valor</th></tr></thead>
+              <tbody>
+                {sel.pendientes.guias.map((g) => (
+                  <tr key={g.guia}>
+                    <td className="mono">{g.guia}</td><td className="mono">{g.guia_mel || '—'}</td>
+                    <td className="mono">{g.fecha}</td><td className="num">{fmtCLP(g.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table></div>
+          </>
+        )}
       </Modal>
 
       <Modal open={modal === 'generar'} title="Generar estado de pago del período" onClose={() => setModal(null)}

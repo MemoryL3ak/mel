@@ -10,7 +10,8 @@
 // corte del mes del período (por ejemplo, del 21-jul al 20-ago).
 import { Router } from 'express';
 import multer from 'multer';
-import { supa, q, ah, audit, fmtFecha } from '../supa.js';
+import ExcelJS from 'exceljs';
+import { supa, q, ah, audit, fmtFecha, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { contrato } from '../contrato.js';
 import { tiene } from '../esquema.js';
@@ -30,11 +31,35 @@ function rangoPeriodo(periodo, diaCorte) {
 
 const DESP_SEL = '*, cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre)';
 
+const editable = (ep) => ['generado', 'con_ajustes'].includes(ep.estado);
+
+// Guías recepcionadas del período que todavía no están en ningún EP: las que
+// se registraron o recepcionaron después de generarlo. Mientras el EP es
+// editable se pueden incorporar; si no, quedarían sin cobrar, porque el EP del
+// período siguiente parte desde el día después del corte.
+function guiasPendientes(ep) {
+  if (!ep.desde || !ep.hasta) return [];
+  return q(supa.from('despachos').select('id, guia, guia_mel, fecha, kg_origen, kg_destino, kg_contrato, valor')
+    .eq('estado', 'recepcionado').is('ep_id', null)
+    .gte('fecha', ep.desde).lte('fecha', ep.hasta).order('fecha').order('id'));
+}
+
+// Kilos descontados (madera, pallets) de un conjunto de guías, por guía.
+async function kgDescontadosDe(ids) {
+  if (!tiene.desc_item || !ids.length) return new Map();
+  const filas = await q(supa.from('despacho_descuentos').select('despacho_id, tipo, valor').in('despacho_id', ids).eq('tipo', 'kg'));
+  const m = new Map();
+  for (const x of filas) m.set(x.despacho_id, (m.get(x.despacho_id) ?? 0) + Number(x.valor));
+  return m;
+}
+
 async function detalleEP(ep) {
-  const [desp, descs] = await Promise.all([
+  const [desp, descs, pendientes] = await Promise.all([
     q(supa.from('despachos').select(DESP_SEL).eq('ep_id', ep.id).order('fecha').order('id')),
     tiene.descuentos ? q(supa.from('ep_descuentos').select('*').eq('ep_id', ep.id).order('id')) : [],
+    editable(ep) ? guiasPendientes(ep) : [],
   ]);
+  const kgDesc = await kgDescontadosDe(desp.map((d) => d.id));
   const porCat = {};
   for (const d of desp) {
     const k = d.catf?.nombre ?? d.cat?.nombre ?? '—';
@@ -50,6 +75,20 @@ async function detalleEP(ep) {
     descuentos_lineas: descs,
     n_guias: desp.length,
     kg_total: desp.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino ?? 0), 0),
+    // Cuadre de kilos del período: lo que declaró MEL, lo que pesó La Negra,
+    // los kilos descontados por no ser material, y lo que se valoriza.
+    kg_mel: desp.reduce((a, d) => a + Number(d.kg_origen ?? 0), 0),
+    kg_lanegra: desp.reduce((a, d) => a + Number(d.kg_destino ?? 0), 0),
+    kg_descontados: desp.reduce((a, d) => a + (kgDesc.get(d.id) ?? 0), 0),
+    // Guías donde el peso valorizado no es el de MEL: explican la diferencia.
+    guias_distinto_peso: desp.filter((d) => d.kg_contrato != null && Number(d.kg_contrato) !== Number(d.kg_origen))
+      .map((d) => ({ guia: d.guia, guia_mel: d.guia_mel ?? null, kg_mel: Number(d.kg_origen), kg: Number(d.kg_contrato), regla_peso: d.regla_peso ?? null })),
+    pendientes: {
+      n: pendientes.length,
+      kg: pendientes.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino ?? 0), 0),
+      valor: pendientes.reduce((a, d) => a + Number(d.valor ?? 0), 0),
+      guias: pendientes.map((d) => ({ guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha, valor: Number(d.valor ?? 0) })),
+    },
     // Anexo: el detalle guía por guía que respalda el monto del EP.
     guias: desp.map((d) => ({
       id: d.id, guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha,
@@ -177,8 +216,6 @@ async function recalcular(epId) {
     .eq('id', epId).select().single());
 }
 
-const editable = (ep) => ['generado', 'con_ajustes'].includes(ep.estado);
-
 const SIN_MIGRACION = 'Esta función requiere aplicar db/0003_ep_contrato.sql en la base de datos';
 const SIN_EDP = 'Esta función requiere aplicar db/0011_edp.sql en la base de datos';
 
@@ -283,6 +320,132 @@ r.delete('/eps/:id/descuentos/:descId', auth('ito', 'coordinador'), ah(async (re
   const cfg = await contrato();
   await audit(req.user.name, req.user.role, 'Eliminó descuento de EP', ep.folio);
   res.json({ ...pub(upd, cfg), ...(await detalleEP(upd)) });
+}));
+
+// Incorpora al EP las guías recepcionadas de su período que quedaron fuera
+// porque se registraron o recepcionaron después de generarlo. Solo mientras el
+// EP es editable: firmado, el documento ya es el del papel.
+r.post('/eps/:id/incorporar', auth('ito', 'coordinador'), ah(async (req, res) => {
+  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).single());
+  if (!editable(ep)) return res.status(409).json({ error: 'El EP ya fue enviado a revisión y no admite más guías' });
+  // Igual que al generar: cada recepción entra con el peso que rige y el dólar de su fecha.
+  await repasarValorizacion().catch((e) => console.error('[GEA] valorización antes de incorporar al EP:', e.message));
+  const nuevas = await guiasPendientes(ep);
+  if (!nuevas.length) return res.status(400).json({ error: 'No hay guías recepcionadas del período pendientes de incorporar' });
+  await q(supa.from('despachos').update({ ep_id: ep.id }).in('id', nuevas.map((d) => d.id)).is('ep_id', null).select('id'));
+  // El bruto es siempre la suma de las guías que el EP tiene, no un arrastre.
+  const todas = await q(supa.from('despachos').select('valor').eq('ep_id', ep.id));
+  const bruto = todas.reduce((a, d) => a + Number(d.valor ?? 0), 0);
+  const upd = await q(supa.from('estados_pago')
+    .update({ bruto, total: bruto - Number(ep.descuentos ?? 0) }).eq('id', ep.id).select().single());
+  const cfg = await contrato();
+  await audit(req.user.name, req.user.role, 'Incorporó guías al estado de pago',
+    `${ep.folio} · ${nuevas.length} guía(s): ${nuevas.map((d) => d.guia).join(', ')} · bruto $${Number(ep.bruto)} → $${bruto}`);
+  res.json({ ...pub(upd, cfg), ...(await detalleEP(upd)) });
+}));
+
+// Base completa del EP en Excel: una fila por guía con todo lo que respalda su
+// monto (pesajes, regla de peso, precio, dólar, descuentos), más el resumen.
+const REGLA_TXT = { mel: 'MEL', lampa: 'La Negra', pendiente: 'Por acordar', acuerdo: 'Acordado' };
+const TIPO_DESC_TXT = { kg: 'kg', pct: '%', usd: 'USD', clp: '$' };
+r.get('/eps/:id/excel', auth('vendor', 'ito', 'coordinador'), ah(async (req, res) => {
+  const ep = await q(supa.from('estados_pago').select('*').eq('id', req.params.id).single());
+  const sel = `*, patios(codigo, nombre), cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre)${
+    tiene.desp_componente ? ', comp:componentes!despachos_componente_id_fkey(codigo, nombre)' : ''}`;
+  const [desp, epDescs] = await Promise.all([
+    q(supa.from('despachos').select(sel).eq('ep_id', ep.id).order('fecha').order('id')),
+    tiene.descuentos ? q(supa.from('ep_descuentos').select('*').eq('ep_id', ep.id).order('id')) : [],
+  ]);
+  const descs = tiene.desc_item && desp.length
+    ? await q(supa.from('despacho_descuentos').select('*').in('despacho_id', desp.map((d) => d.id)).order('id')) : [];
+  const descDe = (id) => descs.filter((x) => x.despacho_id === id);
+  const n = (v) => (v == null ? null : Number(v));
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'GEA · Minera Escondida';
+  const CLP = '"$"#,##0', KG = '#,##0.##', USD = '#,##0.00';
+  const cabecera = (hoja, titulos) => {
+    const row = hoja.addRow(titulos);
+    row.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    row.eachCell((c) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF232930' } }; });
+    return row;
+  };
+
+  // --- Detalle guía a guía ---
+  const COLS = [
+    ['Código interno', 12], ['N° guía MEL', 13], ['Fecha guía', 12], ['Fecha recepción', 14], ['Patio', 9],
+    ['Categoría despachada', 30], ['Categoría recibida', 30], ['Alternativa', 12], ['SKU obsoleto', 13], ['Componente', 34],
+    ['Kg MEL', 11, KG], ['Kg La Negra', 12, KG], ['Kg descontados', 14, KG], ['Dif. %', 8, '0.00'], ['Peso que rige', 13],
+    ['Kg valorizados', 14, KG], ['USD/TM', 10, USD], ['Dólar', 10, USD], ['Valor USD', 13, USD], ['Valor CLP', 15, CLP],
+    ['Descuentos de la guía', 36], ['N° ticket', 12], ['N° vale', 12], ['Transportista', 22], ['Patente', 10],
+    ['Recepcionó', 20], ['Registró', 20], ['Observación', 40],
+  ];
+  const det = wb.addWorksheet('Detalle de guías', { views: [{ state: 'frozen', ySplit: 1 }] });
+  det.columns = COLS.map(([, width, numFmt]) => ({ width, ...(numFmt ? { style: { numFmt } } : {}) }));
+  cabecera(det, COLS.map(([t]) => t));
+  for (const d of desp) {
+    const dd = descDe(d.id);
+    const kgD = dd.filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0);
+    const o = Number(d.kg_origen), ln = n(d.kg_destino);
+    // Misma comparación que la regla: sin los kilos descontados si así se acercan.
+    const ref = ln == null ? null : (Math.abs(ln - kgD - o) <= Math.abs(ln - o) ? ln - kgD : ln);
+    det.addRow([
+      d.guia, d.guia_mel ?? '', d.fecha, d.fecha_recepcion ?? (d.recepcionado_el ? String(d.recepcionado_el).slice(0, 10) : ''), d.patios?.codigo ?? '',
+      d.cat?.nombre ?? '', d.catf?.nombre ?? d.cat?.nombre ?? '', d.con_madera == null ? '' : d.con_madera ? 'Con madera' : 'Sin madera',
+      d.comp?.codigo ?? '', d.comp?.nombre ?? '',
+      o, ln, kgD || null, ref == null || !o ? null : Math.round(((ref - o) / o) * 10000) / 100,
+      d.regla_peso ? REGLA_TXT[d.regla_peso] ?? d.regla_peso : 'La Negra',
+      Number(d.kg_contrato ?? d.kg_destino ?? 0), n(d.precio_usd_tm), n(d.dolar), n(d.valor_usd), Number(d.valor ?? 0),
+      dd.map((x) => `${Number(x.valor)} ${TIPO_DESC_TXT[x.tipo] ?? x.tipo} · ${x.glosa}`).join(' | '),
+      d.ticket_numero ?? '', d.vale_numero ?? '', d.transportista ?? '', d.patente_tracto ?? '',
+      d.recepcionado_por ?? '', d.creado_por ?? '', d.obs_recepcion ?? d.observacion ?? '',
+    ]);
+  }
+  const suma = (k) => desp.reduce((a, d) => a + Number(d[k] ?? 0), 0);
+  const kgDescTotal = descs.filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0);
+  const kgVal = desp.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino ?? 0), 0);
+  const tot = det.addRow(['Total', `${desp.length} guías`, '', '', '', '', '', '', '', '',
+    suma('kg_origen'), suma('kg_destino'), kgDescTotal || null, null, '', kgVal, null, null, suma('valor_usd'), suma('valor')]);
+  tot.font = { bold: true };
+  det.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLS.length } };
+
+  // --- Resumen ---
+  const res1 = wb.addWorksheet('Resumen');
+  res1.columns = [{ width: 46 }, { width: 14 }, { width: 16 }, { width: 20 }];
+  const linea = (v, negrita = false) => { const row = res1.addRow(v); if (negrita) row.font = { bold: true }; return row; };
+  linea([`Estado de pago N° ${ep.numero ?? '—'} · ${ep.folio}`], true);
+  linea([`Período ${ep.desde ?? ''} al ${ep.hasta ?? ''} · estado: ${ep.estado} · descargado el ${hoy()}`]);
+  linea([]);
+  cabecera(res1, ['Categoría', 'Guías', 'Kg valorizados', 'Valor CLP']);
+  const porCat = new Map();
+  for (const d of desp) {
+    const k = d.catf?.nombre ?? d.cat?.nombre ?? '—';
+    const x = porCat.get(k) ?? { guias: 0, kg: 0, valor: 0 };
+    x.guias += 1; x.kg += Number(d.kg_contrato ?? d.kg_destino ?? 0); x.valor += Number(d.valor ?? 0);
+    porCat.set(k, x);
+  }
+  for (const [k, x] of [...porCat].sort((a, b) => b[1].valor - a[1].valor)) {
+    const row = linea([k, x.guias, x.kg, x.valor]); row.getCell(3).numFmt = KG; row.getCell(4).numFmt = CLP;
+  }
+  { const row = linea(['Bruto del período', desp.length, kgVal, Number(ep.bruto)], true); row.getCell(3).numFmt = KG; row.getCell(4).numFmt = CLP; }
+  linea([]);
+  cabecera(res1, ['Cuadre de kilos', '', 'Kg', '']);
+  for (const [k, v] of [['Kilos declarados por MEL', suma('kg_origen')], ['Kilos pesados en La Negra', suma('kg_destino')],
+    ['Kilos descontados en La Negra (madera u otros)', kgDescTotal], ['Kilos valorizados (peso que rige)', kgVal],
+    ['Diferencia valorizado − MEL', kgVal - suma('kg_origen')]]) { linea([k, '', v]).getCell(3).numFmt = KG; }
+  linea([]);
+  cabecera(res1, ['Montos', '', '', 'CLP']);
+  linea(['Bruto', '', '', Number(ep.bruto)]).getCell(4).numFmt = CLP;
+  for (const x of epDescs) linea([`Descuento: ${x.glosa}`, '', '', -Number(x.monto)]).getCell(4).numFmt = CLP;
+  linea(['Neto a facturar', '', '', Number(ep.total)], true).getCell(4).numFmt = CLP;
+  if (Math.round(suma('valor')) !== Math.round(Number(ep.bruto))) {
+    linea([]);
+    linea([`Atención: la suma de las guías ($${Math.round(suma('valor'))}) no coincide con el bruto guardado del EP.`], true);
+  }
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="EP-${ep.numero ?? ep.id}-${ep.periodo}-detalle.xlsx"`);
+  res.send(Buffer.from(await wb.xlsx.writeBuffer()));
 }));
 
 // Campos del encabezado que el ITO completa antes de presentar el EP.
