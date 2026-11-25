@@ -4,12 +4,12 @@
 //   certificado de disposición final).
 import { Router } from 'express';
 import multer from 'multer';
-import { supa, q, ah, folio, audit, precioVigente, fmtFecha, semanaISO, hoy } from '../supa.js';
+import { supa, q, ah, folio, audit, precioVigente, fmtFecha, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { valorDolar, sincronizarDolar } from '../dolar.js';
 import { registrarArchivos } from '../documental.js';
-import { contrato, reglaPesoNeto } from '../contrato.js';
+import { contrato, reglaPesoNeto, semanaCorteDeFecha } from '../contrato.js';
 
 const r = Router();
 
@@ -1299,7 +1299,7 @@ r.patch('/traslados/:id', auth('vendor', 'coordinador', 'lampa', 'ito'), ah(asyn
 
   // Si la semana del traslado ya tiene la cuadratura cerrada, esa foto no
   // cambia sola: se avisa para que el ITO rehaga el cierre.
-  const { anio, semana } = semanaISO(new Date(`${t.fecha}T12:00:00`));
+  const { anio, semana } = semanaCorteDeFecha(t.fecha, (await contrato()).dia_corte);
   const cerrada = await q(supa.from('cuadraturas').select('id').eq('anio', anio).eq('semana', semana).maybeSingle());
   res.json({
     ...row, kg: Number(row.kg), kg_lampa: row.kg_lampa == null ? null : Number(row.kg_lampa), categoria: row.categorias?.nombre,

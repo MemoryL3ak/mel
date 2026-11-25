@@ -21,10 +21,15 @@ export function SemanaEP({ ep }) {
     );
   }
   const t = ep.tramos[0];
+  // Cuadratura: la semana del corte termina el día de cierre del EDP y los días
+  // que le siguen pasan a la semana siguiente. Se dice, porque esa semana no va
+  // de lunes a domingo.
   return (
-    <div className="semana-ep">
+    <div className={`semana-ep${ep.cierra || ep.arrastra ? ' corte' : ''}`}>
       <b>{nombreEDP(t)}</b> · semana {t.semana_n} de {t.semanas}
       {' '}· va de la semana {t.semana_inicio.semana} a la {t.semana_fin.semana} ({fmtPeriodo(t).rango})
+      {ep.cierra && <> · <b>Semana de corte:</b> termina el {fmtDia(ep.cierra)}, día de cierre del EDP. Los días siguientes pasan a la próxima semana.</>}
+      {ep.arrastra && <> · <b>Parte el {fmtDia(ep.desde)}:</b> incluye los días que siguieron al corte del {fmtDia(ep.arrastra)}.</>}
     </div>
   );
 }

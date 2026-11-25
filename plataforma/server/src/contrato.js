@@ -154,9 +154,51 @@ async function numerosEP() {
   try { return await q(supa.from('estados_pago').select('periodo, numero')); } catch { return []; }
 }
 
-// Un período con su N° de EDP y las semanas ISO en que parte y en que corta.
-function conSemanas(p, eps) {
-  const ini = semanaDeFecha(p.desde), fin = semanaDeFecha(p.hasta);
+// ---- Semana de cuadratura ----
+// El EDP corta el día de corte caiga donde caiga, pero la semana ISO va de
+// lunes a domingo: cuando el corte cae a mitad de semana, la cuadratura de esa
+// semana se llevaba días que ya son del EDP siguiente (el 20-nov-2026 fue
+// viernes y la semana 47 sumaba el sábado 21 y el domingo 22). Por eso la
+// semana del corte termina ese día, y los días que le siguen pasan a la semana
+// siguiente, que es la primera del EDP nuevo. Así las semanas de un EDP suman
+// exactamente su período. Rige desde la semana 47 de 2026: las anteriores ya
+// se cerraron de lunes a domingo y no se tocan.
+const CORTE_SEMANAL_DESDE = '2026-11-16';
+
+const masDias = (iso, n) => {
+  const [a, m, d] = String(iso).split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10);
+};
+
+// Día de corte que cae dentro de una semana (lunes a domingo) antes de su
+// domingo, o null: si corta en domingo la semana ya termina con el EDP.
+function cortePartido(base, diaCorte) {
+  if (base.desde < CORTE_SEMANAL_DESDE) return null;
+  const corte = periodoEP(diaCorte, base.desde).hasta;
+  return corte < base.hasta ? corte : null;
+}
+
+// Rango de fechas que cuadra una semana. `corte`: día en que la semana termina
+// antes de su domingo; `arrastra`: corte de la semana anterior, cuyos días
+// restantes entran en esta.
+export function rangoSemanaCorte(anio, semana, diaCorte = 20) {
+  const base = rangoSemanaISO(anio, semana);
+  const previa = { desde: masDias(base.desde, -7), hasta: masDias(base.desde, -1) };
+  const corte = cortePartido(base, diaCorte), arrastra = cortePartido(previa, diaCorte);
+  return { desde: arrastra ? masDias(arrastra, 1) : base.desde, hasta: corte ?? base.hasta, corte, arrastra };
+}
+
+// Semana en cuya cuadratura cae una fecha 'AAAA-MM-DD'.
+export function semanaCorteDeFecha(iso, diaCorte = 20) {
+  const s = semanaDeFecha(iso);
+  const base = rangoSemanaISO(s.anio, s.semana);
+  const corte = cortePartido(base, diaCorte);
+  return corte && iso > corte ? semanaDeFecha(masDias(base.hasta, 1)) : s;
+}
+
+// Un período con su N° de EDP y las semanas en que parte y en que corta.
+function conSemanas(p, eps, diaCorte) {
+  const ini = semanaCorteDeFecha(p.desde, diaCorte), fin = semanaDeFecha(p.hasta);
   return {
     ...p, numero: numeroDelPeriodo(p.periodo, eps),
     semana_inicio: ini, semana_fin: fin,
@@ -164,21 +206,28 @@ function conSemanas(p, eps) {
   };
 }
 
-export async function periodoConSemanas(p) {
-  return conSemanas(p, await numerosEP());
+export async function periodoConSemanas(p, diaCorte) {
+  return conSemanas(p, await numerosEP(), diaCorte);
 }
 
-// A qué EDP pertenece una semana ISO y cuál es su lugar dentro de él. La
-// semana del corte pertenece a dos: hasta el día de corte cierra un EDP y
-// desde el día siguiente parte el otro.
-export async function epDeSemana(anio, semana, diaCorte) {
+// A qué EDP pertenece una semana y cuál es su lugar dentro de él. En el
+// programa la semana va de lunes a domingo, y la del corte pertenece a dos
+// EDP: hasta el día de corte cierra uno y desde el día siguiente parte el
+// otro. En la cuadratura (`cuadratura: true`) la semana ya viene cortada en el
+// día de cierre, así que cae entera en un solo EDP; `cierra` y `arrastra`
+// dicen si terminó antes del domingo o si trae días de la semana anterior.
+export async function epDeSemana(anio, semana, diaCorte, { cuadratura = false } = {}) {
   const eps = await numerosEP();
-  const { desde, hasta } = rangoSemanaISO(anio, semana);
+  const rango = cuadratura ? rangoSemanaCorte(anio, semana, diaCorte) : rangoSemanaISO(anio, semana);
+  const { desde, hasta } = rango;
   const a = periodoEP(diaCorte, desde), b = periodoEP(diaCorte, hasta);
   const tramo = (p) => {
-    const t = conSemanas(p, eps);
-    return { ...t, semana_n: Math.round((Date.parse(desde) - lunesDe(t.semana_inicio)) / MS_SEMANA) + 1 };
+    const t = conSemanas(p, eps, diaCorte);
+    return { ...t, semana_n: Math.round((lunesDe({ anio, semana }) - lunesDe(t.semana_inicio)) / MS_SEMANA) + 1 };
   };
   const mismo = a.periodo === b.periodo;
-  return { desde, hasta, tramos: mismo ? [tramo(a)] : [tramo(a), tramo(b)], corte: mismo ? null : a.hasta };
+  return {
+    desde, hasta, tramos: mismo ? [tramo(a)] : [tramo(a), tramo(b)], corte: mismo ? null : a.hasta,
+    cierra: rango.corte ?? null, arrastra: rango.arrastra ?? null,
+  };
 }

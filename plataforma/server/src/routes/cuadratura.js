@@ -2,11 +2,11 @@
 // MEL (guías de despacho), La Negra (recepciones) y Lampa (traslados
 // recepcionados), por categoría. El cierre guarda un snapshot inmutable.
 import { Router } from 'express';
-import { supa, q, ah, audit, semanaISO, rangoSemanaISO } from '../supa.js';
+import { supa, q, ah, audit, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { valorDolar } from '../dolar.js';
-import { contrato, epDeSemana } from '../contrato.js';
+import { contrato, epDeSemana, rangoSemanaCorte, semanaCorteDeFecha } from '../contrato.js';
 
 // Sobre este porcentaje, los descuentos de una categoría dejan de ser ruido
 // y pasan a ser algo que la semana tiene que explicar antes de cerrarse.
@@ -14,8 +14,10 @@ const UMBRAL_DESCUENTO_PCT = 5;
 
 const r = Router();
 
-// Lunes y domingo de una semana ISO (compartida con el programa y el panel).
-const rangoSemana = rangoSemanaISO;
+// Fechas que cuadra una semana: de lunes a domingo, salvo que el EDP corte a
+// mitad de semana. Ahí la semana termina el día de corte y los días que siguen
+// pasan a la semana siguiente (ver `rangoSemanaCorte`).
+const rangoSemana = async (anio, semana) => rangoSemanaCorte(anio, semana, (await contrato()).dia_corte);
 
 // Descuentos por ítem de las guías de la semana, agrupados por guía.
 async function descuentosDeSemana(ids) {
@@ -37,7 +39,7 @@ async function umbralDiferencia() {
 }
 
 async function calcular(anio, semana) {
-  const { desde, hasta } = rangoSemana(anio, semana);
+  const { desde, hasta } = await rangoSemana(anio, semana);
   const umbral = await umbralDiferencia();
   const [cats, precios, despTodos, tras, dolHoy] = await Promise.all([
     q(supa.from('categorias').select('*').order('id')),
@@ -310,7 +312,10 @@ export function conComponentes(cerrada, detalleVivo = []) {
 }
 
 r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) => {
-  const actual = semanaISO();
+  const diaCorte = (await contrato()).dia_corte;
+  // La semana «de hoy» es la que cuadra la fecha de hoy: el sábado y el domingo
+  // que siguen a un corte ya son de la semana siguiente.
+  const actual = semanaCorteDeFecha(hoy(), diaCorte);
   const anio = Number(req.query.anio || actual.anio);
   const semana = Number(req.query.semana || actual.semana);
   const [{ desde, hasta, detalle, alertas, anuladas, umbral_pct }, cerradas] = await Promise.all([
@@ -318,7 +323,7 @@ r.get('/cuadratura', auth('ito', 'coordinador', 'lampa'), ah(async (req, res) =>
     q(supa.from('cuadraturas').select('*').order('anio', { ascending: false }).order('semana', { ascending: false }).limit(12)),
   ]);
   const cerrada = conComponentes(cerradas.find((c) => c.anio === anio && c.semana === semana) ?? null, detalle);
-  const ep = await epDeSemana(anio, semana, (await contrato()).dia_corte);
+  const ep = await epDeSemana(anio, semana, diaCorte, { cuadratura: true });
   res.json({
     anio, semana, actual, desde, hasta, ep, detalle, alertas, anuladas, cerrada, historico: cerradas, umbral_pct,
     cambios_desde_cierre: cerrada ? cambioDesdeElCierre(cerrada.detalle, detalle) : false,
