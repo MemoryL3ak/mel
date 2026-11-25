@@ -7,6 +7,7 @@ import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
 import { valorDolar } from '../dolar.js';
 import { contrato, epDeSemana, rangoSemanaCorte, semanaCorteDeFecha } from '../contrato.js';
+import { unidadGuia } from '../guias.js';
 
 // Sobre este porcentaje, los descuentos de una categoría dejan de ser ruido
 // y pasan a ser algo que la semana tiene que explicar antes de cerrarse.
@@ -128,7 +129,7 @@ async function calcular(anio, semana) {
   // Una guía es el documento de MEL, no cada registro: los componentes
   // obsoletos que viajaron con la misma guía cuentan como una sola (la «guía
   // madre» del detalle). Un despacho normal cuenta por sí mismo.
-  const unidad = (d) => (d.componente_id && d.guia_mel ? `M:${String(d.guia_mel).trim()}` : `D:${d.id}`);
+  const unidad = unidadGuia;
   // Una guía con varios componentes se da por recepcionada cuando llegaron todos.
   const incompletas = new Set(desp.filter((d) => d.kg_destino == null).map(unidad));
 

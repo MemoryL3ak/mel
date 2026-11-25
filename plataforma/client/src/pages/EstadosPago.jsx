@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, descargar, fmtCLP, fmtKg } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { DateField, Chip, Empty, Field, Modal, PageHead, useToast } from '../ui.jsx';
+import { DateField, Chip, Empty, Field, Modal, PageHead, agruparPorGuia, useToast } from '../ui.jsx';
 import DocumentoEP from '../DocumentoEP.jsx';
 import BotonDocs from '../BotonDocs.jsx';
 
@@ -38,6 +38,9 @@ export default function EstadosPago() {
   const [modal, setModal] = useState(null);   // generar | descuento | encabezado | ajustar | factura | pago | conciliar | documento
   const [f, setF] = useState({});
   const [verGuias, setVerGuias] = useState(false);
+  // Guías madre abiertas en el detalle (varios componentes obsoletos en una guía de MEL).
+  const [abiertas, setAbiertas] = useState(() => new Set());
+  const alternarGuia = (k) => setAbiertas((a) => { const n = new Set(a); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const { user } = useAuth();
   const toast = useToast();
 
@@ -229,7 +232,10 @@ export default function EstadosPago() {
                       <tr key={l.categoria}>
                         <td>{l.categoria}</td>
                         <td><span className="prop"><span className="bar-track"><span className="bar-fill" style={{ width: `${pct}%`, display: 'block' }} /></span><span className="pct">{pct}%</span></span></td>
-                        <td className="num">{l.guias}</td>
+                        <td className="num" title={l.componentes > l.guias ? `${l.componentes} componentes obsoletos agrupados por su guía de MEL` : undefined}>
+                          {l.guias}
+                          {l.componentes > l.guias && <><br /><small style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>con {l.componentes} componentes</small></>}
+                        </td>
                         <td className="num">{fmtKg(l.kg)}</td>
                         <td className="num">{fmtCLP(l.valor)}</td>
                       </tr>
@@ -326,21 +332,51 @@ export default function EstadosPago() {
               <button className="btn sm" style={{ marginTop: 14 }} onClick={() => setVerGuias(!verGuias)}>
                 {verGuias ? 'Ocultar' : 'Ver'} detalle de las {sel.n_guias} guías
               </button>
+              {verGuias && sel.n_componentes > 0 && (
+                <small style={{ color: 'var(--muted)', marginLeft: 10 }}>
+                  Los componentes obsoletos van agrupados por su guía de MEL: haga clic en la guía para verlos.
+                </small>
+              )}
               {verGuias && (
                 <div className="tbl-wrap" style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto' }}><table>
                   <thead><tr><th>Guía</th><th>Guía MEL</th><th>Fecha</th><th>Categoría</th><th className="num">Kg</th><th className="num">$/kg</th><th className="num">Valor</th></tr></thead>
                   <tbody>
-                    {sel.guias.map((g) => (
-                      <tr key={g.id}>
-                        <td className="mono">{g.guia}</td>
-                        <td className="mono">{g.guia_mel || '—'}</td>
-                        <td className="mono">{g.fecha}</td>
-                        <td>{g.categoria}</td>
-                        <td className="num">{fmtKg(g.kg)}</td>
-                        <td className="num mono">{g.precio_kg != null ? `$ ${g.precio_kg}` : '—'}</td>
-                        <td className="num">{fmtCLP(g.valor)}</td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      const fila = (g, hija = false) => (
+                        <tr key={g.id} className={hija ? 'hija' : undefined}>
+                          <td className="mono">{g.guia}</td>
+                          <td className="mono">{hija ? '' : (g.guia_mel || '—')}</td>
+                          <td className="mono">{g.fecha}</td>
+                          <td>
+                            {g.categoria}
+                            {g.componente_codigo && <><br /><small style={{ color: 'var(--muted)' }}><span className="mono">SKU {g.componente_codigo}</span>{g.componente_nombre ? ` · ${g.componente_nombre}` : ''}</small></>}
+                          </td>
+                          <td className="num">{fmtKg(g.kg)}</td>
+                          <td className="num mono">{g.precio_kg != null ? `$ ${g.precio_kg}` : '—'}</td>
+                          <td className="num">{fmtCLP(g.valor)}</td>
+                        </tr>
+                      );
+                      // Guía madre: los componentes que viajaron con la misma guía de MEL.
+                      const grupo = ({ guia_mel, filas }) => {
+                        const abierta = abiertas.has(guia_mel);
+                        const fechas = filas.map((g) => g.fecha).sort();
+                        const cats = [...new Set(filas.map((g) => g.categoria))];
+                        return [
+                          <tr key={`g-${guia_mel}`} className="grupo" aria-expanded={abierta} onClick={() => alternarGuia(guia_mel)}
+                            title={abierta ? 'Ocultar los componentes de esta guía' : 'Ver los componentes que vienen en esta guía'}>
+                            <td><span className="flecha" aria-hidden="true">{abierta ? '▾' : '▸'}</span>{filas.length} componentes</td>
+                            <td className="mono">{guia_mel}</td>
+                            <td className="mono">{fechas[0]}{fechas.at(-1) !== fechas[0] ? ` → ${fechas.at(-1)}` : ''}</td>
+                            <td>{cats.length === 1 ? cats[0] : `${cats.length} categorías`}</td>
+                            <td className="num">{fmtKg(filas.reduce((a, g) => a + g.kg, 0))}</td>
+                            <td className="num mono">—</td>
+                            <td className="num">{fmtCLP(filas.reduce((a, g) => a + g.valor, 0))}</td>
+                          </tr>,
+                          ...(abierta ? filas.map((g) => fila(g, true)) : []),
+                        ];
+                      };
+                      return agruparPorGuia(sel.guias, (g) => !!g.componente_codigo).map((x) => (x.filas ? grupo(x) : fila(x.d)));
+                    })()}
                   </tbody>
                 </table></div>
               )}

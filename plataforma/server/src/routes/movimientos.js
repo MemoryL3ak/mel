@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import { supa, q, ah, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
+import { contarGuias } from '../guias.js';
 
 const r = Router();
 
@@ -96,7 +97,8 @@ r.get('/movimientos/excel', auth(), ah(async (req, res) => {
   }
   const viv = desp.filter(vigente);
   const suma = (filas, f) => filas.reduce((a, d) => a + f(d), 0);
-  const tot = g.addRow(['Total', `${viv.length} guías vigentes`, '', '', '', '', '', '', '', '', '', '',
+  const nViv = contarGuias(viv);
+  const tot = g.addRow(['Total', nViv === viv.length ? `${nViv} guías vigentes` : `${nViv} guías vigentes · ${viv.length} filas`, '', '', '', '', '', '', '', '', '', '',
     suma(viv, (d) => Number(d.kg_origen ?? 0)), suma(viv, (d) => Number(d.kg_destino ?? 0)), suma(viv, kgDesc) || null, null, '',
     suma(viv, kgVal), null, null, Math.round(suma(viv, (d) => Number(d.valor_usd ?? 0)) * 100) / 100, suma(viv, (d) => Number(d.valor ?? 0))]);
   tot.font = { bold: true };
@@ -125,20 +127,21 @@ r.get('/movimientos/excel', auth(), ah(async (req, res) => {
   linea([`Descargado el ${hoy()} por ${req.user.name} · las guías anuladas y las pendientes de guía se listan, pero no suman`]);
   linea([]);
   cabecera(s, ['Guías por estado', 'Guías', '', '', '']);
-  for (const [k, nombre] of Object.entries(ESTADO)) { const c = desp.filter((d) => d.estado === k).length; if (c) linea([nombre, c]); }
-  linea(['Total registradas', desp.length], true);
+  for (const [k, nombre] of Object.entries(ESTADO)) { const c = contarGuias(desp.filter((d) => d.estado === k)); if (c) linea([nombre, c]); }
+  linea(['Total registradas', contarGuias(desp)], true);
   linea([]);
   cabecera(s, ['Categoría (vigentes)', 'Guías', 'Kg MEL', 'Kg valorizados', 'Valor CLP']);
   const porCat = new Map();
   for (const d of viv) {
     const k = (d.kg_destino != null ? d.catf?.nombre : null) ?? d.cat?.nombre ?? '—';
-    const c = porCat.get(k) ?? { guias: 0, kgMel: 0, kg: 0, valor: 0 };
-    c.guias++; c.kgMel += Number(d.kg_origen ?? 0); c.kg += kgVal(d); c.valor += Number(d.valor ?? 0);
+    const c = porCat.get(k) ?? { filas: [], kgMel: 0, kg: 0, valor: 0 };
+    c.filas.push(d); c.kgMel += Number(d.kg_origen ?? 0); c.kg += kgVal(d); c.valor += Number(d.valor ?? 0);
     porCat.set(k, c);
   }
   const fmt = (row) => { row.getCell(3).numFmt = KG; row.getCell(4).numFmt = KG; row.getCell(5).numFmt = CLP; return row; };
-  for (const [k, c] of [...porCat].sort((a, b) => b[1].valor - a[1].valor)) fmt(linea([k, c.guias, c.kgMel, c.kg, c.valor]));
-  fmt(linea(['Total vigentes', viv.length, suma(viv, (d) => Number(d.kg_origen ?? 0)), suma(viv, kgVal), suma(viv, (d) => Number(d.valor ?? 0))], true));
+  for (const [k, c] of [...porCat].sort((a, b) => b[1].valor - a[1].valor)) fmt(linea([k, contarGuias(c.filas), c.kgMel, c.kg, c.valor]));
+  fmt(linea(['Total vigentes', nViv, suma(viv, (d) => Number(d.kg_origen ?? 0)), suma(viv, kgVal), suma(viv, (d) => Number(d.valor ?? 0))], true));
+  if (contarGuias(desp) !== desp.length) linea([`Las ${desp.length} filas de la hoja «Guías de despacho» son ${contarGuias(desp)} guías de MEL: los componentes obsoletos de una misma guía se cuentan una vez.`]);
   linea([]);
   cabecera(s, ['Kilos (vigentes)', '', 'Kg', '', '']);
   for (const [k, v] of [['Declarados por MEL', suma(viv, (d) => Number(d.kg_origen ?? 0))], ['Pesados en La Negra', suma(viv, (d) => Number(d.kg_destino ?? 0))],

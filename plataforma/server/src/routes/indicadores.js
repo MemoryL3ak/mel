@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 import { supa, q, ah, hoy } from '../supa.js';
 import { auth } from '../auth.js';
 import { tiene } from '../esquema.js';
+import { contarGuias, colsGuia } from '../guias.js';
 import { contrato, periodoEP, periodoActivo } from '../contrato.js';
 import { historialDelAnio } from './historial.js';
 
@@ -42,7 +43,7 @@ async function chatarra(anio, periodos, sel) {
   const desde = periodos[0].desde;
   const hasta = periodos[11].hasta;
   const [desp, tras, eps, prog, cats] = await Promise.all([
-    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor, estado, categoria_id, categoria_final_id')
+    q(supa.from('despachos').select(`${colsGuia()}, fecha, kg_origen, kg_destino, valor, estado, categoria_id, categoria_final_id`)
       .not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', desde).lte('fecha', hasta)),
     q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio, estado').gte('fecha', desde).lte('fecha', hasta)),
     q(supa.from('estados_pago').select('folio, numero, periodo, estado, total, generado_el, firmado_el, presentado_el, factura_fecha, pago_fecha, pago_monto')
@@ -63,7 +64,8 @@ async function chatarra(anio, periodos, sel) {
     const kgH = h.reduce((a, x) => a + num(x.kg), 0);
     return {
       periodo: p.periodo, etiqueta: p.etiqueta, nombre: p.nombre, desde: p.desde, hasta: p.hasta,
-      guias: d.length + h.length,
+      // Guías = documentos de MEL: los componentes de una misma guía cuentan una vez.
+      guias: contarGuias(d) + h.length,
       kg_patios: d.reduce((a, x) => a + num(x.kg_origen), 0) + kgH,
       kg_lanegra: d.reduce((a, x) => a + num(x.kg_destino), 0) + kgH,
       valor: d.reduce((a, x) => a + num(x.valor), 0) + h.reduce((a, x) => a + num(x.valor), 0),
@@ -109,10 +111,10 @@ async function chatarra(anio, periodos, sel) {
   const recibidas = dSel.filter((x) => x.kg_destino != null && num(x.kg_origen) > 0);
   const progVivo = prog.filter((p) => p.estado !== 'cancelado');
   const calidad = {
-    recepcionadas: recibidas.length,
+    recepcionadas: contarGuias(recibidas),
     dif_promedio_pct: redondear(promedio(recibidas.map((x) => Math.abs((num(x.kg_destino) - num(x.kg_origen)) / num(x.kg_origen)) * 100)), 2),
-    observadas: dSel.filter((x) => x.estado === 'observado').length,
-    en_transito: dSel.filter((x) => x.estado === 'en_transito').length,
+    observadas: contarGuias(dSel.filter((x) => x.estado === 'observado')),
+    en_transito: contarGuias(dSel.filter((x) => x.estado === 'en_transito')),
     programa_planificadas: progVivo.length,
     programa_ejecutadas: progVivo.filter((p) => p.estado === 'ejecutado').length,
   };
@@ -122,10 +124,11 @@ async function chatarra(anio, periodos, sel) {
   const porCat = new Map();
   for (const x of dSel) {
     const id = x.categoria_final_id ?? x.categoria_id;
-    const c = porCat.get(id) ?? { categoria: nombreCat.get(id) ?? '—', guias: 0, kg_patios: 0, kg_lanegra: 0, valor: 0 };
-    c.guias++; c.kg_patios += num(x.kg_origen); c.kg_lanegra += num(x.kg_destino); c.valor += num(x.valor);
+    const c = porCat.get(id) ?? { categoria: nombreCat.get(id) ?? '—', guias: 0, kg_patios: 0, kg_lanegra: 0, valor: 0, filas: [] };
+    c.filas.push(x); c.kg_patios += num(x.kg_origen); c.kg_lanegra += num(x.kg_destino); c.valor += num(x.valor);
     porCat.set(id, c);
   }
+  for (const c of porCat.values()) { c.guias = contarGuias(c.filas); delete c.filas; }
   // Historial del período: por la categoría del contrato si la descripción de
   // la planilla calza con una; si no, con el nombre que trae.
   for (const x of hist.filter((h) => h.periodo === sel.periodo)) {

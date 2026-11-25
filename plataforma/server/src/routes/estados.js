@@ -17,6 +17,7 @@ import { contrato } from '../contrato.js';
 import { tiene } from '../esquema.js';
 import { registrarArchivos } from '../documental.js';
 import { repasarValorizacion } from './despachos.js';
+import { contarGuias, colsGuia } from '../guias.js';
 
 const r = Router();
 
@@ -29,7 +30,10 @@ function rangoPeriodo(periodo, diaCorte) {
   };
 }
 
-const DESP_SEL = '*, cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre)';
+// Con el componente obsoleto del que nace cada despacho (SKU y nombre), cuando
+// la base lo tiene: el detalle agrupa con eso los que viajaron en una misma guía.
+const despSel = () => `*, cat:categorias!despachos_categoria_id_fkey(nombre), catf:categorias!despachos_categoria_final_id_fkey(nombre)${
+  tiene.desp_componente ? ', comp:componentes!despachos_componente_id_fkey(codigo, nombre)' : ''}`;
 
 const editable = (ep) => ['generado', 'con_ajustes'].includes(ep.estado);
 
@@ -39,7 +43,7 @@ const editable = (ep) => ['generado', 'con_ajustes'].includes(ep.estado);
 // período siguiente parte desde el día después del corte.
 function guiasPendientes(ep) {
   if (!ep.desde || !ep.hasta) return [];
-  return q(supa.from('despachos').select('id, guia, guia_mel, fecha, kg_origen, kg_destino, kg_contrato, valor')
+  return q(supa.from('despachos').select(`${colsGuia()}, guia, fecha, kg_origen, kg_destino, kg_contrato, valor`)
     .eq('estado', 'recepcionado').is('ep_id', null)
     .gte('fecha', ep.desde).lte('fecha', ep.hasta).order('fecha').order('id'));
 }
@@ -55,7 +59,7 @@ async function kgDescontadosDe(ids) {
 
 async function detalleEP(ep) {
   const [desp, descs, pendientes] = await Promise.all([
-    q(supa.from('despachos').select(DESP_SEL).eq('ep_id', ep.id).order('fecha').order('id')),
+    q(supa.from('despachos').select(despSel()).eq('ep_id', ep.id).order('fecha').order('id')),
     tiene.descuentos ? q(supa.from('ep_descuentos').select('*').eq('ep_id', ep.id).order('id')) : [],
     editable(ep) ? guiasPendientes(ep) : [],
   ]);
@@ -63,17 +67,22 @@ async function detalleEP(ep) {
   const porCat = {};
   for (const d of desp) {
     const k = d.catf?.nombre ?? d.cat?.nombre ?? '—';
-    porCat[k] ??= { categoria: k, guias: 0, kg: 0, valor: 0 };
-    porCat[k].guias += 1;
+    porCat[k] ??= { categoria: k, guias: 0, componentes: 0, kg: 0, valor: 0, filas: [] };
+    porCat[k].filas.push(d);
+    if (d.componente_id) porCat[k].componentes += 1;
     // Kilos valorizados: el peso que rige según contrato (MEL, La Negra o el
     // acordado); las guías anteriores a 0019 siguen con el de La Negra.
     porCat[k].kg += Number(d.kg_contrato ?? d.kg_destino ?? 0);
     porCat[k].valor += Number(d.valor ?? 0);
   }
+  // Una guía es el documento de MEL: los componentes obsoletos que viajaron con
+  // la misma guía cuentan como una sola. Los kilos y el valor no cambian.
+  const lineas = Object.values(porCat).map(({ filas, ...x }) => ({ ...x, guias: contarGuias(filas) }));
   return {
-    lineas: Object.values(porCat).sort((a, b) => b.valor - a.valor),
+    lineas: lineas.sort((a, b) => b.valor - a.valor),
     descuentos_lineas: descs,
-    n_guias: desp.length,
+    n_guias: contarGuias(desp),
+    n_componentes: desp.filter((d) => d.componente_id).length,
     kg_total: desp.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino ?? 0), 0),
     // Cuadre de kilos del período: lo que declaró MEL, lo que pesó La Negra,
     // los kilos descontados por no ser material, y lo que se valoriza.
@@ -87,7 +96,7 @@ async function detalleEP(ep) {
     guias_distinto_peso: desp.filter((d) => d.kg_contrato != null && Number(d.kg_contrato) !== Number(d.kg_origen))
       .map((d) => ({ guia: d.guia, guia_mel: d.guia_mel ?? null, kg_mel: Number(d.kg_origen), kg: Number(d.kg_contrato), regla_peso: d.regla_peso ?? null })),
     pendientes: {
-      n: pendientes.length,
+      n: contarGuias(pendientes),
       kg: pendientes.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino ?? 0), 0),
       valor: pendientes.reduce((a, d) => a + Number(d.valor ?? 0), 0),
       guias: pendientes.map((d) => ({ guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha, valor: Number(d.valor ?? 0) })),
@@ -96,6 +105,7 @@ async function detalleEP(ep) {
     guias: desp.map((d) => ({
       id: d.id, guia: d.guia, guia_mel: d.guia_mel ?? null, fecha: d.fecha,
       categoria: d.catf?.nombre ?? d.cat?.nombre ?? '—',
+      componente_codigo: d.comp?.codigo ?? null, componente_nombre: d.comp?.nombre ?? null,
       kg: Number(d.kg_contrato ?? d.kg_destino ?? 0),
       precio_kg: d.precio_kg == null ? null : Number(d.precio_kg),
       valor: Number(d.valor ?? 0),
@@ -186,7 +196,7 @@ r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
   // del dólar no responden el EP se genera igual, con lo que dejó la última
   // pasada del barrido.
   await repasarValorizacion().catch((e) => console.error('[GEA] valorización antes del EP:', e.message));
-  const desp = await q(supa.from('despachos').select('id, valor')
+  const desp = await q(supa.from('despachos').select(`${colsGuia()}, valor`)
     .eq('estado', 'recepcionado').is('ep_id', null)
     .gte('fecha', desde).lte('fecha', hasta));
   if (!desp.length) {
@@ -204,7 +214,7 @@ r.post('/eps/generar', auth('ito', 'coordinador'), ah(async (req, res) => {
   }).select().single());
   await q(supa.from('despachos').update({ ep_id: ep.id }).in('id', desp.map((d) => d.id)).select('id'));
   await audit(req.user.name, req.user.role, 'Generó estado de pago del período',
-    `EP N° ${numero} · ${desde} a ${hasta} · ${desp.length} guías`);
+    `EP N° ${numero} · ${desde} a ${hasta} · ${contarGuias(desp)} guías`);
   res.json({ ...pub(ep, cfg), ...(await detalleEP(ep)) });
 }));
 
@@ -353,7 +363,7 @@ r.post('/eps/:id/incorporar', auth('ito', 'coordinador'), ah(async (req, res) =>
     .update({ bruto, total: bruto - Number(ep.descuentos ?? 0) }).eq('id', ep.id).select().single());
   const cfg = await contrato();
   await audit(req.user.name, req.user.role, 'Incorporó guías al estado de pago',
-    `${ep.folio} · ${nuevas.length} guía(s): ${nuevas.map((d) => d.guia).join(', ')} · bruto $${Number(ep.bruto)} → $${bruto}`);
+    `${ep.folio} · ${contarGuias(nuevas)} guía(s): ${nuevas.map((d) => d.guia).join(', ')} · bruto $${Number(ep.bruto)} → $${bruto}`);
   res.json({ ...pub(upd, cfg), ...(await detalleEP(upd)) });
 }));
 
@@ -417,7 +427,8 @@ r.get('/eps/:id/excel', auth('vendor', 'ito', 'coordinador'), ah(async (req, res
   const suma = (k) => desp.reduce((a, d) => a + Number(d[k] ?? 0), 0);
   const kgDescTotal = descs.filter((x) => x.tipo === 'kg').reduce((a, x) => a + Number(x.valor), 0);
   const kgVal = desp.reduce((a, d) => a + Number(d.kg_contrato ?? d.kg_destino ?? 0), 0);
-  const tot = det.addRow(['Total', `${desp.length} guías`, '', '', '', '', '', '', '', '',
+  const nGuias = contarGuias(desp);
+  const tot = det.addRow(['Total', nGuias === desp.length ? `${nGuias} guías` : `${nGuias} guías · ${desp.length} filas`, '', '', '', '', '', '', '', '',
     suma('kg_origen'), suma('kg_destino'), kgDescTotal || null, null, '', kgVal, null, null, suma('valor_usd'), suma('valor')]);
   tot.font = { bold: true };
   det.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLS.length } };
@@ -433,14 +444,16 @@ r.get('/eps/:id/excel', auth('vendor', 'ito', 'coordinador'), ah(async (req, res
   const porCat = new Map();
   for (const d of desp) {
     const k = d.catf?.nombre ?? d.cat?.nombre ?? '—';
-    const x = porCat.get(k) ?? { guias: 0, kg: 0, valor: 0 };
-    x.guias += 1; x.kg += Number(d.kg_contrato ?? d.kg_destino ?? 0); x.valor += Number(d.valor ?? 0);
+    const x = porCat.get(k) ?? { filas: [], kg: 0, valor: 0 };
+    x.filas.push(d); x.kg += Number(d.kg_contrato ?? d.kg_destino ?? 0); x.valor += Number(d.valor ?? 0);
     porCat.set(k, x);
   }
+  // Guías = documentos de MEL: varios componentes obsoletos en una misma guía cuentan una vez.
   for (const [k, x] of [...porCat].sort((a, b) => b[1].valor - a[1].valor)) {
-    const row = linea([k, x.guias, x.kg, x.valor]); row.getCell(3).numFmt = KG; row.getCell(4).numFmt = CLP;
+    const row = linea([k, contarGuias(x.filas), x.kg, x.valor]); row.getCell(3).numFmt = KG; row.getCell(4).numFmt = CLP;
   }
-  { const row = linea(['Bruto del período', desp.length, kgVal, Number(ep.bruto)], true); row.getCell(3).numFmt = KG; row.getCell(4).numFmt = CLP; }
+  { const row = linea(['Bruto del período', nGuias, kgVal, Number(ep.bruto)], true); row.getCell(3).numFmt = KG; row.getCell(4).numFmt = CLP; }
+  if (nGuias !== desp.length) linea([`Las ${desp.length} filas del detalle son ${nGuias} guías de MEL: los componentes obsoletos que viajaron en una misma guía se cuentan una vez.`]);
   linea([]);
   cabecera(res1, ['Cuadre de kilos', '', 'Kg', '']);
   for (const [k, v] of [['Kilos declarados por MEL', suma('kg_origen')], ['Kilos pesados en La Negra', suma('kg_destino')],

@@ -6,6 +6,7 @@ import { supa, q, ah, hoy, semanaISO, fmtFecha } from '../supa.js';
 import { auth } from '../auth.js';
 import { contrato, venceElPrecio, periodoActivo, periodoConSemanas, semanaCorteDeFecha } from '../contrato.js';
 import { tiene } from '../esquema.js';
+import { contarGuias, colsGuia } from '../guias.js';
 import { faltantes, vencimiento, puedeCargar } from '../documental.js';
 
 const r = Router();
@@ -30,7 +31,7 @@ r.get('/panel', auth(), ah(async (req, res) => {
     q(supa.from('auditoria').select('*').order('id', { ascending: false }).limit(6)),
     // Ni las anuladas ni las pendientes de guía (aún no salen del patio)
     // suman al flujo del período ni a la actividad reciente.
-    q(supa.from('despachos').select('fecha, kg_origen, kg_destino, valor').not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', periodo.desde).lte('fecha', periodo.hasta)),
+    q(supa.from('despachos').select(`${colsGuia()}, fecha, kg_origen, kg_destino, valor`).not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', periodo.desde).lte('fecha', periodo.hasta)),
     q(supa.from('traslados').select('fecha, kg, kg_lampa, cert_folio').gte('fecha', periodo.desde).lte('fecha', periodo.hasta)),
     q(supa.from('despachos').select('fecha, kg_origen').not('estado', 'in', '(anulado,pendiente_guia)').gte('fecha', desde14)),
     q(supa.from('categorias').select('id, nombre').eq('activo', true)),
@@ -42,7 +43,7 @@ r.get('/panel', auth(), ah(async (req, res) => {
   // cuánto quedó dispuesto en Lampa con certificado.
   const flujo = {
     kg_patios: despMes.reduce((a, d) => a + Number(d.kg_origen), 0),
-    guias: despMes.length,
+    guias: contarGuias(despMes),   // documentos de MEL, no componentes
     kg_lanegra: despMes.reduce((a, d) => a + Number(d.kg_destino ?? 0), 0),
     kg_lampa: trasMes.reduce((a, t) => a + Number(t.kg_lampa ?? 0), 0),
     certs: trasMes.filter((t) => t.cert_folio).length,
